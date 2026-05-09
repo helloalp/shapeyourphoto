@@ -1,5 +1,42 @@
 # 更新历史
 
+## 1.1.7 - 2026-05-10
+
+- 融合 main 已合入的外部 PR 与 Codex 修复 PR，并重新叠回 `backup-v1.1.7-before-pr` 的本地 v1.1.7 能力；本轮目标是保留两边有效功能，不回退任一侧。
+- 保留跨平台打包链路：macOS Apple Silicon `.dmg`、Windows Inno Setup 安装包、`build/` 配置、`assets/app_icon.icns`、GitHub Actions 双 runner 构建与 Release 发布。
+- 保留跨平台拖放：Windows 继续使用原生 `ctypes` 拖放，macOS / Linux 使用 `tkinterdnd2`；根窗口由 `dnd_support.create_root()` 统一选择，路径解析改用 Tcl `splitlist`。
+- 保留 Codex 平台检测修复：`paths.IS_WIN` / `IS_MAC` / `IS_LINUX` 集中管理平台判断，`drag_drop.py` 等模块避免非 Windows import-time 崩溃。
+- 保留用户数据目录迁移：设置与统计进入系统标准用户数据目录，PyInstaller 资源加载继续使用 `paths.resource_path()`，卸载不会删除用户数据。
+- 保留 v1.1.7 修复取消链路：repair run_id/cancel_event、防旧写回、修复前状态快照、取消后恢复、非覆盖输出清理、覆盖修复备份和正常完成后备份清理。
+- 保留 Console 设置与主题系统：Console 支持 24 小时制、12 小时制、启动后经过时间；外观保留五套主题 token，设置 schema 为 2。
+- 保留 HiDPI 与 Splash：启动阶段配置 DPI awareness、Tk scaling、字体和居中 Splash，同时仍使用跨平台拖放根窗口。
+- 保留 UI 结构升级：`ui/` 包承载 display mapping、主题、HiDPI、Splash、窗口标题和 EXIF 编辑；根级 `ui_*` mixin 继续承担主窗口功能拆分。
+- 保留主界面布局调整：路径栏扩展、列表统计、HUD/条图权重提升、移除重复顶部任务进度栏，并维持统一扫描范围与扫描摘要流程。
+- 保留统计安全存储：Windows 写入用户数据目录下 `usage_stats.dpapi` 并使用用户级 DPAPI；非 Windows 回落到用户数据目录 JSON；旧 `usage_stats.json` 迁移后保留 `.migrated-*` 备份。
+- 保留属性 / EXIF 安全编辑：只允许写入标题/描述、作者、版权、关键词/备注，保存前备份，禁止修改相机、镜头、拍摄时间、Orientation、ICC 和内部标记。
+- 修复 `drag_drop.py` 融合后的缩进错误，避免 `WindowsFileDropTarget` 在 import 阶段触发 `NameError` 导致 `start_app.bat` 无法打开窗口。
+- 同步更新 `app_metadata.py` 内置 CHANGELOG、根 `CHANGELOG.md`、`README.md` 当前版本和 `docs/updates/1.1.7.md`，把 main 修改与本地修改都写入 1.1.7 版本说明。
+
+- 修正修复批次总耗时口径：Console 面向用户的“本轮修复总耗时”改为 `total_wall_time`，即用户真实等待时间，不再把每张图 `repair_total` 相加当总耗时。
+- 修复性能审计明确区分 `total_wall_time`、`worker_cumulative_time`、`average_wall_time_per_image` 和 `average_worker_time_per_image`；`worker_cumulative_time` 标注为并发 worker 累计耗时，不是用户等待时间。
+- 分析/修复进度窗口底部按钮区改为固定两列布局，尺寸提示与取消按钮不再共用同一单元；窗口初始高度按屏幕高度钳制，避免取消按钮被阶段文本挤走或遮挡。
+- 修复进度窗口新增“取消修复”，窗口关闭叉号与按钮走同一取消流程。
+- 批量修复新增 repair run_id/cancel_event 防旧写回；取消后恢复修复前分析状态快照，保留原有分析结果、issues、推荐方法、cleanup/similar 状态，不弹正常完成详情、不更新修复统计或调试打开列表。
+- 已取消批次写出的非覆盖修复输出会优先删除，删除失败时移入 `_repair_canceled_outputs` 并提示；覆盖原文件修复会先创建 `_repair_cancel_backups`，取消时恢复备份，正常完成后清理备份。
+- 设置新增 Console 与外观/风格页：Console 支持 24 小时制、12 小时制和启动后经过时间；外观提供经典清绿、石墨灰、影像蓝、暖白纸和高对比五套 token 风格。
+- Windows 启动阶段启用 DPI awareness，按 DPI 配置 Tk scaling、系统字体与 ttk 样式；新增居中 Splash，主窗口准备好后自动关闭。
+- 主界面重排为更清晰的仪表盘：移除顶部重复任务进度栏，路径栏扩展为横向长栏，分析统计移到缩略图列表标题区，右侧 HUD/条图获得更高优先级。
+- “读取目录”和“导出清理清单”主入口已移除；选择目录、拖入目录和分析前补扫描继续使用统一扫描范围与扫描摘要流程。
+- 目录扫描后新增“正在加载图片”阶段提示，扫描进度弹窗显示发现/导入数量、当前路径和 elapsed time；Console 只输出扫描摘要，跳过明细进入扫描摘要窗口。
+- 二级窗口标题统一为 `ShapeYourPhoto v.x.x.x - 功能名`，覆盖设置、扫描、修复、cleanup、相似图、统计、历史和进度弹窗等主要窗口。
+- 新增 UI display mapping 层，内部英文 code/enum/storage 保持不变，UI 对 issue、scene/portrait/exposure/color、repair method/policy、outcome、worker/GPU/scan/Console 时间模式和 perf stage 做中文化展示，未知值优雅回退。
+- 修复完成详情窗口摘要区改成紧凑 chip 信息条，筛选、列表、详情滚动区和底部关闭按钮优先可用。
+- “累计统计”调整为“统计”，统计持久化迁移到被忽略的 `data/usage_stats.dpapi`；Windows 使用用户级 DPAPI 加密，旧 `usage_stats.json` 成功迁移后保留 `.migrated-*` 备份，不直接删除。
+- 右侧“属性 / EXIF”新增安全编辑入口：默认只读，只允许写入标题/描述、作者、版权、关键词/备注，保存前创建备份，禁止修改相机、镜头、拍摄时间、Orientation、ICC 和内部标记。
+- 新增 `ui/` 包承载标题、显示名映射、主题、HiDPI、Splash 和 EXIF 编辑等 UI 基础设施；根级 `ui_*` mixin 继续作为兼容层保留。
+- 新增 `docs/specs/` 产品规范目录，并补充技术文档中的 UI 包、设置扩展、用户数据目录、加密边界、主题 token、Console 设置和 EXIF 安全编辑说明。
+- 本轮未改变分析算法、修复风格、相似图算法或 cleanup 安全规则。
+
 ## 1.1.6 - 2026-05-08
 
 - 重整文档体系：明确根 README、根 MODULES、`docs/`、`docs/technical/` 与 `docs/updates/` 的分工，并给出后续维护阅读顺序。

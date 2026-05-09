@@ -9,6 +9,7 @@ from pathlib import Path
 from app_settings import ANALYSIS_CONCURRENCY_AUTO, AnalysisWorkerPlan, resolve_analysis_worker_plan
 from gpu_accel import GPUBackendStatus, gpu_console_label
 from models import AnalysisResult, RepairRecord
+from ui.display_names import display_name
 from ui_constants import (
     ANALYSIS_BATCH_TIMING_LABELS,
     ANALYSIS_TIMING_LABELS,
@@ -81,7 +82,10 @@ class UiTaskConsoleMixin:
                 requested_workers=plan,
                 actual_workers=plan,
             )
-        detail = f"ThreadPool setting={plan.mode} requested={plan.requested_workers} actual={plan.actual_workers}"
+        detail = (
+            f"线程池 {display_name('worker', plan.mode)} "
+            f"请求 {plan.requested_workers} 个，实际 {plan.actual_workers} 个"
+        )
         if plan.reason:
             detail += f" ({plan.reason})"
         return detail
@@ -229,7 +233,7 @@ class UiTaskConsoleMixin:
             f"CPU/GPU {gpu_console_label(gpu_status)}"
         )
         self._log_console(
-            f"analysis audit: wall_time={self._format_ms(wall_ms)} | "
+            f"analysis audit: total_wall_time={self._format_ms(wall_ms)} | "
             f"worker_cumulative_time={self._format_ms(worker_cumulative_ms)}（并发 worker 单图耗时累计，不是用户等待时间） | "
             f"analyze_cumulative_time={self._format_ms(analyze_cumulative_ms)} | "
             f"average_wall_time_per_image={self._format_ms(avg_wall_ms)} | "
@@ -268,20 +272,41 @@ class UiTaskConsoleMixin:
             notes.append("本轮主要耗时集中在 worker 图像分析阶段")
         self._log_console("analysis bottleneck notes: " + "；".join(notes))
 
-    def _log_repair_perf_rollup(self, records: list[RepairRecord]) -> None:
-        if not records:
+    def _log_repair_perf_rollup(
+        self,
+        records: list[RepairRecord],
+        batch_timings: dict[str, float] | None = None,
+        *,
+        total: int | None = None,
+        failed: int = 0,
+        canceled: int = 0,
+    ) -> None:
+        if not records and not batch_timings:
             return
+        batch_timings = dict(batch_timings or {})
         totals = [record.perf_timings.get("repair_total", 0.0) for record in records if record.perf_timings]
-        if not totals:
+        wall_ms = batch_timings.get("total_wall_time", batch_timings.get("wall_time", 0.0))
+        worker_cumulative_ms = batch_timings.get("worker_cumulative_time", sum(totals))
+        if wall_ms <= 0.0 and not totals:
             return
-        total_ms = sum(totals)
-        avg_ms = total_ms / max(1, len(totals))
+        if wall_ms <= 0.0:
+            wall_ms = worker_cumulative_ms
+        total_images = total if total is not None else len(records) + failed + canceled
+        avg_wall_ms = wall_ms / max(1, total_images)
+        avg_worker_ms = worker_cumulative_ms / max(1, len(totals))
         saved = sum(1 for record in records if record.saved_output)
         skipped = sum(1 for record in records if not record.saved_output)
         rollback_noop = sum(1 for record in records if record.outcome_category in {"forced_rollback", "normal_skipped"} or "rollback" in record.outcome_category or "noop" in record.outcome_category)
         self._log_console(
-            f"本轮修复总耗时：{self._format_ms(total_ms)} | 平均每张 {self._format_ms(avg_ms)} | "
-            f"保存 {saved}，跳过 {skipped}，回退/no-op {rollback_noop}"
+            f"本轮修复总耗时：{self._format_ms(wall_ms)} | "
+            f"平均真实等待折算 {self._format_ms(avg_wall_ms)}/张 | "
+            f"保存 {saved}，跳过 {skipped}，失败 {failed}，取消 {canceled}，回退/no-op {rollback_noop}"
+        )
+        self._log_console(
+            f"repair audit: total_wall_time={self._format_ms(wall_ms)} | "
+            f"worker_cumulative_time={self._format_ms(worker_cumulative_ms)}（并发 worker 累计耗时，不是用户等待时间） | "
+            f"average_wall_time_per_image={self._format_ms(avg_wall_ms)} | "
+            f"average_worker_time_per_image={self._format_ms(avg_worker_ms)}"
         )
         for record in sorted(records, key=lambda item: item.perf_timings.get("repair_total", 0.0), reverse=True)[:5]:
             stage, stage_ms = self._slowest_stage(record.perf_timings, REPAIR_TIMING_LABELS)

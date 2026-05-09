@@ -11,6 +11,7 @@
 
 ## 当前版本更新文档
 
+- [1.1.7](/E:/aitools/shapeyourphoto/docs/updates/1.1.7.md)
 - [1.1.6](/E:/aitools/shapeyourphoto/docs/updates/1.1.6.md)
 - [1.1.5](/E:/aitools/shapeyourphoto/docs/updates/1.1.5.md)
 - [1.1.4](/E:/aitools/shapeyourphoto/docs/updates/1.1.4.md)

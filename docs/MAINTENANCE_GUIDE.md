@@ -1,6 +1,6 @@
 # Maintenance Guide
 
-本文是 1.1.6 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
+本文是 1.1.7 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
 
 ## 基本原则
 
@@ -30,7 +30,8 @@
 
 - `ui_app.py` 只负责主窗口状态、控件装配和高层协调。
 - 扫描/导入、分析任务、修复任务、主列表、Console/perf、cleanup/similar 复核分别维护在 `ui_scan_actions.py`、`ui_analysis_actions.py`、`ui_repair_actions.py`、`ui_file_list.py`、`ui_task_console.py`、`ui_review_actions.py`。
-- 新增 UI 行为时优先放入对应 mixin；只有布局装配、菜单 wiring 和根窗口生命周期适合留在 `ui_app.py`。
+- `ui/` 包承载窗口标题、display mapping、主题、HiDPI、Splash 和 EXIF 安全编辑等共享 UI 基础设施。
+- 新增 UI 行为时优先放入对应 mixin 或 `ui/` 包；只有布局装配、菜单 wiring 和根窗口生命周期适合留在 `ui_app.py`。
 - mixin 模块不得 import `ui_app.py`，共享常量放在 `ui_constants.py`，避免循环依赖。
 - 拆分 UI 代码时必须保持后台回调回主线程、run_id/cancel_event 防旧写回和 Console 合并刷新规则。
 
@@ -41,6 +42,11 @@
 - 后台任务写回结果、进度、cleanup prompt、similar prompt 或最终摘要前必须校验 run_id 和 cancel_event。
 - 取消后保留文件列表，清空本轮目标已写入的结果、错误、进度、cleanup 标记和相似组标记。
 - 已取消 worker 可以完成 CPU 工作，但结果必须丢弃。
+- 每轮批量修复也应有唯一 run_id 和 cancel_event。
+- 取消修复不得清空修复前已经存在的分析结果、错误、cleanup/similar 状态或修复建议；如修复流程补分析了缺失图片，取消时必须按修复前快照恢复。
+- 修复取消后不得保留已取消批次的完成统计、调试打开列表或修复完成详情。
+- 已写出的非覆盖修复输出必须删除；删除失败时移入 `_repair_canceled_outputs` 隔离目录并提示。
+- 覆盖原文件修复需要先创建 `_repair_cancel_backups` 备份，取消时恢复备份，正常完成后清理备份。
 
 ## perf_timings / perf_notes 规则
 
@@ -49,7 +55,9 @@
 - 不要新建平行计时体系。
 - 分析建议记录读取、EXIF 转正、working image、基础统计、曝光、锐度、色彩、噪声、人像、cleanup candidate、相似图检测等阶段。
 - 修复建议记录 planner、读取、各 op、候选生成/评分、安全检查、保存输出和元数据保留。
-- Console 以 wall time 为主；worker cumulative 是并发 worker 累计工作量，不是用户等待时间。
+- Console 以 `total_wall_time` 为主；`worker_cumulative_time` 是并发 worker 累计工作量，不是用户等待时间。
+- 如果同时显示平均耗时，必须区分 `average_wall_time_per_image` 和 `average_worker_time_per_image`。
+- 不得把每张图耗时相加后作为面向用户的“本轮总耗时”。
 
 ## EXIF Orientation 归一
 
@@ -79,6 +87,7 @@
 
 - 分析/修复进度、扫描四选项、修复完成详情、cleanup candidate、相似图列表、相似图组内对比和设置窗口都应有明确 `minsize()` 或固定/滚动策略。
 - 底部关键按钮应放在固定按钮区，内容过长时滚动内容区，不压缩按钮区。
+- 进度窗口的底部提示与取消按钮必须使用独立布局单元，不能互相覆盖；关闭叉号必须等同取消或明确禁用，但取消按钮必须可达。
 - 可缩放窗口达到最小尺寸附近时，统一显示“已达到最小可用窗口大小”。
 - 二级窗口默认尺寸必须受屏幕可用区域限制，不能为了展示完整内容超出屏幕。
 
@@ -93,9 +102,32 @@
 
 - 应用设置统一由 `app_settings.py` 定义、校验和保存。
 - UI 设置统一由 `settings_dialog.py` 管理，不新增零散菜单项。
+- Console 时间模式和外观主题也属于 app_settings schema，不能在 UI 内私有保存。
 - 扫描默认至少忽略 `_repair` 前缀，任意层级以 `_repair` 开头的目录都跳过。
-- 扫描结果应写入 Console 简报和“最近扫描摘要”明细。
+- 扫描结果应写入 Console 简报和“最近扫描摘要”明细；完整跳过目录明细不得刷屏到 Console。
+- 扫描和扫描后的图片加载阶段都必须显示进度弹窗；无法预知总数时显示已处理数量，不造假进度。
 - 修改扫描逻辑时同时验证按钮扫描、拖拽文件夹、补扫、默认扫描模式和忽略前缀。
+
+## 用户数据与统计规则
+
+- 用户数据写入被忽略的 `data/` 目录。
+- 统计只保存聚合数据，不保存完整图片路径。
+- Windows 使用用户级 DPAPI 保护 `data/usage_stats.dpapi`；不可用时不得用 base64 或简单编码冒充加密。
+- 旧 `usage_stats.json` 迁移时先写入新 store，成功后保留 migrated 备份或标记，不直接删除。
+
+## UI 显示名规则
+
+- 内部英文 code/enum/storage 保持不变。
+- UI 通过 `ui/display_names.py` 显示中文或中英结合名称，不把中文名写回业务判断。
+- 未知值必须显示为带 raw value 的兜底文案，不能异常中断 UI。
+
+## HiDPI 与 EXIF 编辑规则
+
+- Windows GUI 启动前启用 DPI awareness，Tk scaling 与系统字体按 DPI 配置。
+- 手工验收 100% / 125% / 150% / 200% 缩放下主窗口、设置、进度、修复详情和 Console 字体清晰度。
+- ClearType、显卡驱动和远程桌面缩放不完全受应用控制，文档需说明边界。
+- EXIF 编辑默认只读，保存前备份；只允许标题/描述、作者、版权、关键词/备注等安全文本字段。
+- 禁止修改相机/镜头、拍摄时间、Orientation、ICC 和内部标记。
 
 ## GPU fallback 规则
 
@@ -122,6 +154,7 @@
 - 新增模块或职责变化：更新 `MODULE_REFERENCE.md`。
 - UI 流程变化：更新 `UI_AND_WORKFLOWS.md`。
 - 技术链路变化：更新或新增 `docs/technical/` 专题。
+- 产品和界面规范变化：更新或新增 `docs/specs/` 专题。
 - 版本升级：更新 `CHANGELOG.md`、`app_metadata.py` 和 `docs/updates/<version>.md`。
 
 ## 推荐验证顺序

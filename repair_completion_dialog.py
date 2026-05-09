@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from tkinter import ttk
 
 from app_settings import REPAIR_SUMMARY_FILTER_ALL, REPAIR_SUMMARY_FILTER_OPTIONS, normalize_repair_summary_filter
+from ui.display_names import display_name
+from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
@@ -30,7 +32,7 @@ class RepairCompletionDialog(tk.Toplevel):
         default_filter: str = REPAIR_SUMMARY_FILTER_ALL,
     ) -> None:
         super().__init__(parent)
-        self.title(title)
+        self.title(app_window_title(title))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
@@ -47,10 +49,15 @@ class RepairCompletionDialog(tk.Toplevel):
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(2, weight=1)
 
-        summary_frame = ttk.LabelFrame(outer, text="摘要", padding=10)
+        summary_frame = ttk.Frame(outer, padding=(0, 0, 0, 2))
         summary_frame.grid(row=0, column=0, sticky="ew")
-        for line in summary_lines:
-            ttk.Label(summary_frame, text=line, anchor="w").pack(fill="x")
+        summary_frame.columnconfigure(0, weight=1)
+        for index, line in enumerate(summary_lines[:8]):
+            chip = ttk.Label(summary_frame, text=line, anchor="center", relief="solid", padding=(8, 4))
+            chip.grid(row=index // 4, column=index % 4, sticky="ew", padx=(0 if index % 4 == 0 else 6, 0), pady=(0, 6))
+            summary_frame.columnconfigure(index % 4, weight=1)
+        if len(summary_lines) > 8:
+            ttk.Label(summary_frame, text="更多批次信息在下方详情中查看。").grid(row=2, column=0, columnspan=4, sticky="w")
 
         filter_row = ttk.Frame(outer)
         filter_row.grid(row=1, column=0, sticky="ew", pady=(10, 8))
@@ -73,7 +80,7 @@ class RepairCompletionDialog(tk.Toplevel):
         list_frame = ttk.Frame(body, padding=0)
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
-        body.add(list_frame, weight=3)
+        body.add(list_frame, weight=4)
 
         self.tree = ttk.Treeview(
             list_frame,
@@ -87,9 +94,9 @@ class RepairCompletionDialog(tk.Toplevel):
         self.tree.column("status", width=190, anchor="center")
         self.tree.heading("reason", text="主要原因")
         self.tree.column("reason", width=330, anchor="w")
-        self.tree.heading("ops", text="selected ops / skip reason")
+        self.tree.heading("ops", text="操作 / 跳过原因")
         self.tree.column("ops", width=320, anchor="w")
-        self.tree.heading("forced", text="forced")
+        self.tree.heading("forced", text="强制")
         self.tree.column("forced", width=80, anchor="center")
 
         scroll_y = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
@@ -178,8 +185,8 @@ class RepairCompletionDialog(tk.Toplevel):
             f"文件名：{entry.file_name}",
             f"状态：{entry.status}",
             f"主要原因：{entry.primary_reason}",
-            f"selected ops / skip reason：{entry.ops_or_skip}",
-            f"forced：{'是' if entry.forced else '否'}",
+            f"操作 / 跳过原因：{entry.ops_or_skip}",
+            f"强制尝试：{'是' if entry.forced else '否'}",
             "",
         ]
         lines.extend(entry.detail_lines or ["没有额外详情。"])

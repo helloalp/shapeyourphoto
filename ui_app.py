@@ -19,6 +19,8 @@ from progress_dialog import TaskProgressController
 from settings_dialog import show_app_settings_dialog
 from stats_dialog import show_stats_dialog
 from stats_store import load_stats
+from ui.themes import get_theme
+from ui.hidpi import configure_fonts
 from ui_analysis_actions import UiAnalysisActionsMixin
 from ui_constants import FILTER_OPTIONS
 from ui_file_list import UiFileListMixin
@@ -75,6 +77,7 @@ class PhotoAnalyzerApp(
         self._last_repair_phase_update = 0.0
         self._settings_warnings: list[str] = []
         self.settings: AppSettings = load_app_settings(report_warning=self._settings_warnings.append, create_if_missing=True)
+        self.console.set_time_mode(self.settings.console_time_mode)
         self.drop_target: WindowsFileDropTarget | TkinterDnDFileDropTarget | None = None
         self.sort_column = "name"
         self.sort_reverse = False
@@ -85,6 +88,12 @@ class PhotoAnalyzerApp(
         self._analysis_run_id = 0
         self._analysis_cancel_event: threading.Event | None = None
         self._analysis_cancel_targets: list[Path] = []
+        self._repair_run_id = 0
+        self._repair_cancel_event: threading.Event | None = None
+        self._repair_cancel_targets: list[Path] = []
+        self._repair_pre_state: dict[Path, tuple[bool, AnalysisResult | None, bool, str | None]] = {}
+        self._repair_rollback_backups: dict[Path, Path] = {}
+        self._repair_rollback_backup_root: Path | None = None
         self._task_started_at = 0.0
         self._last_scan_summary: str = ""
         self._last_scan_results: list[ScanResult] = []
@@ -117,22 +126,27 @@ class PhotoAnalyzerApp(
         except tk.TclError:
             pass
 
-        self.root.configure(bg="#eef3ef")
-        style.configure("TFrame", background="#eef3ef")
-        style.configure("Panel.TFrame", background="#fbfcfa")
-        style.configure("TopCard.TFrame", background="#f5faf6")
-        style.configure("TLabel", background="#eef3ef", foreground="#1f3527", font=("Microsoft YaHei UI", 11))
-        style.configure("Header.TLabel", background="#eef3ef", foreground="#17361f", font=("Microsoft YaHei UI", 20, "bold"))
-        style.configure("Sub.TLabel", background="#eef3ef", foreground="#45604d", font=("Microsoft YaHei UI", 11))
-        style.configure("PanelTitle.TLabel", background="#fbfcfa", foreground="#1f3527", font=("Microsoft YaHei UI", 11, "bold"))
-        style.configure("HudTitle.TLabel", background="#f5faf6", foreground="#163624", font=("Microsoft YaHei UI", 11, "bold"))
-        style.configure("HudValue.TLabel", background="#f5faf6", foreground="#2d5640", font=("Microsoft YaHei UI", 9))
-        style.configure("Treeview", font=("Microsoft YaHei UI", 10), rowheight=90)
-        style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 10, "bold"))
-        style.configure("Accent.TButton", font=("Microsoft YaHei UI", 11, "bold"), padding=(10, 7))
-        style.configure("Soft.TButton", font=("Microsoft YaHei UI", 11), padding=(10, 7))
-        style.configure("TLabelframe", background="#fbfcfa", bordercolor="#d7e3da")
-        style.configure("TLabelframe.Label", background="#fbfcfa", foreground="#244333", font=("Microsoft YaHei UI", 11, "bold"))
+        theme = get_theme(getattr(self.settings, "theme_id", "classic_green"))
+        self._theme = theme
+        configure_fonts(self.root, delta=theme.font_delta)
+        base_size = 11 + theme.font_delta
+        self.root.configure(bg=theme.background)
+        style.configure("TFrame", background=theme.background)
+        style.configure("Panel.TFrame", background=theme.panel)
+        style.configure("TopCard.TFrame", background=theme.panel_alt)
+        style.configure("TLabel", background=theme.background, foreground=theme.text, font=("Microsoft YaHei UI", base_size))
+        style.configure("Header.TLabel", background=theme.background, foreground=theme.primary, font=("Microsoft YaHei UI", 20 + theme.font_delta, "bold"))
+        style.configure("Sub.TLabel", background=theme.background, foreground=theme.muted_text, font=("Microsoft YaHei UI", base_size))
+        style.configure("PanelTitle.TLabel", background=theme.panel, foreground=theme.text, font=("Microsoft YaHei UI", base_size, "bold"))
+        style.configure("HudTitle.TLabel", background=theme.panel_alt, foreground=theme.primary, font=("Microsoft YaHei UI", base_size, "bold"))
+        style.configure("HudValue.TLabel", background=theme.panel_alt, foreground=theme.muted_text, font=("Microsoft YaHei UI", max(9, base_size - 2)))
+        style.configure("Treeview", font=("Microsoft YaHei UI", max(10, base_size - 1)), rowheight=90 + theme.spacing * 4)
+        style.configure("Treeview.Heading", font=("Microsoft YaHei UI", max(10, base_size - 1), "bold"))
+        style.map("Treeview", background=[("selected", theme.selection)], foreground=[("selected", theme.text)])
+        style.configure("Accent.TButton", font=("Microsoft YaHei UI", base_size, "bold"), padding=(10 + theme.spacing, 7 + theme.spacing))
+        style.configure("Soft.TButton", font=("Microsoft YaHei UI", base_size), padding=(10 + theme.spacing, 7 + theme.spacing))
+        style.configure("TLabelframe", background=theme.panel, bordercolor=theme.selection)
+        style.configure("TLabelframe.Label", background=theme.panel, foreground=theme.text, font=("Microsoft YaHei UI", base_size, "bold"))
 
     def _build_ui(self) -> None:
         menu_bar = tk.Menu(self.root)
@@ -165,23 +179,16 @@ class PhotoAnalyzerApp(
         controls.columnconfigure(0, weight=1)
 
         path_entry = ttk.Entry(controls, textvariable=self.folder_var, font=("Consolas", 11))
-        path_entry.grid(row=0, column=0, rowspan=2, sticky="ew", padx=(0, 12), pady=(0, 4))
+        path_entry.grid(row=0, column=0, columnspan=6, sticky="ew", padx=(0, 12), pady=(0, 8))
 
         choose_folder_button = ttk.Button(controls, text="选择目录", command=self.choose_folder)
         choose_image_button = ttk.Button(controls, text="选择图片", command=self.choose_image)
-        scan_button = ttk.Button(
-            controls,
-            text="读取目录",
-            style="Soft.TButton",
-            command=self.scan_folder,
-        )
         analyze_all_button = ttk.Button(controls, text="分析全部", style="Accent.TButton", command=self.analyze_all)
         analyze_selected_button = ttk.Button(controls, text="分析选中", command=self.analyze_selected)
         repair_current_button = ttk.Button(controls, text="修复当前", command=self.repair_current)
         repair_checked_button = ttk.Button(controls, text="批量修复勾选", command=self.repair_checked)
-        stats_button = ttk.Button(controls, text="累计统计", command=self.show_stats)
+        stats_button = ttk.Button(controls, text="统计", command=self.show_stats)
         history_button = ttk.Button(controls, text="更新历史", command=lambda: show_history_dialog(self.root))
-        export_button = ttk.Button(controls, text="导出清理清单", command=self.export_selected)
         cleanup_button = ttk.Button(controls, text="清理勾选项", command=self.cleanup_selected)
 
         button_specs: list[ttk.Button] = []
@@ -189,22 +196,20 @@ class PhotoAnalyzerApp(
         button_specs.extend(
             [
                 choose_image_button,
-                scan_button,
                 analyze_all_button,
                 analyze_selected_button,
                 repair_current_button,
                 repair_checked_button,
                 stats_button,
                 history_button,
-                export_button,
                 cleanup_button,
             ]
         )
-        button_columns = 6
+        button_columns = 5
         for offset in range(button_columns):
             controls.columnconfigure(offset + 1, weight=1)
         for index, button in enumerate(button_specs):
-            row = index // button_columns
+            row = 1 + index // button_columns
             column = 1 + (index % button_columns)
             button.grid(row=row, column=column, sticky="ew", padx=4, pady=4)
 
@@ -224,22 +229,18 @@ class PhotoAnalyzerApp(
             variable=self.debug_open_after_repair_var,
         )
         debug_open_check.pack(side="left", padx=(12, 0))
-        ttk.Label(toolbar, text="提示：支持目录/图片拖入，分栏边界可拖动调整。", style="Sub.TLabel").pack(side="right")
-        self.control_widgets.extend([filter_box, auto_check, debug_open_check])
-
-        progress_panel = ttk.LabelFrame(top_shell, text="任务进度", padding=14)
-        progress_panel.pack(fill="x", pady=(0, 2))
-        self.progress_bar = ttk.Progressbar(progress_panel, mode="determinate", maximum=1, variable=self.progress_value)
-        self.progress_bar.pack(fill="x", pady=(2, 6))
-        ttk.Label(progress_panel, textvariable=self.progress_text_var, style="PanelTitle.TLabel").pack(anchor="w")
-        ttk.Label(progress_panel, textvariable=self.progress_detail_var).pack(anchor="w", pady=(4, 0))
         self.scan_summary_button = ttk.Button(
-            progress_panel,
-            text="查看最近扫描摘要",
+            toolbar,
+            text="最近扫描摘要",
             command=self.show_last_scan_summary,
             state="disabled",
         )
-        self.scan_summary_button.pack(anchor="e", pady=(8, 0))
+        self.scan_summary_button.pack(side="right", padx=(8, 0))
+        ttk.Label(toolbar, text="支持目录/图片拖入，分栏边界可拖动调整。", style="Sub.TLabel").pack(side="right")
+        self.control_widgets.extend([filter_box, auto_check, debug_open_check])
+
+        progress_panel = ttk.LabelFrame(top_shell, text="任务进度", padding=14)
+        self.progress_bar = ttk.Progressbar(progress_panel, mode="determinate", maximum=1, variable=self.progress_value)
 
         main = ttk.PanedWindow(body_shell, orient="horizontal")
         main.pack(fill="both", expand=True)
@@ -250,7 +251,11 @@ class PhotoAnalyzerApp(
         main.add(left, weight=2)
         main.add(right, weight=3)
 
-        ttk.Label(left, text="缩略图结果列表", style="PanelTitle.TLabel").pack(anchor="w", pady=(0, 8))
+        list_header = ttk.Frame(left, style="Panel.TFrame")
+        list_header.pack(fill="x", pady=(0, 8))
+        ttk.Label(list_header, text="缩略图结果列表", style="PanelTitle.TLabel").pack(side="left")
+        self.list_stats_var = tk.StringVar(value="未导入图片")
+        ttk.Label(list_header, textvariable=self.list_stats_var, style="Sub.TLabel").pack(side="right")
         tree_frame = ttk.Frame(left, style="Panel.TFrame")
         tree_frame.pack(fill="both", expand=True)
         tree_frame.columnconfigure(0, weight=1)
@@ -362,8 +367,8 @@ class PhotoAnalyzerApp(
         chart_frame = ttk.Frame(self.right_stack_pane, style="Panel.TFrame", padding=10)
         summary_frame = ttk.Frame(self.bottom_right_pane, style="Panel.TFrame", padding=10)
         info_frame = ttk.Frame(self.bottom_right_pane, style="Panel.TFrame", padding=10)
-        self.right_stack_pane.add(chart_frame, weight=4)
-        self.right_stack_pane.add(self.bottom_right_pane, weight=2)
+        self.right_stack_pane.add(chart_frame, weight=5)
+        self.right_stack_pane.add(self.bottom_right_pane, weight=3)
         self.bottom_right_pane.add(summary_frame, weight=3)
         self.bottom_right_pane.add(info_frame, weight=2)
 
@@ -407,12 +412,17 @@ class PhotoAnalyzerApp(
 
         meta_tab = ttk.Frame(info_book)
         meta_tab.columnconfigure(0, weight=1)
-        meta_tab.rowconfigure(0, weight=1)
+        meta_tab.rowconfigure(1, weight=1)
+        meta_toolbar = ttk.Frame(meta_tab)
+        meta_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        meta_toolbar.columnconfigure(0, weight=1)
+        self.meta_edit_button = ttk.Button(meta_toolbar, text="编辑", command=self.edit_current_metadata, state="disabled")
+        self.meta_edit_button.grid(row=0, column=1, sticky="e")
         self.meta_text = tk.Text(meta_tab, wrap="word", font=("Microsoft YaHei UI", 10), bg="#f8fbf8", relief="flat", padx=10, pady=10)
         meta_scroll = ttk.Scrollbar(meta_tab, orient="vertical", command=self.meta_text.yview)
         self.meta_text.configure(yscrollcommand=meta_scroll.set)
-        self.meta_text.grid(row=0, column=0, sticky="nsew")
-        meta_scroll.grid(row=0, column=1, sticky="ns")
+        self.meta_text.grid(row=1, column=0, sticky="nsew")
+        meta_scroll.grid(row=1, column=1, sticky="ns")
         self.meta_text.insert("1.0", "这里会显示 EXIF、DPI、ICC、XMP 等属性信息。")
         self.meta_text.config(state="disabled")
 
@@ -437,7 +447,7 @@ class PhotoAnalyzerApp(
         try:
             self.main_pane.sashpos(0, 620)
             self.bottom_right_pane.sashpos(0, 610)
-            self.right_stack_pane.sashpos(0, 560)
+            self.right_stack_pane.sashpos(0, 660)
         except Exception:
             pass
 
@@ -473,6 +483,8 @@ class PhotoAnalyzerApp(
             self._log_console(f"settings save failed: {exc}")
             return
         self.settings = settings
+        self.console.set_time_mode(self.settings.console_time_mode)
+        self._configure_style()
         self.status_var.set("应用设置已保存，新的扫描和修复详情窗口会立即使用最新配置。")
         self._log_console(
             "settings updated: "
@@ -480,5 +492,6 @@ class PhotoAnalyzerApp(
             f"default_scan={self.settings.default_scan_mode} | "
             f"repair_summary_filter={self.settings.repair_summary_default_filter} | "
             f"analysis_concurrency={self.settings.analysis_concurrency_mode}:{self.settings.analysis_custom_workers or 'auto'} | "
-            f"gpu={self.settings.gpu_acceleration_mode}"
+            f"gpu={self.settings.gpu_acceleration_mode} | "
+            f"console_time={self.settings.console_time_mode} | theme={self.settings.theme_id}"
         )

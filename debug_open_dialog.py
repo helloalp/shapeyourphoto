@@ -5,6 +5,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from ui.window_titles import app_window_title
 from window_layout import center_window
 
 
@@ -18,7 +19,7 @@ class DebugOpenEntry:
 class DebugOpenDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, entries: list[DebugOpenEntry]) -> None:
         super().__init__(parent)
-        self.title("调试打开前后图片")
+        self.title(app_window_title("调试打开前后图片"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)

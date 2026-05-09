@@ -181,3 +181,22 @@ class SessionStats:
     repaired_bytes: int = 0
     issue_images: int = 0
     issue_points: list[tuple[str, float]] = field(default_factory=list)
+    repair_attempted_images: int = 0
+    skipped_images: int = 0
+    noop_images: int = 0
+    rollback_images: int = 0
+    cleanup_candidate_images: int = 0
+    similar_group_count: int = 0
+    analysis_runs: int = 0
+    repair_runs: int = 0
+    analysis_wall_ms_total: float = 0.0
+    repair_wall_ms_total: float = 0.0
+    last_run_at: str = ""
+    daily_counts: dict[str, dict[str, int]] = field(default_factory=dict)
+    version_counts: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    def average_analysis_wall_ms(self) -> float:
+        return self.analysis_wall_ms_total / max(1, self.analysis_runs)
+
+    def average_repair_wall_ms(self) -> float:
+        return self.repair_wall_ms_total / max(1, self.repair_runs)

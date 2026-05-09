@@ -7,6 +7,8 @@ from tkinter import ttk
 
 from PIL import Image, ImageOps, ImageTk
 
+from ui.display_names import display_name
+from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
@@ -29,7 +31,7 @@ class CleanupReviewResult:
 class CleanupReviewDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, entries: list[CleanupReviewEntry]) -> None:
         super().__init__(parent)
-        self.title("不适合保留候选")
+        self.title(app_window_title("不适合保留候选"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
@@ -90,7 +92,7 @@ class CleanupReviewDialog(tk.Toplevel):
                 "end",
                 text=entry.display_name,
                 image=thumb,
-                values=(checked, entry.severity, f"{entry.confidence:.2f}", entry.reason_text),
+                values=(checked, entry.severity, f"{entry.confidence:.2f}", f"{display_name('issue', entry.reason_code)}：{entry.reason_text}"),
             )
             self._item_lookup[item_id] = index
 

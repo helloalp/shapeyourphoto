@@ -57,6 +57,8 @@ SmartScreen 可能提示"未识别的应用"。点击**详细信息 → 仍要�
 - 识别过曝、欠曝、失焦/模糊、低对比度、偏色、噪点偏高、层次不足、色彩寡淡、饱和度偏高等问题。
 - 人像感知分析区分 raw face candidates、validated real faces、背身/侧背身人物、画作/海报脸和纹理误检。
 - 场景字段包括 `scene_type`、`portrait_type`、`exposure_type`、`highlight_recovery_type`、`color_type`。
+- UI 展示名通过 display mapping 中文化；内部字段和 code 仍保持英文，便于维护和回归。
+- 统计数据写入被忽略的 `data/` 目录，Windows 下使用用户级 DPAPI 加密；旧 `usage_stats.json` 会迁移并保留备份标记。
 - cleanup candidate 默认不进入修复；只有在修复弹窗显式开启强制尝试后，才允许进入修复链，并仍会经过评分、安全检查和回退。
 - 相似图片检测是分析批次的附加结果，只生成 `SimilarImageGroup`，不写回单张 `AnalysisResult`。
 - 目录扫描支持默认扫描模式、四选项范围选择、忽略目录前缀和"最近扫描摘要"；默认跳过任意层级的 `_repair*` 输出目录。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,7 +25,8 @@ from repair_completion_dialog import RepairCompletionEntry, show_repair_completi
 from repair_dialog import show_repair_dialog
 from repair_engine import repair_image_file
 from repair_planner import get_method_labels, get_repair_methods, suggest_methods_for_results
-from stats_store import record_repair, save_stats
+from stats_store import record_repair, record_repair_batch, save_stats
+from ui.display_names import display_name
 
 
 class UiRepairActionsMixin:
@@ -127,6 +129,31 @@ class UiRepairActionsMixin:
         analysis_workers = analysis_worker_plan.actual_workers if analysis_worker_plan is not None else 0
         repair_workers = self._repair_workers(len(targets))
         base_folder = self._resolve_base_folder()
+        self._repair_run_id += 1
+        run_id = self._repair_run_id
+        cancel_event = threading.Event()
+        self._repair_cancel_event = cancel_event
+        self._repair_cancel_targets = list(targets)
+        self._repair_pre_state = {
+            path: (
+                path in self.results,
+                self.results.get(path),
+                path in self.errors,
+                self.errors.get(path),
+            )
+            for path in targets
+        }
+        backup_errors = self._prepare_repair_rollback_backups(targets, selection, base_folder, run_id)
+        if backup_errors:
+            self._repair_cancel_event = None
+            self._repair_cancel_targets = []
+            self._repair_pre_state = {}
+            self._cleanup_repair_backup_root()
+            message = "覆盖原文件修复需要先创建回滚备份，但以下文件备份失败：\n\n" + "\n".join(backup_errors[:8])
+            messagebox.showerror("无法开始修复", message)
+            for error in backup_errors:
+                self._log_console(f"repair backup failed: {error}")
+            return
         self._log_console(
             f"repair started: count={len(targets)} pre_analyze={len(missing)} mode={selection.mode} overwrite={selection.overwrite_original} "
             f"analysis_workers={self._analysis_concurrency_label(analysis_worker_plan) if analysis_worker_plan else 0} repair_workers={repair_workers}"
@@ -138,6 +165,8 @@ class UiRepairActionsMixin:
             show_dialog=True,
             dialog_title="修复图片中",
             dialog_header="正在分析并修复图片",
+            cancel_callback=lambda rid=run_id: self.cancel_repair(rid),
+            cancel_text="取消修复",
         )
 
         def worker() -> None:
@@ -146,46 +175,67 @@ class UiRepairActionsMixin:
             skipped: list[RepairRecord] = []
             failed: list[tuple[Path, str]] = []
             failed_paths: set[Path] = set()
+            repair_futures = {}
+            batch_started_at = time.perf_counter()
 
             if missing:
-                with ThreadPoolExecutor(max_workers=analysis_workers) as pool:
-                    futures = {pool.submit(analyze_image, path): path for path in missing}
+                pool = ThreadPoolExecutor(max_workers=analysis_workers)
+                futures = {}
+                try:
+                    futures = {pool.submit(analyze_image, path): path for path in missing if not cancel_event.is_set()}
                     for future in as_completed(futures):
+                        if cancel_event.is_set():
+                            break
                         path = futures[future]
                         try:
                             result = future.result()
                         except Exception as exc:
-                            with self.worker_lock:
-                                self.errors[path] = str(exc)
-                            failed.append((path, str(exc)))
-                            failed_paths.add(path)
-                            self._log_console(f"repair pre-analysis failed: {path.name} | {exc}")
+                            if not cancel_event.is_set():
+                                with self.worker_lock:
+                                    self.errors[path] = str(exc)
+                                failed.append((path, str(exc)))
+                                failed_paths.add(path)
+                                self._log_console(f"repair pre-analysis failed: {path.name} | {exc}")
                         else:
-                            with self.worker_lock:
-                                self.results[path] = result
-                                self.errors.pop(path, None)
+                            if not cancel_event.is_set():
+                                with self.worker_lock:
+                                    self.results[path] = result
+                                    self.errors.pop(path, None)
                         step += 1
-                        self._dispatch_ui(lambda s=step, t=total_steps, name=path.name: self._update_progress(s, t, name, "修复前分析"))
+                        self._dispatch_repair_progress(run_id, step, total_steps, path.name, "修复前分析")
+                finally:
+                    pool.shutdown(wait=True, cancel_futures=True)
+
+            if cancel_event.is_set():
+                batch_timings = self._repair_batch_timings(batch_started_at, repaired + skipped)
+                self._dispatch_ui(
+                    lambda rid=run_id, records=list(repaired + skipped), failed_items=list(failed), timings=batch_timings:
+                    self._repair_canceled(rid, records, failed_items, timings, selection)
+                )
+                return
 
             repair_targets = [path for path in targets if path not in failed_paths]
-            with ThreadPoolExecutor(max_workers=repair_workers) as pool:
-                futures = {}
+            pool = ThreadPoolExecutor(max_workers=repair_workers)
+            try:
                 for path in repair_targets:
+                    if cancel_event.is_set():
+                        break
                     if path in self.errors:
                         if path not in failed_paths:
                             failed.append((path, self.errors[path]))
                             failed_paths.add(path)
                         step += 1
-                        self._dispatch_ui(lambda s=step, t=total_steps, name=path.name: self._update_progress(s, t, name, "跳过失败项"))
+                        self._dispatch_repair_progress(run_id, step, total_steps, path.name, "跳过失败项")
                         continue
                     def repair_progress(phase: str, p: Path = path) -> None:
+                        if cancel_event.is_set():
+                            return
                         self._dispatch_ui(
-                            lambda s=step, t=total_steps, name=p.name, phase=phase: self._update_repair_phase(
-                                s, t, name, phase
-                            )
+                            lambda s=step, t=total_steps, name=p.name, phase=phase, rid=run_id:
+                            None if self._repair_should_ignore(rid) else self._update_repair_phase(s, t, name, phase)
                         )
 
-                    futures[
+                    repair_futures[
                         pool.submit(
                             repair_image_file,
                             path,
@@ -196,8 +246,10 @@ class UiRepairActionsMixin:
                         )
                     ] = path
 
-                for future in as_completed(futures):
-                    path = futures[future]
+                for future in as_completed(repair_futures):
+                    if cancel_event.is_set():
+                        break
+                    path = repair_futures[future]
                     try:
                         record = future.result()
                     except Exception as exc:
@@ -233,15 +285,21 @@ class UiRepairActionsMixin:
                                     self._log_console(f"repair note: {path.name} | {note}")
                                 for note in record.perf_notes:
                                     self._log_console(f"repair perf: {path.name} | {note}")
-                                self.stats = record_repair(
-                                    self.stats,
-                                    image_bytes=record.output_path.stat().st_size if record.output_path.exists() else 0,
-                                )
-                                save_stats(self.stats)
                             self._log_console(self._format_repair_perf_line(record))
 
                     step += 1
-                    self._dispatch_ui(lambda s=step, t=total_steps, name=path.name: self._update_progress(s, t, name, "修复中"))
+                    self._dispatch_repair_progress(run_id, step, total_steps, path.name, "修复中")
+            finally:
+                pool.shutdown(wait=True, cancel_futures=True)
+
+            if cancel_event.is_set():
+                cleanup_records = self._collect_completed_repair_records(repair_futures, repaired + skipped)
+                batch_timings = self._repair_batch_timings(batch_started_at, cleanup_records)
+                self._dispatch_ui(
+                    lambda rid=run_id, records=cleanup_records, failed_items=list(failed), timings=batch_timings:
+                    self._repair_canceled(rid, records, failed_items, timings, selection)
+                )
+                return
 
             for path in targets:
                 if path in self.errors:
@@ -250,11 +308,219 @@ class UiRepairActionsMixin:
                         failed_paths.add(path)
                     if path not in repair_targets:
                         step += 1
-                        self._dispatch_ui(lambda s=step, t=total_steps, name=path.name: self._update_progress(s, t, name, "跳过失败项"))
+                        self._dispatch_repair_progress(run_id, step, total_steps, path.name, "跳过失败项")
 
-            self._dispatch_ui(lambda: self._repair_finished(repaired, skipped, failed, selection))
+            batch_timings = self._repair_batch_timings(batch_started_at, repaired + skipped)
+            self._dispatch_ui(
+                lambda rid=run_id, r=repaired, s=skipped, f=failed, timings=batch_timings:
+                self._repair_finished(rid, r, s, f, selection, timings)
+            )
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _repair_should_ignore(self, run_id: int) -> bool:
+        return run_id != self._repair_run_id or (
+            self._repair_cancel_event is not None and self._repair_cancel_event.is_set()
+        )
+
+    def _dispatch_repair_progress(self, run_id: int, done: int, total: int, filename: str, phase: str) -> None:
+        self._dispatch_ui(
+            lambda s=done, t=total, name=filename, p=phase, rid=run_id:
+            None if self._repair_should_ignore(rid) else self._update_progress(s, t, name, p)
+        )
+
+    def _repair_batch_timings(self, started_at: float, records: list[RepairRecord]) -> dict[str, float]:
+        wall_ms = (time.perf_counter() - started_at) * 1000.0
+        worker_cumulative_ms = sum(record.perf_timings.get("repair_total", 0.0) for record in records)
+        total_count = len(self._repair_cancel_targets) or max(1, len(records))
+        return {
+            "total_wall_time": wall_ms,
+            "wall_time": wall_ms,
+            "worker_cumulative_time": worker_cumulative_ms,
+            "average_wall_time_per_image": wall_ms / max(1, total_count),
+            "average_worker_time_per_image": worker_cumulative_ms / max(1, len(records)),
+        }
+
+    def _collect_completed_repair_records(
+        self,
+        futures: dict,
+        known_records: list[RepairRecord],
+    ) -> list[RepairRecord]:
+        records = list(known_records)
+        seen: set[tuple[Path, Path, bool]] = {
+            (record.source_path, record.output_path, record.saved_output) for record in records
+        }
+        for future in futures:
+            if future.cancelled() or not future.done():
+                continue
+            try:
+                record = future.result()
+            except Exception:
+                continue
+            if record is None:
+                continue
+            key = (record.source_path, record.output_path, record.saved_output)
+            if key in seen:
+                continue
+            seen.add(key)
+            records.append(record)
+        return records
+
+    def _prepare_repair_rollback_backups(
+        self,
+        targets: list[Path],
+        selection: RepairSelection,
+        base_folder: str,
+        run_id: int,
+    ) -> list[str]:
+        self._repair_rollback_backups = {}
+        self._repair_rollback_backup_root = None
+        if not selection.overwrite_original:
+            return []
+        backup_root = Path(base_folder) / "_repair_cancel_backups" / f"run_{run_id}_{int(time.time())}"
+        errors: list[str] = []
+        try:
+            backup_root.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            return [f"{backup_root}: {exc}"]
+        for path in targets:
+            try:
+                destination = backup_root / path.name
+                index = 1
+                while destination.exists():
+                    destination = backup_root / f"{path.stem}_{index}{path.suffix}"
+                    index += 1
+                shutil.copy2(path, destination)
+                self._repair_rollback_backups[path] = destination
+            except Exception as exc:
+                errors.append(f"{path}: {exc}")
+        if errors:
+            shutil.rmtree(backup_root, ignore_errors=True)
+            self._repair_rollback_backups = {}
+            self._repair_rollback_backup_root = None
+        else:
+            self._repair_rollback_backup_root = backup_root
+        return errors
+
+    def _cleanup_repair_backup_root(self) -> None:
+        backup_root = self._repair_rollback_backup_root
+        if backup_root is not None:
+            shutil.rmtree(backup_root, ignore_errors=True)
+        self._repair_rollback_backups = {}
+        self._repair_rollback_backup_root = None
+
+    def cancel_repair(self, run_id: int | None = None) -> None:
+        if run_id is not None and run_id != self._repair_run_id:
+            return
+        cancel_event = self._repair_cancel_event
+        if cancel_event is not None:
+            cancel_event.set()
+        elapsed_ms = max(0.0, (time.monotonic() - self._task_started_at) * 1000.0) if self._task_started_at else 0.0
+        self._log_console(
+            f"repair cancel requested: run={self._repair_run_id} | elapsed={self._format_ms(elapsed_ms)} | "
+            f"targets={len(self._repair_cancel_targets)}"
+        )
+        detail = "正在取消本轮修复；已完成但尚未确认的输出会清理，覆盖原文件会从回滚备份恢复。"
+        self.progress_controller.update(
+            done=self.progress_controller.state.done,
+            total=self.progress_controller.state.total,
+            title="正在取消修复",
+            detail=detail,
+            status=detail,
+            dialog_title="修复图片中",
+            dialog_header="正在取消修复",
+        )
+        self._flush_console()
+
+    def _restore_repair_pre_state(self) -> None:
+        for path, (had_result, result, had_error, error) in self._repair_pre_state.items():
+            if had_result and result is not None:
+                self.results[path] = result
+            else:
+                self.results.pop(path, None)
+            if had_error and error is not None:
+                self.errors[path] = error
+            else:
+                self.errors.pop(path, None)
+
+    def _quarantine_canceled_output(self, path: Path) -> Path:
+        quarantine_root = Path(self._resolve_base_folder()) / "_repair_canceled_outputs"
+        quarantine_root.mkdir(parents=True, exist_ok=True)
+        destination = quarantine_root / path.name
+        index = 1
+        while destination.exists():
+            destination = quarantine_root / f"{path.stem}_{index}{path.suffix}"
+            index += 1
+        shutil.move(str(path), str(destination))
+        return destination
+
+    def _cleanup_canceled_repair_outputs(self, records: list[RepairRecord]) -> tuple[int, list[str]]:
+        cleaned = 0
+        messages: list[str] = []
+        output_paths: set[Path] = set()
+        for record in records:
+            if record.saved_output and record.output_path != record.source_path:
+                output_paths.add(record.output_path)
+        for output_path in output_paths:
+            if not output_path.exists():
+                continue
+            try:
+                output_path.unlink()
+                cleaned += 1
+            except Exception as unlink_exc:
+                try:
+                    destination = self._quarantine_canceled_output(output_path)
+                    cleaned += 1
+                    messages.append(f"{output_path.name} 无法直接删除，已移入 {destination}")
+                except Exception as move_exc:
+                    messages.append(f"{output_path} 清理失败：删除 {unlink_exc}；隔离 {move_exc}")
+
+        for source_path, backup_path in self._repair_rollback_backups.items():
+            if not backup_path.exists():
+                messages.append(f"{source_path.name} 的回滚备份不存在，无法恢复覆盖原文件。")
+                continue
+            try:
+                shutil.copy2(backup_path, source_path)
+                cleaned += 1
+            except Exception as exc:
+                messages.append(f"{source_path} 覆盖回滚失败：{exc}")
+        self._cleanup_repair_backup_root()
+        return cleaned, messages
+
+    def _repair_canceled(
+        self,
+        run_id: int,
+        records: list[RepairRecord],
+        failed: list[tuple[Path, str]],
+        batch_timings: dict[str, float],
+        selection: RepairSelection,
+    ) -> None:
+        self._restore_repair_pre_state()
+        cleaned, cleanup_messages = self._cleanup_canceled_repair_outputs(records)
+        total = len(self._repair_cancel_targets)
+        self._log_console(
+            f"repair cancel confirmed: run={run_id} | total_wall_time={self._format_ms(batch_timings.get('total_wall_time', 0.0))} | "
+            f"completed_before_cancel={len(records)} | failed_before_cancel={len(failed)} | cleaned_outputs={cleaned}"
+        )
+        self._log_repair_perf_rollup(records, batch_timings, total=total, failed=len(failed), canceled=max(0, total - len(records) - len(failed)))
+        for message in cleanup_messages:
+            self._log_console(f"repair cancel cleanup warning: {message}")
+        detail = f"已取消本轮修复，已回到分析完成、修复前状态；已清理/回滚 {cleaned} 个输出。"
+        if cleanup_messages:
+            detail += f" 另有 {len(cleanup_messages)} 个清理警告，详见 Console。"
+        self.is_busy = False
+        self._set_controls_enabled(True)
+        self.progress_controller.finish(title="修复已取消", detail=detail, status=detail, close_dialog=True)
+        self._repair_cancel_event = None
+        self._repair_cancel_targets = []
+        self._repair_pre_state = {}
+        self.refresh_tree()
+        current = self._current_path()
+        if current is not None:
+            self.show_preview(current)
+        self._flush_console()
+        if cleanup_messages:
+            messagebox.showwarning("修复已取消", detail + "\n\n" + "\n".join(cleanup_messages[:8]))
 
     def _update_progress(self, done: int, total: int, filename: str, phase: str) -> None:
         friendly_phase = self._friendly_repair_phase(phase)
@@ -306,17 +572,21 @@ class UiRepairActionsMixin:
 
     def _repair_finished(
         self,
+        run_id: int,
         repaired: list[RepairRecord],
         skipped: list[RepairRecord],
         failed: list[tuple[Path, str]],
         selection: RepairSelection,
+        batch_timings: dict[str, float],
     ) -> None:
+        if run_id != self._repair_run_id or (self._repair_cancel_event is not None and self._repair_cancel_event.is_set()):
+            return
         total = len(repaired) + len(skipped) + len(failed)
         detail = f"修复完成：成功 {len(repaired)} 张，跳过 {len(skipped)} 张，失败 {len(failed)} 张。"
         self._log_console(
             f"repair finished: success={len(repaired)} skipped={len(skipped)} failed={len(failed)} overwrite={selection.overwrite_original}"
         )
-        self._log_repair_perf_rollup(repaired + skipped)
+        self._log_repair_perf_rollup(repaired + skipped, batch_timings, total=total, failed=len(failed), canceled=0)
         self.progress_controller.update(
             done=total,
             total=max(1, total),
@@ -329,8 +599,23 @@ class UiRepairActionsMixin:
         self._finish_task(f"修复完成 {total}/{total}", detail)
 
         for record in repaired:
+            self.stats = record_repair(
+                self.stats,
+                image_bytes=record.output_path.stat().st_size if record.output_path.exists() else 0,
+            )
             if record.source_path in self.selected_flags:
                 self.selected_flags[record.source_path].set(False)
+        self.stats = record_repair_batch(
+            self.stats,
+            repaired + skipped,
+            failed_count=len(failed),
+            wall_ms=batch_timings.get("total_wall_time", batch_timings.get("wall_time", 0.0)),
+        )
+        save_stats(self.stats)
+        self._cleanup_repair_backup_root()
+        self._repair_cancel_event = None
+        self._repair_cancel_targets = []
+        self._repair_pre_state = {}
 
         self.refresh_tree()
 
@@ -354,6 +639,10 @@ class UiRepairActionsMixin:
             f"已修复 {len(repaired)} 张",
             f"已跳过 {len(skipped)} 张",
             f"失败 {len(failed)} 张",
+            f"total_wall_time：{self._format_ms(batch_timings.get('total_wall_time', 0.0))}",
+            f"worker_cumulative_time：{self._format_ms(batch_timings.get('worker_cumulative_time', 0.0))}（并发 worker 累计耗时，不是用户等待时间）",
+            f"average_wall_time_per_image：{self._format_ms(batch_timings.get('average_wall_time_per_image', 0.0))}",
+            f"average_worker_time_per_image：{self._format_ms(batch_timings.get('average_worker_time_per_image', 0.0))}",
             f"候选回退 / no-op {rollback_noop_count} 张",
             f"强制尝试后保存 {outcome_counts['forced_saved']} 张",
             f"强制尝试但未保存 {outcome_counts['forced_rollback'] + outcome_counts['forced_skip_unsuitable']} 张",
@@ -414,11 +703,11 @@ class UiRepairActionsMixin:
     def _ops_text(self, record: RepairRecord) -> str:
         parts: list[str] = []
         if record.method_ids:
-            parts.append("ops=" + ",".join(record.method_ids))
+            parts.append("操作=" + "、".join(display_name("repair_method", method_id) for method_id in record.method_ids))
         if record.op_strengths:
-            strength_text = ", ".join(f"{name}:{value:.2f}" for name, value in record.op_strengths.items())
-            parts.append(f"strengths={strength_text}")
-        return " | ".join(parts) if parts else "ops=none"
+            strength_text = "、".join(f"{display_name('repair_method', name)}:{value:.2f}" for name, value in record.op_strengths.items())
+            parts.append(f"力度={strength_text}")
+        return " | ".join(parts) if parts else "没有执行修复操作"
 
     def _repair_entry_filter_tags(self, record: RepairRecord, *, saved_output: bool) -> set[str]:
         tags = {REPAIR_SUMMARY_FILTER_REPAIRED if saved_output else REPAIR_SUMMARY_FILTER_SKIPPED}
@@ -444,18 +733,18 @@ class UiRepairActionsMixin:
         if include_output:
             lines.append(f"输出文件：{record.output_path}")
         if record.skipped_reason:
-            lines.append(f"skip reason：{record.skipped_reason}")
+            lines.append(f"跳过原因：{record.skipped_reason}")
         if record.applied_strength is not None:
-            lines.append(f"applied strength：{record.applied_strength:.2f}")
+            lines.append(f"实际力度：{record.applied_strength:.2f}")
         denoise_strength = record.op_strengths.get("reduce_noise")
         if denoise_strength is not None:
-            lines.append(f"denoise：{denoise_strength:.2f}")
+            lines.append(f"降噪力度：{denoise_strength:.2f}")
         for note in record.policy_notes:
-            lines.append(f"note：{note}")
+            lines.append(f"策略说明：{note}")
         for warning in record.warnings:
-            lines.append(f"warning：{warning}")
+            lines.append(f"警告：{warning}")
         for note in record.perf_notes:
-            lines.append(f"perf：{note}")
+            lines.append(f"性能：{note}")
         return lines
 
     def _build_repair_completion_entries(

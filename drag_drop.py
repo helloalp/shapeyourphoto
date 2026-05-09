@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from pathlib import Path
 
 from paths import IS_WIN
 
@@ -14,7 +15,6 @@ from paths import IS_WIN
 if IS_WIN:
     import ctypes
     from ctypes import wintypes
-    from pathlib import Path
 
     WM_DROPFILES = 0x0233
     WM_COPYDATA = 0x004A
@@ -127,39 +127,27 @@ if IS_WIN:
         def uninstall(self) -> None:
             if not self._installed:
                 return
+            user32 = ctypes.windll.user32
+            shell32 = ctypes.windll.shell32
+            shell32.DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
+            shell32.DragAcceptFiles.restype = None
+            for hwnd, (old_proc, _new_proc) in list(self._installed.items()):
+                shell32.DragAcceptFiles(hwnd, False)
+                if old_proc:
+                    _restore_window_proc(user32, hwnd, old_proc)
+            self._installed.clear()
+else:
 
-            @WNDPROC
-            def _wnd_proc(hwnd_value, msg, wparam, lparam):
-                if msg == WM_DROPFILES:
-                    dropped = _iter_drop_files(wparam)
-                    self.window.after(0, lambda files=dropped: self.callback(files))
-                    return 0
-                old_proc, _ = self._installed.get(hwnd_value, (0, None))
-                if not old_proc:
-                    return user32.DefWindowProcW(hwnd_value, msg, wparam, lparam)
-                return user32.CallWindowProcW(old_proc, hwnd_value, msg, wparam, lparam)
+    class WindowsFileDropTarget:
+        def __init__(self, window: tk.Misc, callback) -> None:
+            self.window = window
+            self.callback = callback
 
-            old_proc = _set_window_proc(user32, hwnd, _wnd_proc)
-            self._installed[hwnd] = (old_proc, _wnd_proc)
-            shell32.DragAcceptFiles(hwnd, True)
-            _allow_drop_messages(user32, hwnd)
-            for child in widget.winfo_children():
-                _install_widget(child)
+        def install(self) -> None:
+            return None
 
-        _install_widget(self.window)
-
-    def uninstall(self) -> None:
-        if not self._installed:
-            return
-        user32 = ctypes.windll.user32
-        shell32 = ctypes.windll.shell32
-        shell32.DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
-        shell32.DragAcceptFiles.restype = None
-        for hwnd, (old_proc, _new_proc) in list(self._installed.items()):
-            shell32.DragAcceptFiles(hwnd, False)
-            if old_proc:
-                _restore_window_proc(user32, hwnd, old_proc)
-        self._installed.clear()
+        def uninstall(self) -> None:
+            return None
 
 
 class TkinterDnDFileDropTarget:

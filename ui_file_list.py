@@ -8,9 +8,11 @@ from PIL import Image, ImageOps
 
 from file_actions import export_cleanup_list
 from metadata_utils import summarize_image_metadata
-from models import AnalysisResult, CleanupCandidate
+from models import AnalysisResult, CleanupCandidate, SimilarImageGroup
 from repair_planner import get_method_labels, suggest_methods_for_result
 from result_sorting import sort_paths
+from ui.display_names import display_name, issue_display
+from ui.metadata_editor import show_metadata_edit_dialog, supports_metadata_edit
 
 
 class UiFileListMixin:
@@ -152,7 +154,7 @@ class UiFileListMixin:
         if error:
             tags = "分析失败"
         elif result and result.issues:
-            tags = "、".join(issue.label for issue in result.issues)
+            tags = "、".join(issue_display(issue) for issue in result.issues)
         elif result:
             tags = "正常"
         else:
@@ -161,6 +163,19 @@ class UiFileListMixin:
         if similar_marker:
             tags = f"{tags} | {similar_marker}" if tags else similar_marker
         return checked, status, risk, tags
+
+    def _update_list_stats(self) -> None:
+        if not hasattr(self, "list_stats_var"):
+            return
+        total = len(self.image_paths)
+        analyzed = len([path for path in self.image_paths if path in self.results])
+        failed = len([path for path in self.image_paths if path in self.errors])
+        issue_count = len([path for path in self.image_paths if path in self.results and self.results[path].issues])
+        cleanup_count = len(self._primary_cleanup_candidates())
+        similar_count = len([group for group in self.similar_groups if len(group.paths) >= 2])
+        self.list_stats_var.set(
+            f"共 {total} 张 | 已分析 {analyzed} | 问题 {issue_count} | 失败 {failed} | 清理候选 {cleanup_count} | 相似组 {similar_count}"
+        )
 
     def _refresh_tree_item(self, path: Path) -> bool:
         item_id = self.path_item_lookup.get(path)
@@ -190,6 +205,7 @@ class UiFileListMixin:
             if path == current_path:
                 self.tree.selection_set(item_id)
         self._refresh_cleanup_tree()
+        self._update_list_stats()
 
     def _matches_filter(self, result: AnalysisResult | None, error: str | None) -> bool:
         chosen = self.filter_var.get()
@@ -201,7 +217,7 @@ class UiFileListMixin:
             return bool(result and result.issues)
         if not result:
             return False
-        return any(issue.label == chosen for issue in result.issues)
+        return any(issue.label == chosen or issue_display(issue) == chosen for issue in result.issues)
 
     def _current_path(self) -> Path | None:
         selection = self.tree.selection()
@@ -249,7 +265,9 @@ class UiFileListMixin:
         self.chart.update_result(None)
         self.hud_name_var.set(f"已多选 {len(selected)} 张图片")
         self.hud_risk_var.set(f"已分析 {analyzed_count}/{len(selected)}")
-        scene_label = "、".join(f"{name}:{count}" for name, count in list(scene_types.items())[:3]) or "待分析"
+        scene_label = "、".join(
+            f"{display_name('scene_type', name)}:{count}" for name, count in list(scene_types.items())[:3]
+        ) or "待分析"
         self.hud_tags_var.set(f"识别结果：问题图 {issue_count} 张 | 清理候选 {cleanup_count} 张 | 场景 {scene_label}")
         self.hud_methods_var.set("推荐修复：多选状态下请使用“分析选中”或“批量修复勾选”")
         self._set_meta_summary("多选状态下不显示单张 EXIF 摘要。请切回单选查看详细属性。")
@@ -260,15 +278,15 @@ class UiFileListMixin:
             "scene_type 汇总：",
         ]
         for name, count in scene_types.items():
-            lines.append(f"- {name}: {count}")
+            lines.append(f"- {display_name('scene_type', name)}（{name}）: {count}")
         lines.append("")
         lines.append("exposure_type 汇总：")
         for name, count in exposure_types.items():
-            lines.append(f"- {name}: {count}")
+            lines.append(f"- {display_name('exposure_type', name)}（{name}）: {count}")
         lines.append("")
         lines.append("color_type 汇总：")
         for name, count in color_types.items():
-            lines.append(f"- {name}: {count}")
+            lines.append(f"- {display_name('color_type', name)}（{name}）: {count}")
         lines.append("")
         lines.append("提示：")
         lines.append("- 可继续用 Ctrl/Shift 扩展多选。")
@@ -413,6 +431,8 @@ class UiFileListMixin:
         self.hud_risk_var.set("风险值 --")
         self.hud_tags_var.set("识别结果：等待分析")
         self.hud_methods_var.set("推荐修复：等待分析")
+        if hasattr(self, "meta_edit_button"):
+            self.meta_edit_button.configure(state="disabled")
         self._set_meta_summary("当前列表为空，暂无可查看的属性信息。")
         self._set_summary("当前列表为空。可继续添加目录、拖入图片或手动选择单张图片。")
 
@@ -479,7 +499,13 @@ class UiFileListMixin:
             return
         self.chart.update_result(result)
         self._update_hud(path, image, result, error)
-        self._set_meta_summary(summarize_image_metadata(path))
+        meta_summary = summarize_image_metadata(path)
+        if hasattr(self, "meta_edit_button"):
+            editable, reason = supports_metadata_edit(path)
+            self.meta_edit_button.configure(state="normal" if editable else "disabled")
+            edit_note = "可编辑字段：标题 / 描述、作者、版权、关键词 / 备注。" if editable else f"编辑状态：只读。{reason}"
+            meta_summary = f"{meta_summary}\n\n{edit_note}"
+        self._set_meta_summary(meta_summary)
 
         lines = [
             f"文件：{path.name}",
@@ -496,18 +522,18 @@ class UiFileListMixin:
                 f"人像判断：{'是' if result.portrait_likely else '否'} | "
                 f"raw/有效/拒绝：{result.raw_face_count}/{result.validated_face_count}/{result.rejected_face_count}"
             )
-            lines.append(f"portrait_type：{result.portrait_type}")
-            lines.append(f"scene_type：{result.scene_type}")
-            lines.append(f"exposure_type：{result.exposure_type}")
-            lines.append(f"color_type：{result.color_type}")
+            lines.append(f"人像类型：{display_name('portrait_type', result.portrait_type)}（{result.portrait_type}）")
+            lines.append(f"场景类型：{display_name('scene_type', result.scene_type)}（{result.scene_type}）")
+            lines.append(f"曝光类型：{display_name('exposure_type', result.exposure_type)}（{result.exposure_type}）")
+            lines.append(f"色彩类型：{display_name('color_type', result.color_type)}（{result.color_type}）")
             lines.append(
                 f"noise：{result.noise_level} ({result.noise_score:.4f}) | "
                 f"denoise_profile={result.denoise_profile} | recommended={'是' if result.denoise_recommended else '否'}"
             )
             if result.portrait_scene_type:
-                lines.append(f"人像场景：{result.portrait_scene_type}")
+                lines.append(f"人像场景：{display_name('portrait_scene_type', result.portrait_scene_type)}（{result.portrait_scene_type}）")
             if result.portrait_repair_policy:
-                lines.append(f"修复策略：{result.portrait_repair_policy}")
+                lines.append(f"修复策略：{display_name('repair_policy', result.portrait_repair_policy)}（{result.portrait_repair_policy}）")
             if result.portrait_rejection_reason:
                 lines.append(f"未启用 portrait-aware：{result.portrait_rejection_reason}")
             rejected_face_notes = [
@@ -528,7 +554,8 @@ class UiFileListMixin:
                 lines.append("")
                 lines.append("不适合保留候选：")
                 lines.append(
-                    f"- {primary_cleanup.reason_code} | {primary_cleanup.severity} | {primary_cleanup.confidence:.2f}"
+                    f"- {display_name('issue', primary_cleanup.reason_code)}（{primary_cleanup.reason_code}） | "
+                    f"{primary_cleanup.severity} | {primary_cleanup.confidence:.2f}"
                 )
                 lines.append(f"  原因：{primary_cleanup.reason_text}")
             similar_marker = self._similar_marker_for_path(path)
@@ -547,7 +574,7 @@ class UiFileListMixin:
             if result.issues:
                 lines.append("识别问题：")
                 for issue in result.issues:
-                    lines.append(f"- {issue.label} | {issue.level} | {issue.score:.2f}")
+                    lines.append(f"- {issue_display(issue)} | {issue.level} | {issue.score:.2f}")
                     lines.append(f"  判断：{issue.detail}")
                     lines.append(f"  建议：{issue.suggestion}")
                 recommended = suggest_methods_for_result(result)
@@ -588,7 +615,7 @@ class UiFileListMixin:
         self.hud_risk_var.set(f"风险值 {result.overall_score:.2f}")
         similar_hint = " | 相似组" if self._similar_marker_for_path(path) else ""
         if result.issues:
-            tags = "、".join(issue.label for issue in result.issues[:4])
+            tags = "、".join(issue_display(issue) for issue in result.issues[:4])
             methods = "、".join(get_method_labels(suggest_methods_for_result(result))) or "暂无明确推荐"
             face_info = f" | raw/valid/reject {result.raw_face_count}/{result.validated_face_count}/{result.rejected_face_count}" if (result.raw_face_count or result.validated_face_count or result.rejected_face_count) else ""
             cleanup_hint = " | 建议删除候选" if result.cleanup_candidates else ""
@@ -602,12 +629,16 @@ class UiFileListMixin:
                     reverse=True,
                 )[0]
                 self.hud_methods_var.set(
-                    f"推荐修复：{methods} | 清理建议：{primary_cleanup.reason_code} ({primary_cleanup.severity})"
+                    f"推荐修复：{methods} | 清理建议：{display_name('issue', primary_cleanup.reason_code)} ({primary_cleanup.severity})"
                 )
             else:
                 self.hud_methods_var.set(f"推荐修复：{methods}")
         else:
-            portrait_hint = f" | {result.portrait_scene_type}" if result.portrait_likely and result.portrait_scene_type else ""
+            portrait_hint = (
+                f" | {display_name('portrait_scene_type', result.portrait_scene_type)}"
+                if result.portrait_likely and result.portrait_scene_type
+                else ""
+            )
             cleanup_hint = " | 建议删除候选" if result.cleanup_candidates else ""
             self.hud_tags_var.set(f"识别结果：未发现明显问题{portrait_hint}{cleanup_hint}{similar_hint}")
             if result.portrait_rejection_reason:
@@ -620,6 +651,21 @@ class UiFileListMixin:
         self.summary_text.delete("1.0", "end")
         self.summary_text.insert("1.0", text)
         self.summary_text.config(state="disabled")
+
+    def edit_current_metadata(self) -> None:
+        path = self._current_path()
+        if path is None:
+            messagebox.showinfo("提示", "请先选中一张图片。")
+            return
+        editable, reason = supports_metadata_edit(path)
+        if not editable:
+            messagebox.showinfo("只读", reason)
+            return
+        result = show_metadata_edit_dialog(self.root, path)
+        if result.saved:
+            self._log_console(f"metadata edited: {path.name}")
+            self._set_meta_summary(summarize_image_metadata(path))
+            messagebox.showinfo("保存完成", result.message)
 
     def export_selected(self) -> None:
         cleanup_primary = self._primary_cleanup_candidates()

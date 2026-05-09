@@ -6,6 +6,7 @@ from tkinter import messagebox, ttk
 from app_settings import (
     ANALYSIS_CONCURRENCY_OPTIONS,
     AppSettings,
+    CONSOLE_TIME_MODE_OPTIONS,
     DEFAULT_SCAN_IGNORE_PREFIXES,
     GPU_ACCELERATION_OPTIONS,
     REPAIR_SUMMARY_FILTER_OPTIONS,
@@ -14,18 +15,21 @@ from app_settings import (
     normalize_analysis_custom_workers,
     normalize_default_scan_mode,
     normalize_gpu_acceleration_mode,
+    normalize_console_time_mode,
     normalize_repair_summary_filter,
     normalize_scan_ignore_prefixes,
     validate_settings_payload,
 )
 from gpu_accel import detect_gpu_backend
+from ui.themes import THEME_OPTIONS, get_theme, normalize_theme_id
+from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
 class AppSettingsDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, settings: AppSettings) -> None:
         super().__init__(parent)
-        self.title("应用设置")
+        self.title(app_window_title("应用设置"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
@@ -42,6 +46,10 @@ class AppSettingsDialog(tk.Toplevel):
         self._concurrency_label_to_value = {label: value for value, label in ANALYSIS_CONCURRENCY_OPTIONS}
         self._gpu_value_to_label = dict(GPU_ACCELERATION_OPTIONS)
         self._gpu_label_to_value = {label: value for value, label in GPU_ACCELERATION_OPTIONS}
+        self._console_time_value_to_label = dict(CONSOLE_TIME_MODE_OPTIONS)
+        self._console_time_label_to_value = {label: value for value, label in CONSOLE_TIME_MODE_OPTIONS}
+        self._theme_value_to_label = dict(THEME_OPTIONS)
+        self._theme_label_to_value = {label: value for value, label in THEME_OPTIONS}
 
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
@@ -192,6 +200,68 @@ class AppSettingsDialog(tk.Toplevel):
             justify="left",
         ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
+        console_tab = ttk.Frame(notebook, padding=14)
+        console_tab.columnconfigure(1, weight=1)
+        notebook.add(console_tab, text="Console")
+        ttk.Label(console_tab, text="Console 时间显示", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            console_tab,
+            text="只影响保存设置之后新写入的 Console 日志；旧日志不会重写。",
+            wraplength=680,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
+        ttk.Label(console_tab, text="时间格式：").grid(row=2, column=0, sticky="w")
+        self.console_time_var = tk.StringVar(value=self._console_time_value_to_label[normalized.console_time_mode])
+        ttk.Combobox(
+            console_tab,
+            textvariable=self.console_time_var,
+            state="readonly",
+            values=[label for _value, label in CONSOLE_TIME_MODE_OPTIONS],
+            width=34,
+        ).grid(row=2, column=1, sticky="w")
+        ttk.Label(
+            console_tab,
+            text="24 小时制适合日常记录；12 小时制会明确显示 AM/PM；启动后经过时间适合排查长任务耗时。",
+            wraplength=680,
+            justify="left",
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(14, 0))
+
+        appearance_tab = ttk.Frame(notebook, padding=14)
+        appearance_tab.columnconfigure(1, weight=1)
+        notebook.add(appearance_tab, text="外观 / 风格")
+        ttk.Label(appearance_tab, text="应用风格", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            appearance_tab,
+            text="风格通过颜色 token、字体微调和间距微调应用到主窗口及主要弹窗。默认“经典清绿”尽量贴近当前视觉。",
+            wraplength=680,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
+        ttk.Label(appearance_tab, text="预置风格：").grid(row=2, column=0, sticky="w")
+        self.theme_var = tk.StringVar(value=self._theme_value_to_label[normalized.theme_id])
+        theme_box = ttk.Combobox(
+            appearance_tab,
+            textvariable=self.theme_var,
+            state="readonly",
+            values=[label for _value, label in THEME_OPTIONS],
+            width=28,
+        )
+        theme_box.grid(row=2, column=1, sticky="w")
+        self.theme_preview_var = tk.StringVar()
+        ttk.Label(appearance_tab, textvariable=self.theme_preview_var, wraplength=680, justify="left").grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(14, 0)
+        )
+
+        def _refresh_theme_preview(_event=None) -> None:
+            theme_id = normalize_theme_id(self._theme_label_to_value.get(self.theme_var.get()))
+            theme = get_theme(theme_id)
+            self.theme_preview_var.set(
+                f"主色 {theme.primary}；强调色 {theme.accent}；背景 {theme.background}；"
+                f"面板 {theme.panel}；按钮 {theme.button}；选中 {theme.selection}。"
+            )
+
+        theme_box.bind("<<ComboboxSelected>>", _refresh_theme_preview)
+        _refresh_theme_preview()
+
         buttons = ttk.Frame(outer)
         buttons.grid(row=2, column=0, sticky="ew", pady=(14, 0))
         ttk.Label(buttons, textvariable=self._size_notice_var).pack(side="left")
@@ -249,6 +319,8 @@ class AppSettingsDialog(tk.Toplevel):
         concurrency_mode = normalize_analysis_concurrency_mode(self._concurrency_label_to_value.get(self.concurrency_var.get()))
         custom_workers = normalize_analysis_custom_workers(self.custom_workers_var.get())
         gpu_mode = normalize_gpu_acceleration_mode(self._gpu_label_to_value.get(self.gpu_mode_var.get()))
+        console_time_mode = normalize_console_time_mode(self._console_time_label_to_value.get(self.console_time_var.get()))
+        theme_id = normalize_theme_id(self._theme_label_to_value.get(self.theme_var.get()))
         self.result = AppSettings(
             scan_ignore_prefixes=prefixes,
             default_scan_mode=scan_mode,
@@ -256,6 +328,8 @@ class AppSettingsDialog(tk.Toplevel):
             analysis_concurrency_mode=concurrency_mode,
             analysis_custom_workers=custom_workers,
             gpu_acceleration_mode=gpu_mode,
+            console_time_mode=console_time_mode,
+            theme_id=theme_id,
         )
         self.destroy()
 

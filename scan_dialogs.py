@@ -5,13 +5,14 @@ from pathlib import Path
 from tkinter import ttk
 
 from app_settings import SCAN_MODE_ALL, SCAN_MODE_CURRENT_ONLY, SCAN_MODE_SUBDIRS_ONLY, normalize_scan_ignore_prefixes
+from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
 class ScanModeDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, folder: Path, ignored_prefixes: list[str]) -> None:
         super().__init__(parent)
-        self.title("选择目录扫描范围")
+        self.title(app_window_title("选择目录扫描范围"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(False, True)

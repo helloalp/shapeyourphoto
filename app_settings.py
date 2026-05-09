@@ -9,9 +9,8 @@ from typing import Callable
 
 from paths import migrate_legacy_file
 
-
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 1
+SETTINGS_SCHEMA_VERSION = 2
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
 
 SCAN_MODE_ASK = "ask"
@@ -44,6 +43,17 @@ GPU_ACCELERATION_OPTIONS: list[tuple[str, str]] = [
     (GPU_ACCELERATION_ON, "开启"),
 ]
 GPU_ACCELERATION_LABELS = {value: label for value, label in GPU_ACCELERATION_OPTIONS}
+
+CONSOLE_TIME_24H = "24h"
+CONSOLE_TIME_12H = "12h"
+CONSOLE_TIME_ELAPSED = "elapsed"
+
+CONSOLE_TIME_MODE_OPTIONS: list[tuple[str, str]] = [
+    (CONSOLE_TIME_24H, "24 小时制 [20:28:14]"),
+    (CONSOLE_TIME_12H, "12 小时制 [08:28:14 PM]"),
+    (CONSOLE_TIME_ELAPSED, "启动后经过时间 [T+00:20:28]"),
+]
+CONSOLE_TIME_MODE_LABELS = {value: label for value, label in CONSOLE_TIME_MODE_OPTIONS}
 
 SCAN_MODE_OPTIONS: list[tuple[str, str]] = [
     (SCAN_MODE_ASK, "每次询问"),
@@ -184,6 +194,20 @@ def normalize_gpu_acceleration_mode(mode: str | None) -> str:
     return normalized if normalized in allowed else GPU_ACCELERATION_OFF
 
 
+def normalize_console_time_mode(mode: str | None) -> str:
+    normalized = str(mode or CONSOLE_TIME_24H).strip().lower()
+    allowed = {value for value, _label in CONSOLE_TIME_MODE_OPTIONS}
+    return normalized if normalized in allowed else CONSOLE_TIME_24H
+
+
+def normalize_theme_id(value: object) -> str:
+    try:
+        from ui.themes import normalize_theme_id as _normalize_theme_id
+    except Exception:
+        return "classic_green"
+    return _normalize_theme_id(value)
+
+
 def normalize_settings_schema_version(value: object) -> int:
     try:
         version = int(value)
@@ -201,6 +225,8 @@ class AppSettings:
     analysis_concurrency_mode: str = ANALYSIS_CONCURRENCY_AUTO
     analysis_custom_workers: int = 0
     gpu_acceleration_mode: str = GPU_ACCELERATION_OFF
+    console_time_mode: str = CONSOLE_TIME_24H
+    theme_id: str = "classic_green"
 
 
 def default_app_settings() -> AppSettings:
@@ -211,6 +237,9 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
     migrated = dict(data)
     if old_version < 1:
         migrated["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
+    if old_version < 2:
+        migrated.setdefault("console_time_mode", CONSOLE_TIME_24H)
+        migrated.setdefault("theme_id", "classic_green")
     return migrated
 
 
@@ -231,6 +260,8 @@ def validate_settings_payload(payload: object) -> AppSettings:
         ),
         analysis_custom_workers=normalize_analysis_custom_workers(payload.get("analysis_custom_workers", 0)),
         gpu_acceleration_mode=normalize_gpu_acceleration_mode(payload.get("gpu_acceleration_mode", GPU_ACCELERATION_OFF)),
+        console_time_mode=normalize_console_time_mode(payload.get("console_time_mode", CONSOLE_TIME_24H)),
+        theme_id=normalize_theme_id(payload.get("theme_id", "classic_green")),
     )
 
 

@@ -5,6 +5,7 @@ from tkinter import messagebox, ttk
 
 from models import RepairMethod, RepairSelection
 from repair_planner import get_method_labels
+from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
@@ -21,7 +22,7 @@ class RepairDialog(tk.Toplevel):
         recommendation_note: str = "",
     ) -> None:
         super().__init__(parent)
-        self.title(title)
+        self.title(app_window_title(title))
         self.resizable(True, True)
         self.result: RepairSelection | None = None
 

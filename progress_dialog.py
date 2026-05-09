@@ -5,6 +5,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 
+from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
@@ -36,11 +37,14 @@ class TaskProgressDialog:
         self._tick_after_id: str | None = None
         self._started_at = state.started_at or time.monotonic()
         self.window = tk.Toplevel(master)
-        self.window.title(state.dialog_title)
+        self.window.title(app_window_title(state.dialog_title))
         self.window.transient(master.winfo_toplevel())
         self.window.resizable(True, False)
-        self.window.geometry("640x320")
-        self.window.minsize(600, 320)
+        screen_height = max(360, self.window.winfo_screenheight())
+        initial_height = min(340, max(300, screen_height - 72))
+        minimum_height = min(320, initial_height)
+        self.window.geometry(f"640x{initial_height}")
+        self.window.minsize(600, minimum_height)
         self.window.configure(bg="#edf4ef")
         self.window.protocol("WM_DELETE_WINDOW", self._handle_close)
 
@@ -55,6 +59,7 @@ class TaskProgressDialog:
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(4, minsize=76)
+        outer.rowconfigure(6, minsize=38)
 
         self.header_label = ttk.Label(outer, textvariable=self.title_var, style="Header.TLabel")
         self.header_label.grid(row=0, column=0, sticky="ew")
@@ -103,15 +108,16 @@ class TaskProgressDialog:
         self.button_row.grid(row=6, column=0, sticky="ew", pady=(10, 0))
         self.button_row.grid_propagate(False)
         self.button_row.columnconfigure(0, weight=1)
+        self.button_row.columnconfigure(1, weight=0)
         ttk.Label(self.button_row, textvariable=self.size_notice_var, style="Sub.TLabel").grid(row=0, column=0, sticky="w")
         self.cancel_button: ttk.Button | None = None
         if cancel_callback is not None:
             self.cancel_button = ttk.Button(self.button_row, text=cancel_text, command=self._handle_cancel)
-            self.cancel_button.grid(row=0, column=0, sticky="e")
+            self.cancel_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
 
         self.window.update_idletasks()
-        bind_minimum_size_notice(self.window, self.size_notice_var, 600, 320)
-        center_window(self.window, 640, 320)
+        bind_minimum_size_notice(self.window, self.size_notice_var, 600, minimum_height)
+        center_window(self.window, 640, initial_height)
         self.update_state(state)
         self._schedule_elapsed_tick()
         self.window.lift()
@@ -143,7 +149,7 @@ class TaskProgressDialog:
     def update_state(self, state: TaskProgressState) -> None:
         self._started_at = state.started_at or self._started_at
         maximum = max(1, state.total)
-        self.window.title(state.dialog_title)
+        self.window.title(app_window_title(state.dialog_title))
         self.progressbar.configure(maximum=maximum)
         self.progress_var.set(float(state.done))
         if float(state.done).is_integer():

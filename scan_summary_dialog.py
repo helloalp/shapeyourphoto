@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from file_actions import ScanResult
+from ui.window_titles import app_window_title
 from window_layout import center_window
 
 
@@ -18,7 +19,7 @@ def _location_label(location: str) -> str:
 class ScanSummaryDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, scan_results: list[ScanResult]) -> None:
         super().__init__(parent)
-        self.title("最近扫描摘要")
+        self.title(app_window_title("最近扫描摘要"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)

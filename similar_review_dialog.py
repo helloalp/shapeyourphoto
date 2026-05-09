@@ -9,6 +9,8 @@ from PIL import Image, ImageOps, ImageTk
 
 from models import AnalysisResult, SimilarImageGroup
 from repair_planner import get_method_labels, suggest_methods_for_result
+from ui.display_names import display_name, issue_display
+from ui.window_titles import app_window_title
 from window_layout import MIN_SIZE_NOTICE, bind_minimum_size_notice
 
 
@@ -30,7 +32,7 @@ class SimilarGroupListDialog(tk.Toplevel):
         decision_callback: Callable[[list[SimilarImageGroup]], None],
     ) -> None:
         super().__init__(parent)
-        self.title("相似图片自动检测结果")
+        self.title(app_window_title("相似图片自动检测结果"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
@@ -261,7 +263,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         delete_callback: Callable[[Path, SimilarImageGroup], bool],
     ) -> None:
         super().__init__(parent)
-        self.title("相似图片组内对比")
+        self.title(app_window_title("相似图片组内对比"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
@@ -409,11 +411,11 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         cleanup_marker = " | 清理候选" if path in self._cleanup_paths else ""
         if result is None:
             return f"尚无分析结果{cleanup_marker}"
-        issues = "、".join(issue.label for issue in result.issues[:3]) if result.issues else "无明显问题"
+        issues = "、".join(issue_display(issue) for issue in result.issues[:3]) if result.issues else "无明显问题"
         methods = "、".join(get_method_labels(suggest_methods_for_result(result))) or "暂无明确推荐"
         portrait = "人像" if result.portrait_likely else "非人像"
         return (
-            f"风险 {result.overall_score:.2f} | {portrait} | scene={result.scene_type}{cleanup_marker}\n"
+            f"风险 {result.overall_score:.2f} | {portrait} | 场景={display_name('scene_type', result.scene_type)}{cleanup_marker}\n"
             f"问题：{issues}\n"
             f"建议：{methods}"
         )

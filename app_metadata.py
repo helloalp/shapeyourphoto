@@ -1,24 +1,17 @@
 from __future__ import annotations
 
 APP_NAME = "图片质量分析、修复与清理工具"
-APP_VERSION = "1.1.8"
+APP_VERSION = "1.1.7"
 APP_ID = "codex.photo.analyzer.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
     {
-        "version": "1.1.8",
-        "date": "2026-05-10",
-        "items": [
-            "重构平台检测：集中定义 paths.IS_WIN / IS_MAC / IS_LINUX 常量，替换各模块中散落的 sys.platform 字符串比较，避免 import-time 崩溃。",
-            "drag_drop.py 的 Windows 原生拖拽模块现在通过 from paths import IS_WIN 守卫，确保非 Windows 平台不会触发 ctypes 导入错误。",
-            "dnd_support.py 的 tkinterdnd2 数据解析改为使用 Tcl splitlist，比手写花括号解析更稳定。",
-            "paths.user_data_dir() 和 watermark_signature.py 的字体路径解析加入 functools.cache，减少重复 I/O。",
-        ],
-    },
-    {
         "version": "1.1.7",
         "date": "2026-05-10",
         "items": [
+            "融合 main 已合入的跨平台打包、拖放、用户数据目录迁移与 Codex 平台检测修复，并重新叠回 backup-v1.1.7-before-pr 的 UI、设置、统计和修复取消能力。",
+            "保留 macOS .dmg / Windows Inno Setup 打包链路、GitHub Actions Release 发布、assets/app_icon.icns、build/ 配置和 README 安装说明。",
+            "保留 dnd_support.create_root() 跨平台根窗口选择、Windows 原生拖放、macOS/Linux tkinterdnd2 拖放和 Tcl splitlist 路径解析。",
             "新增跨平台桌面打包：macOS 输出 .dmg（Apple Silicon 原生），Windows 输出 Inno Setup 安装程序；GitHub Actions 双 runner 并行构建并自动发布到 Releases。",
             "拖拽实现改为按平台分派：Windows 复用原生 ctypes 实现，macOS / Linux 改用 tkinterdnd2，根窗口由 dnd_support.create_root() 统一选择。",
             "用户配置与统计文件迁移到系统标准用户数据目录（macOS: ~/Library/Application Support/ShapeYourPhoto/，Windows: %APPDATA%/Helloalp/ShapeYourPhoto/），首次启动自动从旧 cwd 迁移；卸载不删除。",
@@ -26,6 +19,25 @@ CHANGELOG: list[dict[str, object]] = [
             "watermark_signature.py 字体策略升级：优先打包内字体，macOS 走 PingFang，Windows 走 Microsoft YaHei，Linux 走 Noto Sans CJK，避免默认字体不支持中文导致水印变方块。",
             "新增 paths.resource_path() / user_data_dir() / migrate_legacy_file() 工具，支撑 PyInstaller _MEIPASS 资源加载与跨平台数据目录。",
             "本轮不改变分析算法、修复风格、UI 主交互逻辑或用户数据处理规则。",
+            "修正修复批次计时口径：Console 和修复完成详情以 total_wall_time 作为“本轮修复总耗时”，worker_cumulative_time 明确标注为并发 worker 累计耗时，不再把每张图 repair_total 相加当作用户等待时间。",
+            "统一性能摘要命名：同时展示 total_wall_time、worker_cumulative_time、average_wall_time_per_image 和 average_worker_time_per_image，分析审计行也改用 total_wall_time 命名。",
+            "修复进度弹窗底部布局：尺寸提示和取消按钮分列固定，初始高度按屏幕可用高度钳制，避免分析/修复过程中取消按钮被长文案挤走、遮挡或不可点击。",
+            "修复进度窗口新增“取消修复”，窗口关闭叉号与按钮走同一 cancel_event；后台进度、结果和最终摘要写回前校验 repair run_id/cancel_event。",
+            "实现修复取消回滚：取消后恢复修复前分析状态快照，保留原有 AnalysisResult、issues、推荐方法、cleanup/similar 状态，不弹正常完成详情，不更新本轮修复统计或调试打开列表。",
+            "取消修复会清理已写出的非覆盖输出；删除失败时移入 _repair_canceled_outputs 并提示。覆盖原文件修复会先创建 _repair_cancel_backups，取消时恢复，正常完成后清理备份。",
+            "应用设置新增 Console 页和外观/风格页：Console 支持 24 小时制、12 小时制、启动后经过时间；外观支持经典清绿、石墨灰、影像蓝、暖白纸和高对比五套主题 token。",
+            "Windows 启动阶段启用 DPI awareness、Tk scaling 和系统字体配置，并新增居中 Splash，减少 4K/高缩放环境下系统拉伸导致的字体模糊。",
+            "主界面移除顶部重复任务进度栏，扩展目录路径长栏，列表标题区展示分析统计，右侧 HUD/问题强度条图获得更高布局权重。",
+            "移除主界面“读取目录”和“导出清理清单”入口；选择目录、拖入目录和分析前补扫描继续走统一扫描范围、进度弹窗和扫描摘要。",
+            "目录扫描后新增“正在加载图片”阶段提示；Console 只记录扫描摘要，完整跳过目录明细进入扫描摘要窗口。",
+            "二级窗口标题统一为 ShapeYourPhoto v.x.x.x - 功能名；修复完成详情摘要区压缩为 chip 信息条。",
+            "新增 UI display mapping 层，内部英文 code/enum/storage 保持不变，UI 对 issue、scene/portrait/exposure/color、repair method/policy、outcome、worker/GPU/scan/Console 时间模式和 perf stage 做中文化展示。",
+            "统计持久化迁移到 data/usage_stats.dpapi，Windows 使用用户级 DPAPI 加密；旧 usage_stats.json 成功迁移后保留 migrated 备份，不直接删除。",
+            "统计持久化继续写入系统用户数据目录；Windows 使用 usage_stats.dpapi + DPAPI，非 Windows 回落到用户数据目录内 JSON，旧 usage_stats.json 迁移后保留 migrated 备份。",
+            "属性 / EXIF 页面新增安全编辑入口，只允许写入标题/描述、作者、版权、关键词/备注，保存前备份，禁止修改相机/镜头/拍摄时间/Orientation/ICC/内部标记。",
+            "新增 ui/ 包承载窗口标题、显示名映射、主题、HiDPI、Splash 和 EXIF 编辑等 UI 基础设施，并建立 docs/specs/ 产品规范目录。",
+            "修复 drag_drop.py 融合后的缩进错误，避免 WindowsFileDropTarget 在 import 阶段触发 NameError 导致 start_app 无窗口。",
+            "更新 README、CHANGELOG、app_metadata.CHANGELOG 和 docs/updates/1.1.7.md，使 main 修改与本地修改都进入 1.1.7 版本记录。",
         ],
     },
     {

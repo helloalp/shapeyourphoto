@@ -144,11 +144,11 @@ class UiScanActionsMixin:
         self._last_scan_update = 0.0
         self._begin_task(
             1,
-            "读取目录 0/0",
+            "正在扫描目录 0/0",
             f"正在扫描目录：{requests[0][0]}",
             show_dialog=True,
-            dialog_title="读取目录中",
-            dialog_header="正在扫描目录文件",
+            dialog_title="目录扫描中",
+            dialog_header="正在扫描目录 / 加载图片",
         )
         for root, mode in requests:
             self._log_console(
@@ -207,14 +207,7 @@ class UiScanActionsMixin:
             self._log_console(
                 f"scan skipped summary: root={summary.root} skipped={summary.skipped_directory_count} prefixes={prefix_text}"
             )
-            for detail in summary.skipped_details[:5]:
-                try:
-                    label = str(detail.path.relative_to(summary.root))
-                except ValueError:
-                    label = detail.path.name
-                self._log_console(f"已跳过目录：{label} | prefix={detail.matched_prefix}")
-            if summary.skipped_directory_count > 5:
-                self._log_console(f"更多跳过目录明细请在“最近扫描摘要”中查看，共 {summary.skipped_directory_count} 个。")
+            self._log_console(f"跳过目录明细已收进“最近扫描摘要”，共 {summary.skipped_directory_count} 个。")
         else:
             self._log_console(f"scan skipped summary: root={summary.root} skipped=0")
 
@@ -227,14 +220,27 @@ class UiScanActionsMixin:
         self.progress_controller.update(
             done=done,
             total=max(1, total),
-            title=f"读取目录 {done}/{total}",
+            title=f"正在扫描目录 {done}/{total}",
             detail=f"已发现 {found} 张图片，当前：{current_label}",
-            status=f"读取目录 {done}/{total}，已发现 {found} 张图片",
-            dialog_title="读取目录中",
-            dialog_header="正在扫描目录文件",
+            status=f"扫描目录 {done}/{total}，已发现 {found} 张图片",
+            dialog_title="目录扫描中",
+            dialog_header="正在扫描目录 / 加载图片",
         )
 
     def _scan_finished(self, paths: list[Path], scan_results: list[ScanResult]) -> None:
+        total_paths = len(paths)
+        self.progress_controller.update(
+            done=0,
+            total=max(1, total_paths),
+            title="正在加载图片",
+            detail=f"扫描完成，正在导入 {total_paths} 张图片到结果列表。",
+            status=f"正在加载图片，已导入 0/{total_paths}",
+            dialog_title="目录扫描中",
+            dialog_header="正在扫描目录 / 加载图片",
+        )
+        self.root.after(20, lambda p=paths, r=scan_results: self._finish_scan_loading(p, r))
+
+    def _finish_scan_loading(self, paths: list[Path], scan_results: list[ScanResult]) -> None:
         self._merge_paths(paths)
         self.thumb_cache.clear()
         self.progress_bar.configure(maximum=max(1, len(self.image_paths)))
@@ -249,7 +255,7 @@ class UiScanActionsMixin:
         detail = f"当前列表共 {len(self.image_paths)} 张图片，本次新读取 {len(paths)} 张。"
         if self._last_scan_summary:
             detail = f"{detail}\n{self._last_scan_summary}\n可点击“查看最近扫描摘要”查看跳过目录明细。"
-        self._finish_task("目录读取完成", detail)
+        self._finish_task("目录扫描和加载完成", detail)
         self.refresh_tree()
         if self.image_paths:
             self._select_path(self.image_paths[0])

@@ -4,12 +4,13 @@ import tkinter as tk
 from tkinter import ttk
 
 from app_metadata import CHANGELOG
+from ui.window_titles import app_window_title
 from window_layout import center_window
 
 
 def show_history_dialog(parent: tk.Widget) -> None:
     dialog = tk.Toplevel(parent)
-    dialog.title("更新历史")
+    dialog.title(app_window_title("更新历史"))
     dialog.minsize(680, 520)
     dialog.resizable(True, True)
     dialog.transient(parent.winfo_toplevel())

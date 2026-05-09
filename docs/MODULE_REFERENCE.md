@@ -55,7 +55,7 @@ Python GUI 入口。`app.py` 创建 Tk 根窗口、设置标题与图标、挂�
 
 ### [ui_file_list.py](/E:/aitools/shapeyourphoto/ui_file_list.py)
 
-主列表与右侧详情 mixin。负责排序、Treeview/cleanup Treeview 刷新、单选/多选、勾选状态、当前项定位、预览摘要、HUD、EXIF/ICC/DPI/XMP 属性摘要、导出清理清单和从列表移除。
+主列表与右侧详情 mixin。负责排序、Treeview/cleanup Treeview 刷新、单选/多选、勾选状态、当前项定位、预览摘要、HUD、EXIF/ICC/DPI/XMP 属性摘要、安全 EXIF 编辑入口和从列表移除。主界面已不提供“导出清理清单”入口。
 
 ### [ui_review_actions.py](/E:/aitools/shapeyourphoto/ui_review_actions.py)
 
@@ -98,7 +98,7 @@ cleanup candidate 复核窗口。本轮候选默认不勾选，用户确认后�
 - [debug_open_dialog.py](/E:/aitools/shapeyourphoto/debug_open_dialog.py)：调试模式打开本轮成功修复的前后对比文件。
 - [diagnostics_chart.py](/E:/aitools/shapeyourphoto/diagnostics_chart.py)：右侧指标条图。
 - [history_dialog.py](/E:/aitools/shapeyourphoto/history_dialog.py)：内置版本历史窗口。
-- [stats_dialog.py](/E:/aitools/shapeyourphoto/stats_dialog.py)：累计统计和 CSV 导出窗口。
+- [stats_dialog.py](/E:/aitools/shapeyourphoto/stats_dialog.py)：统计和 CSV 导出窗口。
 
 ## 设置、扫描、文件与缓存
 
@@ -182,7 +182,18 @@ Windows 原生拖拽支持。平台相关且高风险，修改后要验证图片
 
 ### [stats_store.py](/E:/aitools/shapeyourphoto/stats_store.py)
 
-累计统计持久化，默认写入 `usage_stats.json`。
+统计持久化，1.1.7 起默认写入被忽略的 `data/usage_stats.dpapi`。Windows 使用用户级 DPAPI 加密；旧 `usage_stats.json` 会迁移并保留 migrated 备份。
+
+### `ui/`
+
+1.1.7 新增 UI 基础设施包：
+
+- `ui/window_titles.py`：二级窗口标题统一格式。
+- `ui/display_names.py`：内部英文值到 UI 中文显示名映射。
+- `ui/themes.py`：五套外观风格 token。
+- `ui/hidpi.py`：DPI awareness、Tk scaling 和系统字体配置。
+- `ui/splash.py`：启动 Splash。
+- `ui/metadata_editor.py`：安全 EXIF 文本字段编辑。
 
 ### [app_console.py](/E:/aitools/shapeyourphoto/app_console.py)
 

@@ -12,7 +12,7 @@ from app_settings import ANALYSIS_CONCURRENCY_AUTO, AnalysisWorkerPlan, GPU_ACCE
 from gpu_accel import GPUBackendStatus, gpu_console_label, resolve_gpu_status
 from models import AnalysisResult, SimilarImageGroup
 from similar_detector import detect_similar_groups
-from stats_store import record_analysis, save_stats
+from stats_store import record_analysis, record_analysis_batch, save_stats
 from ui_constants import ANALYSIS_PROGRESS_STEPS, AnalysisCanceled
 
 
@@ -318,6 +318,7 @@ class UiAnalysisActionsMixin:
                     self.stats,
                     image_bytes=path.stat().st_size if path.exists() else 0,
                     has_issue=bool(result.issues),
+                    cleanup_candidate_count=len(result.cleanup_candidates),
                 )
                 save_stats(self.stats)
 
@@ -439,6 +440,12 @@ class UiAnalysisActionsMixin:
             worker_plan=worker_plan,
             gpu_status=gpu_status,
         )
+        self.stats = record_analysis_batch(
+            self.stats,
+            wall_ms=batch_timings.get("total_wall_time", batch_timings.get("wall_time", 0.0)),
+            similar_groups=similar_count,
+        )
+        save_stats(self.stats)
         for group in similar_groups:
             self._log_console(
                 f"similar group: #{group.group_id} count={len(group.paths)} score={group.similarity:.2f} | {group.reason}"

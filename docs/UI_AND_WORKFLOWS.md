@@ -2,10 +2,10 @@
 
 ## 主界面结构
 
-- 顶部：路径、操作按钮、筛选、任务进度入口。
-- 左侧：主图片列表、缩略图、勾选状态、cleanup candidate 面板。
-- 右侧上方：HUD 和指标条图。
-- 右侧下方：诊断说明、属性信息和只读 Console。
+- 顶部：应用标题、长路径栏、主要操作按钮、筛选和最近扫描摘要入口；不再保留长期占位的主界面任务进度栏。
+- 左侧：主图片列表、缩略图、勾选状态、列表标题统计、cleanup candidate 面板。
+- 右侧上方：HUD 和问题强度条图，是分析结果仪表盘的第一优先级。
+- 右侧下方：诊断说明、属性 / EXIF 和只读 Console；属性页可在支持格式上进入安全文本字段编辑。
 
 当前主界面围绕主列表工作流运行。单张图片导入后也进入主列表，不存在独立单图窗口主路径。
 
@@ -18,6 +18,7 @@
 - `ui_file_list.py` 承接主列表、cleanup 列表、选择状态、HUD 和属性/诊断展示。
 - `ui_task_console.py` 承接 UI 队列、任务进度、Console 合并刷新和性能摘要。
 - `ui_review_actions.py` 承接 cleanup candidate 与相似组复核入口。
+- `ui/` 包承接窗口标题、显示名映射、主题、HiDPI、Splash 和 EXIF 安全编辑等新 UI 基础能力。
 
 新增 UI 逻辑时先放入对应边界；只有根窗口生命周期和控件装配继续留在 `ui_app.py`。
 
@@ -35,6 +36,7 @@
 - 如果目录包含子目录，按设置决定是否询问；询问时显示四选项：扫描全部、只扫当前目录、只扫所有子目录、取消。
 - 扫描必须遵守忽略目录前缀，默认至少包含 `_repair`，因此任意层级 `_repair*` 目录都会跳过。
 - 扫描完成后 Console 输出摘要；完整跳过明细进入“最近扫描摘要”窗口。
+- 扫描和扫描后的图片加载阶段都必须显示进度弹窗。Console 不刷完整跳过目录明细，避免大目录刷屏。
 
 ## 分析流程
 
@@ -57,12 +59,22 @@
 
 1. 用户点击“修复当前”或“批量修复勾选”。
 2. `repair_dialog.py` 收集自动/手动方法、输出策略和 cleanup candidate 强制尝试开关。
-3. 每张图由 `repair_planner.py` 生成独立 `RepairPlan`。
-4. `repair_engine.py` 执行候选、评分、安全检查、回退/no-op、保存和元数据保留。
-5. `repair_completion_dialog.py` 显示可筛选详情。
-6. 成功修复的图片会取消勾选，统计同步更新。
+3. 创建新的 repair run_id、cancel_event 和修复前分析状态快照。
+4. 每张图由 `repair_planner.py` 生成独立 `RepairPlan`。
+5. `repair_engine.py` 执行候选、评分、安全检查、回退/no-op、保存和元数据保留。
+6. `repair_completion_dialog.py` 显示可筛选详情。
+7. 成功修复的图片会取消勾选，统计同步更新。
 
 降噪属于统一修复链的一部分，不能恢复成孤立旧按钮。
+
+取消规则：
+
+- 点击“取消修复”或关闭修复进度窗口都走同一套取消流程。
+- 取消后回到分析完成、修复前状态；已有 `AnalysisResult`、issues、repair recommendations、method_ids、op_strengths、cleanup/similar 状态不因取消修复而清空。
+- 修复中补分析得到的临时结果会按修复前快照恢复；已取消批次不得进入修复完成详情、统计或调试打开列表。
+- 已写出的非覆盖输出优先删除；删除失败时移入 `_repair_canceled_outputs` 隔离目录并在 Console/弹窗说明。
+- 覆盖原文件修复会在开始前创建 `_repair_cancel_backups` 回滚备份；取消时从备份恢复，正常完成后清理备份。
+- 后台 worker 在进度、结果和最终摘要写回前必须校验 repair run_id 和 cancel_event。
 
 批量目标集合规则：
 
@@ -91,9 +103,11 @@
 ## Console 与性能摘要
 
 - Console 是只读状态区，不提供命令输入。
+- Console 时间戳可在设置中切换为 24 小时制、12 小时制或启动后经过时间；只影响新日志。
 - 后台线程可以排队日志，但 Text 控件刷新由 UI 主线程合并执行。
 - 分析和修复阶段耗时来自 `perf_timings` / `perf_notes`。
-- Console 面向用户展示 wall time、worker cumulative、queue/wait、最慢图片、最慢阶段、相似检测、UI 刷新和 Console flush 等摘要。
+- Console 面向用户展示 `total_wall_time`、`worker_cumulative_time`、`average_wall_time_per_image`、`average_worker_time_per_image`、queue/wait、最慢图片、最慢阶段、相似检测、UI 刷新和 Console flush 等摘要。
+- 面向用户的“本轮修复总耗时”必须是 `total_wall_time`，也就是用户真实等待时间；`worker_cumulative_time` 只能标注为并发 worker 累计耗时，不是用户等待时间。
 - 内部阈值、评分公式和过细算法细节不应塞进 Console。
 
 ## 当前体验要求
@@ -103,12 +117,14 @@
 - 修复完成详情使用可筛选滚动窗口。
 - 普通 `messagebox` 只适合短提示、确认和错误，不适合承载批量长详情。
 - 右侧不恢复旧式大图查看器；主工作流以列表、HUD、指标和诊断说明为核心。
+- UI 展示名通过 display mapping 中文化；内部 code/enum/storage 保持英文。
+- 主界面“读取目录”和“导出清理清单”入口已移除。目录读取由“选择目录”、拖入目录和分析前补扫描触发；清理仍通过 cleanup candidate 安全复核流程执行。
 
 进度窗口规则：
 
 - 分析和修复进度弹窗分为标题、说明、进度条、计数/耗时、固定高度当前阶段摘要和底部按钮区。
 - 当前阶段摘要不得塞入 Console 级长详情；长文本应压缩、省略或进入 Console。
-- 取消入口只能有一个；按钮区固定在底部，进度条和取消按钮始终可见。
+- 每个进度窗口只保留一个明确取消按钮；按钮区固定在底部，进度条和取消按钮始终可见、可点击，关闭叉号与该按钮走同一取消路径。
 - 进度更新仍必须通过 UI 主线程调度。
 
 主要弹窗最小尺寸规则：

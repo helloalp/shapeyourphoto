@@ -5,6 +5,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from models import SessionStats
 from stats_store import export_stats_report
+from ui.window_titles import app_window_title
 from window_layout import center_window
 
 
@@ -20,7 +21,7 @@ def _format_bytes(size: int) -> str:
 
 def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
     dialog = tk.Toplevel(parent)
-    dialog.title("累计统计")
+    dialog.title(app_window_title("统计"))
     dialog.minsize(760, 560)
     dialog.resizable(True, True)
     dialog.transient(parent.winfo_toplevel())
@@ -31,11 +32,18 @@ def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
     outer.columnconfigure(0, weight=1)
     outer.rowconfigure(2, weight=1)
 
-    ttk.Label(outer, text="累计统计", font=("Microsoft YaHei UI", 12, "bold")).grid(row=0, column=0, sticky="w")
-    ttk.Label(outer, text="显示累计分析量、处理量和问题检出率变化。").grid(row=1, column=0, sticky="w", pady=(4, 10))
+    ttk.Label(outer, text="统计", font=("Microsoft YaHei UI", 12, "bold")).grid(row=0, column=0, sticky="w")
+    ttk.Label(outer, text="显示累计分析、修复、跳过、回退、cleanup 和相似组等聚合数据。").grid(row=1, column=0, sticky="w", pady=(4, 10))
 
-    summary = tk.Text(outer, height=8, wrap="word", font=("Microsoft YaHei UI", 10), bg="#f8fbf8", relief="flat", padx=10, pady=10)
-    summary.grid(row=2, column=0, sticky="nsew")
+    summary_frame = ttk.Frame(outer)
+    summary_frame.grid(row=2, column=0, sticky="nsew")
+    summary_frame.columnconfigure(0, weight=1)
+    summary_frame.rowconfigure(0, weight=1)
+    summary = tk.Text(summary_frame, height=14, wrap="word", font=("Microsoft YaHei UI", 10), bg="#f8fbf8", relief="flat", padx=10, pady=10)
+    summary_scroll = ttk.Scrollbar(summary_frame, orient="vertical", command=summary.yview)
+    summary.configure(yscrollcommand=summary_scroll.set)
+    summary.grid(row=0, column=0, sticky="nsew")
+    summary_scroll.grid(row=0, column=1, sticky="ns")
     issue_rate = stats.issue_images / max(1, stats.analyzed_images)
     lines = [
         f"累计分析图片：{stats.analyzed_images}",
@@ -44,6 +52,22 @@ def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
         f"累计修复数据量：{_format_bytes(stats.repaired_bytes)}",
         f"累计检出问题图片：{stats.issue_images}",
         f"当前累计检出率：{issue_rate:.2%}",
+        f"累计修复尝试：{stats.repair_attempted_images}",
+        f"累计跳过/no-op：{stats.skipped_images}",
+        f"累计回退：{stats.rollback_images}",
+        f"cleanup candidate 累计：{stats.cleanup_candidate_images}",
+        f"相似组累计：{stats.similar_group_count}",
+        f"平均分析真实耗时：{stats.average_analysis_wall_ms():.0f} ms/轮",
+        f"平均修复真实耗时：{stats.average_repair_wall_ms():.0f} ms/轮",
+        f"最近运行时间：{stats.last_run_at or '暂无'}",
+        "",
+        "按天聚合：",
+        *[f"- {day}: 分析 {values.get('analyzed', 0)}，修复 {values.get('repaired', 0)}，跳过 {values.get('skipped', 0)}"
+          for day, values in sorted(stats.daily_counts.items())[-7:]],
+        "",
+        "按版本聚合：",
+        *[f"- {version}: 分析 {values.get('analyzed', 0)}，修复 {values.get('repaired', 0)}，跳过 {values.get('skipped', 0)}"
+          for version, values in sorted(stats.version_counts.items())[-7:]],
     ]
     summary.insert("1.0", "\n".join(lines))
     summary.config(state="disabled")

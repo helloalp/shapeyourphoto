@@ -28,16 +28,27 @@ Console 和 benchmark 应同时显示 requested workers、actual workers 和限�
 - 取消后 UI 立即恢复可操作状态，同时清空本轮目标结果。
 - 后台 worker 的迟到结果必须丢弃。
 
+批量修复同样使用 repair run_id + cancel_event：
+
+- 取消按钮和窗口关闭叉号走同一取消路径。
+- 取消后恢复到分析完成、修复前状态，保留原有分析结果、推荐方法、cleanup/similar 状态和用户选择。
+- 已写出的非覆盖输出优先删除，删除失败时移入 `_repair_canceled_outputs`；覆盖原文件修复依赖 `_repair_cancel_backups` 恢复。
+- 已取消批次不得写入完成统计、调试打开列表或修复完成详情。
+
 ## Console 合并刷新
 
 Console 文本框不应每条日志都重绘。当前策略是日志进入 `AppConsole` 缓存，UI 用短延迟合并刷新。维护时不得恢复成后台 worker 高频直接写 Text 控件。
+
+Console 时间戳由 `AppConsole` 统一格式化，时间模式来自 `app_settings.py`。分析、修复、扫描等模块不得散落自己的 `strftime()`。目录扫描只输出摘要，完整跳过目录明细进入扫描摘要窗口，避免大批量扫描时 Console 刷屏拖慢主线程。
 
 ## perf_timings / perf_notes
 
 - 阶段耗时统一用 `perf_timings`，单位为毫秒。
 - `perf_notes` 写用户/维护者可读瓶颈提示。
 - 分析和修复的慢阶段应在批量摘要中聚合为 top slow steps。
-- Console 以 wall time 为主，worker cumulative 只作为并发诊断。
+- Console 以 `total_wall_time` 为主，表示用户真实等待时间。
+- `worker_cumulative_time` 只作为并发诊断，表示并发 worker 单图耗时累计，不是用户等待时间。
+- 同时显示平均值时使用 `average_wall_time_per_image` 与 `average_worker_time_per_image`，不得用每图耗时相加冒充总 wall time。
 
 ## GPU fallback
 
