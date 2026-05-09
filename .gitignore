@@ -1,6 +1,11 @@
 ﻿node_modules/
 dist/
-build/
+dist_installer/
+# build/ 目录里手写的打包配置（spec / iss / sh）需入库，
+# 仅忽略 PyInstaller 在该 spec 下生成的 cache 子目录
+/build/shapeyourphoto/
+/build/__pycache__/
+/assets/app_icon.iconset/
 .cache/
 cache/
 tmp/
