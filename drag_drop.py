@@ -127,3 +127,44 @@ class WindowsFileDropTarget:
             if old_proc:
                 _restore_window_proc(user32, hwnd, old_proc)
         self._installed.clear()
+
+
+class TkinterDnDFileDropTarget:
+    def __init__(self, window: tk.Misc, callback) -> None:
+        self.window = window
+        self.callback = callback
+        self._registered_widgets: dict[tk.Misc, str] = {}
+
+    def install(self) -> None:
+        if not hasattr(self.window, "drop_target_register"):
+            return
+
+        def _on_drop(event) -> str:
+            data = getattr(event, "data", "")
+            if not data:
+                return "break"
+            paths = self.window.tk.splitlist(data)
+            self.callback([Path(p) for p in paths if p])
+            return "break"
+
+        def _register_widget(widget: tk.Misc) -> None:
+            if widget in self._registered_widgets:
+                return
+            try:
+                widget.drop_target_register("DND_Files")
+                bind_id = widget.dnd_bind("<<Drop>>", _on_drop, add="+")
+                self._registered_widgets[widget] = bind_id
+            except Exception:
+                return
+            for child in widget.winfo_children():
+                _register_widget(child)
+
+        _register_widget(self.window)
+
+    def uninstall(self) -> None:
+        for widget, bind_id in list(self._registered_widgets.items()):
+            try:
+                widget.dnd_unbind("<<Drop>>", bind_id)
+            except Exception:
+                pass
+        self._registered_widgets.clear()
