@@ -10,7 +10,7 @@ from app_settings import AppSettings, load_app_settings, save_app_settings
 from app_console import AppConsole
 from app_metadata import APP_NAME, APP_VERSION
 from diagnostics_chart import DiagnosticsChart
-from drag_drop import WindowsFileDropTarget
+from dnd_support import install_drop_target
 from file_actions import ScanResult
 from history_dialog import show_history_dialog
 from models import AnalysisResult, SimilarImageGroup
@@ -75,7 +75,7 @@ class PhotoAnalyzerApp(
         self._last_repair_phase_update = 0.0
         self._settings_warnings: list[str] = []
         self.settings: AppSettings = load_app_settings(report_warning=self._settings_warnings.append, create_if_missing=True)
-        self.drop_target: WindowsFileDropTarget | None = None
+        self.drop_target = None
         self.sort_column = "name"
         self.sort_reverse = False
         self.analysis_phase_progress: dict[Path, int] = {}
@@ -443,8 +443,7 @@ class PhotoAnalyzerApp(
 
     def _install_drag_drop(self) -> None:
         try:
-            self.drop_target = WindowsFileDropTarget(self.root, self._handle_dropped_paths)
-            self.root.after(100, self.drop_target.install)
+            self.drop_target = install_drop_target(self.root, self._handle_dropped_paths)
             self._log_console("drag and drop ready")
         except Exception as exc:
             self._log_console(f"drag and drop init failed: {exc}")

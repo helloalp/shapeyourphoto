@@ -1,23 +1,27 @@
 from __future__ import annotations
 
-import ctypes
-from ctypes import wintypes
 import tkinter as tk
+
+from paths import IS_WIN
 
 MIN_SIZE_NOTICE = "已达到最小可用窗口大小"
 
 
-class RECT(ctypes.Structure):
-    _fields_ = [
-        ("left", wintypes.LONG),
-        ("top", wintypes.LONG),
-        ("right", wintypes.LONG),
-        ("bottom", wintypes.LONG),
-    ]
-
-
 def _get_work_area() -> tuple[int, int, int, int] | None:
+    if not IS_WIN:
+        return None
     try:
+        import ctypes
+        from ctypes import wintypes
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG),
+            ]
+
         rect = RECT()
         SPI_GETWORKAREA = 48
         if ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):

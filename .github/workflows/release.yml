@@ -1,0 +1,134 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS .dmg
+    runs-on: macos-14  # Apple Silicon runner -> 输出 arm64 原生
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Resolve app version
+        id: version
+        shell: bash
+        run: |
+          APP_VERSION=$(python3 -c 'from app_metadata import APP_VERSION; print(APP_VERSION)')
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved APP_VERSION=${APP_VERSION}"
+
+      - name: Validate tag matches APP_VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "${{ steps.version.outputs.app_version }}" ]; then
+            echo "::error::Tag $TAG_VERSION != APP_VERSION ${{ steps.version.outputs.app_version }}"
+            exit 1
+          fi
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Build .app via PyInstaller
+        run: pyinstaller build/shapeyourphoto.spec --noconfirm --clean
+
+      - name: Build .dmg
+        run: bash build/build_dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShapeYourPhoto-${{ steps.version.outputs.app_version }}-macOS-arm64
+          path: dist_installer/*.dmg
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Resolve app version
+        id: version
+        shell: bash
+        run: |
+          APP_VERSION=$(python -c 'from app_metadata import APP_VERSION; print(APP_VERSION)')
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate tag matches APP_VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "${{ steps.version.outputs.app_version }}" ]; then
+            echo "::error::Tag $TAG_VERSION != APP_VERSION ${{ steps.version.outputs.app_version }}"
+            exit 1
+          fi
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build PyInstaller onedir
+        run: pyinstaller build/shapeyourphoto.spec --noconfirm --clean
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: cmd
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build\installer.iss /DAppVersion=${{ steps.version.outputs.app_version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShapeYourPhoto-${{ steps.version.outputs.app_version }}-Windows-x64
+          path: dist_installer/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: find artifacts -type f
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+          generate_release_notes: true
+          fail_on_unmatched_files: true

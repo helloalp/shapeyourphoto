@@ -7,8 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from paths import migrate_legacy_file
 
-SETTINGS_PATH = Path("app_settings.json")
+
+SETTINGS_PATH = migrate_legacy_file("app_settings.json")
 SETTINGS_SCHEMA_VERSION = 1
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
 

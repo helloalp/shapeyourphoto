@@ -529,17 +529,23 @@ class UiRepairActionsMixin:
             return
 
         def worker() -> None:
+            import subprocess
+
+            from paths import IS_MAC
+
             errors: list[str] = []
             startfile = getattr(os, "startfile", None)
-            if startfile is None:
-                errors.append("当前系统不支持 os.startfile。")
-            else:
-                for path in open_targets:
-                    try:
+            for path in open_targets:
+                try:
+                    if startfile is not None:
                         startfile(str(path))
-                    except Exception as exc:
-                        errors.append(f"{path.name}: {exc}")
-                        self._log_console(f"debug open failed: {path} | {exc}")
+                    elif IS_MAC:
+                        subprocess.run(["open", str(path)], check=False)
+                    else:
+                        subprocess.run(["xdg-open", str(path)], check=False)
+                except Exception as exc:
+                    errors.append(f"{path.name}: {exc}")
+                    self._log_console(f"debug open failed: {path} | {exc}")
             if errors:
                 self._dispatch_ui(
                     lambda msgs=errors: messagebox.showwarning("打开失败", "部分文件未能打开：\n\n" + "\n".join(msgs[:8]))

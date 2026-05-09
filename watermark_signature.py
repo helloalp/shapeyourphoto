@@ -1,27 +1,62 @@
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
+
+from paths import IS_MAC, IS_WIN, resource_path
 
 
 SOFTWARE_NAME = "ShapeYourPhoto"
 AUTHOR_NAME = "Helloalp"
 
 
+@functools.cache
+def _font_candidates() -> list[Path]:
+    """按优先级返回字体候选：先用打包内字体，再退系统中文字体。结果缓存。"""
+    bundled = [
+        resource_path("assets/fonts/SourceHanSansCN-Regular.otf"),
+        resource_path("assets/fonts/NotoSansCJKsc-Regular.otf"),
+    ]
+    if IS_WIN:
+        system = [
+            Path(r"C:\Windows\Fonts\msyh.ttc"),
+            Path(r"C:\Windows\Fonts\msyhbd.ttc"),
+            Path(r"C:\Windows\Fonts\arial.ttf"),
+        ]
+    elif IS_MAC:
+        system = [
+            Path("/System/Library/Fonts/PingFang.ttc"),
+            Path("/System/Library/Fonts/Hiragino Sans GB.ttc"),
+            Path("/Library/Fonts/Arial Unicode.ttf"),
+        ]
+    else:
+        system = [
+            Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+            Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ]
+    return bundled + system
+
+
+@functools.cache
+def _resolve_font_path() -> Path | None:
+    """返回首个真实存在的字体路径，缓存结果避免每张图重复 stat。"""
+    for path in _font_candidates():
+        if path.exists():
+            return path
+    return None
+
+
 def _load_overlay_font(image: Image.Image) -> ImageFont.ImageFont:
     font_size = max(14, int(min(image.size) * 0.018))
-    candidates = [
-        Path(r"C:\Windows\Fonts\msyh.ttc"),
-        Path(r"C:\Windows\Fonts\msyhbd.ttc"),
-        Path(r"C:\Windows\Fonts\arial.ttf"),
-    ]
-    for font_path in candidates:
-        if font_path.exists():
-            try:
-                return ImageFont.truetype(str(font_path), font_size)
-            except OSError:
-                continue
+    path = _resolve_font_path()
+    if path is not None:
+        try:
+            return ImageFont.truetype(str(path), font_size)
+        except OSError:
+            pass
     return ImageFont.load_default()
 
 

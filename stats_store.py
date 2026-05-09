@@ -7,9 +7,10 @@ from datetime import datetime
 from pathlib import Path
 
 from models import SessionStats
+from paths import migrate_legacy_file
 
 
-STATS_PATH = Path("usage_stats.json")
+STATS_PATH = migrate_legacy_file("usage_stats.json")
 
 
 def load_stats() -> SessionStats:

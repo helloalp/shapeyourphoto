@@ -1,10 +1,33 @@
 from __future__ import annotations
 
 APP_NAME = "图片质量分析、修复与清理工具"
-APP_VERSION = "1.1.6"
+APP_VERSION = "1.1.8"
 APP_ID = "codex.photo.analyzer.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
+    {
+        "version": "1.1.8",
+        "date": "2026-05-10",
+        "items": [
+            "重构平台检测：集中定义 paths.IS_WIN / IS_MAC / IS_LINUX 常量，替换各模块中散落的 sys.platform 字符串比较，避免 import-time 崩溃。",
+            "drag_drop.py 的 Windows 原生拖拽模块现在通过 from paths import IS_WIN 守卫，确保非 Windows 平台不会触发 ctypes 导入错误。",
+            "dnd_support.py 的 tkinterdnd2 数据解析改为使用 Tcl splitlist，比手写花括号解析更稳定。",
+            "paths.user_data_dir() 和 watermark_signature.py 的字体路径解析加入 functools.cache，减少重复 I/O。",
+        ],
+    },
+    {
+        "version": "1.1.7",
+        "date": "2026-05-10",
+        "items": [
+            "新增跨平台桌面打包：macOS 输出 .dmg（Apple Silicon 原生），Windows 输出 Inno Setup 安装程序；GitHub Actions 双 runner 并行构建并自动发布到 Releases。",
+            "拖拽实现改为按平台分派：Windows 复用原生 ctypes 实现，macOS / Linux 改用 tkinterdnd2，根窗口由 dnd_support.create_root() 统一选择。",
+            "用户配置与统计文件迁移到系统标准用户数据目录（macOS: ~/Library/Application Support/ShapeYourPhoto/，Windows: %APPDATA%/Helloalp/ShapeYourPhoto/），首次启动自动从旧 cwd 迁移；卸载不删除。",
+            "drag_drop.py / desktop_integration.py / window_layout.py / file_actions.py / ui_repair_actions.py / watermark_signature.py 全部加 sys.platform 守卫，非 Windows 平台不再 import-time 崩溃。",
+            "watermark_signature.py 字体策略升级：优先打包内字体，macOS 走 PingFang，Windows 走 Microsoft YaHei，Linux 走 Noto Sans CJK，避免默认字体不支持中文导致水印变方块。",
+            "新增 paths.resource_path() / user_data_dir() / migrate_legacy_file() 工具，支撑 PyInstaller _MEIPASS 资源加载与跨平台数据目录。",
+            "本轮不改变分析算法、修复风格、UI 主交互逻辑或用户数据处理规则。",
+        ],
+    },
     {
         "version": "1.1.6",
         "date": "2026-05-08",
