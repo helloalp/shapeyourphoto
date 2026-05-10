@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 APP_NAME = "Shape Your Photo"
-APP_VERSION = "1.2.2"
-APP_VERSION_ID = 6
-APP_BUILD_ID = 6
+APP_VERSION = "1.2.3"
+APP_VERSION_ID = 7
+APP_BUILD_ID = 7
 APP_UPDATE_CHANNEL = "stable"
 APP_ID = "codex.photo.analyzer.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
+    {
+        "version": "1.2.3",
+        "date": "2026-05-11",
+        "items": [
+            "收紧启动云端检查顺序：自动更新提示和云端公告改为排队显示，避免并行弹窗抢占输入。",
+            "确认旧版 1.2.1 卡住来自云端更新提示和公告同时命中旧弹窗实现；新版继续保留可见后再 grab 的弹窗修复。",
+        ],
+    },
     {
         "version": "1.2.2",
         "date": "2026-05-11",
