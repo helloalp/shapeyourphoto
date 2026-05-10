@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 APP_NAME = "Shape Your Photo"
-APP_VERSION = "1.2.3"
-APP_VERSION_ID = 7
-APP_BUILD_ID = 7
+APP_VERSION = "1.2.4"
+APP_VERSION_ID = 8
+APP_BUILD_ID = 8
 APP_UPDATE_CHANNEL = "stable"
 APP_ID = "codex.photo.analyzer.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
+    {
+        "version": "1.2.4",
+        "date": "2026-05-11",
+        "items": [
+            "作为云端 updater 链路测试版本发布，验证 1.2.3 到 1.2.4 的更新检测、下载、校验和替换流程。",
+        ],
+    },
     {
         "version": "1.2.3",
         "date": "2026-05-11",
