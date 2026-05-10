@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 APP_NAME = "Shape Your Photo"
-APP_VERSION = "1.2.0"
-APP_VERSION_ID = 4
-APP_BUILD_ID = 4
+APP_VERSION = "1.2.1"
+APP_VERSION_ID = 5
+APP_BUILD_ID = 5
 APP_UPDATE_CHANNEL = "stable"
 APP_ID = "codex.photo.analyzer.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
+    {
+        "version": "1.2.1",
+        "date": "2026-05-11",
+        "items": [
+            "关闭流程不再显示 Closing 文案。",
+            "主界面“作者官网”按钮改名为“官网”。",
+        ],
+    },
     {
         "version": "1.2.0",
         "date": "2026-05-10",

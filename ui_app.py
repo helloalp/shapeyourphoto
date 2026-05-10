@@ -197,7 +197,7 @@ class PhotoAnalyzerApp(
         stats_button = ttk.Button(controls, text="统计", command=self.show_stats)
         history_button = ttk.Button(controls, text="更新历史", command=lambda: show_history_dialog(self.root))
         cleanup_button = ttk.Button(controls, text="清理勾选项", command=self.cleanup_selected)
-        website_button = ttk.Button(controls, text="作者官网", command=self.open_author_website)
+        website_button = ttk.Button(controls, text="官网", command=self.open_author_website)
 
         button_specs: list[ttk.Button] = []
         button_specs.append(choose_folder_button)
@@ -485,7 +485,7 @@ class PhotoAnalyzerApp(
         except Exception as exc:
             self._log_console(f"drag and drop cleanup failed during close: {exc}")
         try:
-            splash = SplashScreen(self.root, min_ms=650, message="Closing ShapeYourPhoto")
+            splash = SplashScreen(self.root, min_ms=650)
         except Exception:
             self.root.after(80, self.root.destroy)
             return
