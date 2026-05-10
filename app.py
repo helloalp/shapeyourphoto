@@ -18,10 +18,19 @@ def main() -> None:
     splash = SplashScreen(root)
     root.title(f"{APP_NAME} v{APP_VERSION}")
     configure_window_icon(root)
-    PhotoAnalyzerApp(root)
-    center_window(root, 1700, 1020)
-    root.deiconify()
-    splash.close_after_ready()
+    try:
+        PhotoAnalyzerApp(root)
+        center_window(root, 1700, 1020)
+    except Exception:
+        splash.close_now()
+        raise
+
+    def _show_main() -> None:
+        splash.close_now()
+        root.deiconify()
+        root.lift()
+
+    root.after(max(650, splash.min_ms), _show_main)
     root.mainloop()
 
 

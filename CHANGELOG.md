@@ -1,5 +1,16 @@
 # 更新历史
 
+## 1.1.8 - 2026-05-10
+
+- EXIF 编辑升级为普通安全模式与开发者高级模式；开发者模式可在存在 `exiftool` 时写入 GPS/XMP/IPTC 高级字段，任何包含 `shapeyourphoto` 的字段都作为软件完整性/溯源字段锁定，保存前再次校验，不能由高级模式绕过。
+- 设置页新增更新、公告和开发者模式入口；开发者密码通过本机 PBKDF2-SHA256 哈希或环境变量校验，仅本次运行有效，不写入普通设置。
+- 修复右侧 HUD、指标条、百分比和值遮挡/重叠；条图数值区固定右侧列，HUD 文本换行并保留最小宽度。
+- 启动流程改为 Splash -> 主界面，关闭流程统一进入 Closing Splash；窗口关闭、Alt+F4 和 updater 关闭路径共用同一入口。
+- 主界面新增作者官网按钮，打开 `https://helloalp.top/tools/shapeyourphoto`，失败时提示并尝试复制 URL。
+- 新增签名更新检查、云端公告、HMAC 本地状态、模块存在性检查和独立 `updater.py`；updater 支持 sha256 校验、安全解压、托管文件替换、删除项隔离和失败回滚。
+- 新建 `private_docs/for_developer/` 与 `private_docs/for_developai/` 私有文档体系，并将 `private_docs/` 加入 `.gitignore`。
+- 暂时移除 GitHub 自动打包 workflow，公开文档说明 1.1.8 后发布链路将重新设计。
+
 ## 1.1.7 - 2026-05-10
 
 - 融合 main 已合入的外部 PR 与 Codex 修复 PR，并重新叠回 `backup-v1.1.7-before-pr` 的本地 v1.1.7 能力；本轮目标是保留两边有效功能，不回退任一侧。

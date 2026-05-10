@@ -3,6 +3,7 @@
 import queue
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import messagebox, ttk
 
@@ -21,6 +22,8 @@ from stats_dialog import show_stats_dialog
 from stats_store import load_stats
 from ui.themes import get_theme
 from ui.hidpi import configure_fonts
+from ui.cloud_actions import UiCloudActionsMixin
+from ui.splash import SplashScreen
 from ui_analysis_actions import UiAnalysisActionsMixin
 from ui_constants import FILTER_OPTIONS
 from ui_file_list import UiFileListMixin
@@ -32,6 +35,7 @@ from ui_task_console import UiTaskConsoleMixin
 
 class PhotoAnalyzerApp(
     UiTaskConsoleMixin,
+    UiCloudActionsMixin,
     UiScanActionsMixin,
     UiAnalysisActionsMixin,
     UiRepairActionsMixin,
@@ -100,6 +104,7 @@ class PhotoAnalyzerApp(
         self._auto_analyze_after_scan = False
         self._console_flush_total_ms = 0.0
         self._console_flush_count = 0
+        self._closing = False
 
         self._configure_style()
         self._build_ui()
@@ -114,7 +119,9 @@ class PhotoAnalyzerApp(
         self.root.after(25, self._drain_ui_queue)
         self._install_drag_drop()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.bind_all("<Alt-F4>", lambda _event: self._on_close(), add="+")
         self.root.after_idle(self._apply_initial_layout)
+        self.root.after(1600, self._run_startup_cloud_checks)
         for warning in self._settings_warnings:
             self._log_console(warning)
         self._log_console(f"scan ignore prefixes: {', '.join(self.settings.scan_ignore_prefixes)}")
@@ -190,6 +197,7 @@ class PhotoAnalyzerApp(
         stats_button = ttk.Button(controls, text="统计", command=self.show_stats)
         history_button = ttk.Button(controls, text="更新历史", command=lambda: show_history_dialog(self.root))
         cleanup_button = ttk.Button(controls, text="清理勾选项", command=self.cleanup_selected)
+        website_button = ttk.Button(controls, text="作者官网", command=self.open_author_website)
 
         button_specs: list[ttk.Button] = []
         button_specs.append(choose_folder_button)
@@ -203,6 +211,7 @@ class PhotoAnalyzerApp(
                 stats_button,
                 history_button,
                 cleanup_button,
+                website_button,
             ]
         )
         button_columns = 5
@@ -373,16 +382,17 @@ class PhotoAnalyzerApp(
         self.bottom_right_pane.add(info_frame, weight=2)
 
         chart_frame.columnconfigure(0, weight=1)
+        chart_frame.columnconfigure(1, minsize=118)
         chart_frame.rowconfigure(1, weight=1)
 
         hud_frame = ttk.Frame(chart_frame, style="TopCard.TFrame", padding=(10, 8))
         hud_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         hud_frame.columnconfigure(0, weight=3)
-        hud_frame.columnconfigure(1, weight=1)
-        ttk.Label(hud_frame, textvariable=self.hud_name_var, style="HudTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(hud_frame, textvariable=self.hud_risk_var, style="HudTitle.TLabel").grid(row=0, column=1, sticky="e")
-        ttk.Label(hud_frame, textvariable=self.hud_tags_var, style="HudValue.TLabel").grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
-        ttk.Label(hud_frame, textvariable=self.hud_methods_var, style="HudValue.TLabel").grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        hud_frame.columnconfigure(1, minsize=138)
+        ttk.Label(hud_frame, textvariable=self.hud_name_var, style="HudTitle.TLabel", wraplength=520).grid(row=0, column=0, sticky="ew")
+        ttk.Label(hud_frame, textvariable=self.hud_risk_var, style="HudTitle.TLabel", anchor="e", width=14).grid(row=0, column=1, sticky="e")
+        ttk.Label(hud_frame, textvariable=self.hud_tags_var, style="HudValue.TLabel", wraplength=760).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(3, 0))
+        ttk.Label(hud_frame, textvariable=self.hud_methods_var, style="HudValue.TLabel", wraplength=760).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 0))
 
         self.chart = DiagnosticsChart(chart_frame)
         self.chart.grid(row=1, column=0, sticky="nsew")
@@ -463,11 +473,44 @@ class PhotoAnalyzerApp(
             self._log_console(f"drag and drop init failed: {exc}")
 
     def _on_close(self) -> None:
+        self._begin_close_sequence()
+
+    def _begin_close_sequence(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
         try:
             if self.drop_target is not None:
                 self.drop_target.uninstall()
-        finally:
-            self.root.destroy()
+        except Exception as exc:
+            self._log_console(f"drag and drop cleanup failed during close: {exc}")
+        try:
+            splash = SplashScreen(self.root, min_ms=650, message="Closing ShapeYourPhoto")
+        except Exception:
+            self.root.after(80, self.root.destroy)
+            return
+
+        def _finish_close() -> None:
+            try:
+                splash.close_now()
+            finally:
+                self.root.destroy()
+
+        self.root.after(760, _finish_close)
+
+    def open_author_website(self) -> None:
+        url = "https://helloalp.top/tools/shapeyourphoto"
+        try:
+            if not webbrowser.open(url):
+                raise RuntimeError("system browser returned false")
+        except Exception as exc:
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(url)
+                copied = "\n链接已复制到剪贴板。"
+            except Exception:
+                copied = ""
+            messagebox.showerror("无法打开作者官网", f"请手动打开：\n{url}\n\n错误：{exc}{copied}", parent=self.root)
 
     def show_stats(self) -> None:
         show_stats_dialog(self.root, self.stats)

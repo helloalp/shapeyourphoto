@@ -63,3 +63,9 @@
 - 独立 `single_image_window.py` 和“单图模式”不是当前主路径；单张图片通过主列表导入。
 - 孤立“去噪当前”按钮不是当前主路径；降噪由分析、修复规划和修复执行链统一处理。
 - 批量修复长详情不应回退到普通 `messagebox`；应继续使用 `repair_completion_dialog.py`。
+# 1.1.8 Quick Index Addendum
+
+- [developer_mode.py](/E:/aitools/shapeyourphoto/developer_mode.py): session-only developer password verification.
+- [cloud_client.py](/E:/aitools/shapeyourphoto/cloud_client.py), [cloud_security.py](/E:/aitools/shapeyourphoto/cloud_security.py), [cloud_state.py](/E:/aitools/shapeyourphoto/cloud_state.py), [integrity_guard.py](/E:/aitools/shapeyourphoto/integrity_guard.py): signed update/cloud-message client and local integrity state.
+- [ui/cloud_actions.py](/E:/aitools/shapeyourphoto/ui/cloud_actions.py), [ui/cloud_dialogs.py](/E:/aitools/shapeyourphoto/ui/cloud_dialogs.py): update/message UI flows.
+- [updater.py](/E:/aitools/shapeyourphoto/updater.py): independent updater.

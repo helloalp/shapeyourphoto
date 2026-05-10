@@ -20,6 +20,7 @@ from app_settings import (
     normalize_scan_ignore_prefixes,
     validate_settings_payload,
 )
+from developer_mode import developer_session
 from gpu_accel import detect_gpu_backend
 from ui.themes import THEME_OPTIONS, get_theme, normalize_theme_id
 from ui.window_titles import app_window_title
@@ -262,6 +263,52 @@ class AppSettingsDialog(tk.Toplevel):
         theme_box.bind("<<ComboboxSelected>>", _refresh_theme_preview)
         _refresh_theme_preview()
 
+        update_tab = ttk.Frame(notebook, padding=14)
+        update_tab.columnconfigure(1, weight=1)
+        notebook.add(update_tab, text="更新")
+        ttk.Label(update_tab, text="自动检查更新", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.auto_update_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(update_tab, text="启动后自动检查更新（1.1.8 暂不支持关闭）", variable=self.auto_update_var, state="disabled").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(8, 12)
+        )
+        ttk.Label(update_tab, text="更新 manifest URL：").grid(row=2, column=0, sticky="w")
+        self.update_manifest_url_var = tk.StringVar(value=normalized.update_manifest_url)
+        ttk.Entry(update_tab, textvariable=self.update_manifest_url_var).grid(row=2, column=1, sticky="ew")
+        ttk.Label(update_tab, text="云端更新响应必须通过签名校验，下载包必须通过 sha256 校验。", wraplength=680, justify="left").grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(12, 0)
+        )
+
+        message_tab = ttk.Frame(notebook, padding=14)
+        message_tab.columnconfigure(1, weight=1)
+        notebook.add(message_tab, text="公告")
+        ttk.Label(message_tab, text="云端公告", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            message_tab,
+            text="启动后后台静默查询。失败只写入 Console，不影响主程序启动。",
+            wraplength=680,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
+        ttk.Label(message_tab, text="消息 URL：").grid(row=2, column=0, sticky="w")
+        self.cloud_messages_url_var = tk.StringVar(value=normalized.cloud_messages_url)
+        ttk.Entry(message_tab, textvariable=self.cloud_messages_url_var).grid(row=2, column=1, sticky="ew")
+
+        developer_tab = ttk.Frame(notebook, padding=14)
+        developer_tab.columnconfigure(1, weight=1)
+        notebook.add(developer_tab, text="开发者模式")
+        ttk.Label(developer_tab, text="高级开发者能力", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.developer_status_var = tk.StringVar(value="已解锁（本次运行有效）" if developer_session.unlocked else "未解锁")
+        ttk.Label(developer_tab, textvariable=self.developer_status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
+        ttk.Label(developer_tab, text="开发者密码：").grid(row=2, column=0, sticky="w")
+        self.developer_password_var = tk.StringVar()
+        ttk.Entry(developer_tab, textvariable=self.developer_password_var, show="*").grid(row=2, column=1, sticky="ew")
+        ttk.Button(developer_tab, text="本次运行解锁", command=self._unlock_developer_mode).grid(row=3, column=1, sticky="w", pady=(10, 0))
+        ttk.Label(
+            developer_tab,
+            text="密码哈希来自环境变量或本机 developer_secret.json；不会写入普通 app_settings.json，程序重启后自动失效。",
+            wraplength=680,
+            justify="left",
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(16, 0))
+
         buttons = ttk.Frame(outer)
         buttons.grid(row=2, column=0, sticky="ew", pady=(14, 0))
         ttk.Label(buttons, textvariable=self._size_notice_var).pack(side="left")
@@ -330,12 +377,25 @@ class AppSettingsDialog(tk.Toplevel):
             gpu_acceleration_mode=gpu_mode,
             console_time_mode=console_time_mode,
             theme_id=theme_id,
+            auto_check_updates=True,
+            update_manifest_url=self.update_manifest_url_var.get().strip(),
+            cloud_messages_url=self.cloud_messages_url_var.get().strip(),
         )
         self.destroy()
 
     def _cancel(self) -> None:
         self.result = None
         self.destroy()
+
+    def _unlock_developer_mode(self) -> None:
+        ok, message = developer_session.unlock(self.developer_password_var.get())
+        if ok:
+            self.developer_password_var.set("")
+            self.developer_status_var.set("已解锁（本次运行有效）")
+            messagebox.showinfo("开发者模式", message, parent=self)
+        else:
+            self.developer_status_var.set("未解锁")
+            messagebox.showwarning("开发者模式", message, parent=self)
 
 
 def show_app_settings_dialog(parent: tk.Widget, settings: AppSettings) -> AppSettings | None:

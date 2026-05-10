@@ -29,3 +29,9 @@
 - 旧版本行为可在更新文档中保留；专题文档描述当前 1.1.7 维护口径。
 - 如果专题文档和旧 `docs/updates/` 冲突，以当前专题文档和代码为准。
 - benchmark 自动报告写入被忽略的 `benchmark_reports/`，本地 manifest 使用 `test/manifest.json`，二者都不应提交；可提交的模板是 `test/manifest.example.json`。
+# 1.1.8 Technical Addendum
+
+New technical topics:
+
+- `UPDATES_AND_CLOUD.md` for signed update checks, cloud messages and updater client safety.
+- `docs/specs/EXIF_AND_DEVELOPER_MODE.md` for EXIF protection and session-only developer mode boundaries.

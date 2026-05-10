@@ -6,6 +6,7 @@ from tkinter import messagebox
 
 from PIL import Image, ImageOps
 
+from developer_mode import developer_session
 from file_actions import export_cleanup_list
 from metadata_utils import summarize_image_metadata
 from models import AnalysisResult, CleanupCandidate, SimilarImageGroup
@@ -501,9 +502,12 @@ class UiFileListMixin:
         self._update_hud(path, image, result, error)
         meta_summary = summarize_image_metadata(path)
         if hasattr(self, "meta_edit_button"):
-            editable, reason = supports_metadata_edit(path)
+            editable, reason = supports_metadata_edit(path, developer_unlocked=developer_session.unlocked)
             self.meta_edit_button.configure(state="normal" if editable else "disabled")
-            edit_note = "可编辑字段：标题 / 描述、作者、版权、关键词 / 备注。" if editable else f"编辑状态：只读。{reason}"
+            if editable and developer_session.unlocked:
+                edit_note = "可编辑字段：安全文本字段 + 开发者高级 EXIF 字段；ShapeYourPhoto 溯源字段仍会锁定。"
+            else:
+                edit_note = "可编辑字段：标题 / 描述、作者、版权、关键词 / 备注。" if editable else f"编辑状态：只读。{reason}"
             meta_summary = f"{meta_summary}\n\n{edit_note}"
         self._set_meta_summary(meta_summary)
 
@@ -657,11 +661,11 @@ class UiFileListMixin:
         if path is None:
             messagebox.showinfo("提示", "请先选中一张图片。")
             return
-        editable, reason = supports_metadata_edit(path)
+        editable, reason = supports_metadata_edit(path, developer_unlocked=developer_session.unlocked)
         if not editable:
             messagebox.showinfo("只读", reason)
             return
-        result = show_metadata_edit_dialog(self.root, path)
+        result = show_metadata_edit_dialog(self.root, path, developer_unlocked=developer_session.unlocked)
         if result.saved:
             self._log_console(f"metadata edited: {path.name}")
             self._set_meta_summary(summarize_image_metadata(path))

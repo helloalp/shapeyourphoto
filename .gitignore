@@ -27,6 +27,9 @@ exports/
 user_data/
 originals/
 benchmark_reports/
+private_docs/
+_update_removed_files/
+data/update_quarantine/
 
 *.db
 *.sqlite

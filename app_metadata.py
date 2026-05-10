@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 APP_NAME = "图片质量分析、修复与清理工具"
-APP_VERSION = "1.1.7"
+APP_VERSION = "1.1.8"
+APP_VERSION_ID = 2
+APP_BUILD_ID = 2
+APP_UPDATE_CHANNEL = "stable"
 APP_ID = "codex.photo.analyzer.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
+    {
+        "version": "1.1.8",
+        "date": "2026-05-10",
+        "items": [
+            "EXIF editing now has normal safe fields and session-only developer advanced fields.",
+            "ShapeYourPhoto provenance fields are locked whenever a metadata value contains shapeyourphoto.",
+            "Right-side HUD and diagnostics bars reserve fixed numeric columns to avoid overlap.",
+            "Settings now include update, cloud message, and developer mode pages.",
+            "Signed update checks, cloud messages, local state HMAC, module integrity checks, and an independent updater were added.",
+            "Startup and shutdown now use the centered Splash flow, and the main UI includes an author website button.",
+            "private_docs is generated locally and ignored by Git; GitHub auto-packaging workflow is paused.",
+        ],
+    },
     {
         "version": "1.1.7",
         "date": "2026-05-10",

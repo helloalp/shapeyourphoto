@@ -206,3 +206,10 @@ Windows 原生拖拽支持。平台相关且高风险，修改后要验证图片
 ### [watermark_signature.py](/E:/aitools/shapeyourphoto/watermark_signature.py)
 
 保留的可见水印/签名叠加模块。默认修复输出不调用它。
+# 1.1.8 Module Addendum
+
+- `developer_mode.py`: session-only developer unlock using PBKDF2-SHA256 password hashes from local secret sources.
+- `cloud_client.py`, `cloud_security.py`, `cloud_state.py`, `integrity_guard.py`: signed update/message fetch, signature/sha256 helpers, HMAC local state and module integrity checks.
+- `ui/cloud_actions.py`, `ui/cloud_dialogs.py`: update and cloud-message Tk UI flow.
+- `updater.py`: independent update process with safe extraction, replacement, quarantine and rollback.
+- `ui/metadata_editor.py`: normal/developer EXIF editor with ShapeYourPhoto provenance protection.

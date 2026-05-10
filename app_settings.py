@@ -10,8 +10,10 @@ from typing import Callable
 from paths import migrate_legacy_file
 
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 2
+SETTINGS_SCHEMA_VERSION = 3
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
+DEFAULT_UPDATE_MANIFEST_URL = "https://helloalp.top/tools/shapeyourphoto/updates/manifest.json"
+DEFAULT_CLOUD_MESSAGES_URL = "https://helloalp.top/tools/shapeyourphoto/updates/messages.json"
 
 SCAN_MODE_ASK = "ask"
 SCAN_MODE_ALL = "all"
@@ -227,6 +229,9 @@ class AppSettings:
     gpu_acceleration_mode: str = GPU_ACCELERATION_OFF
     console_time_mode: str = CONSOLE_TIME_24H
     theme_id: str = "classic_green"
+    auto_check_updates: bool = True
+    update_manifest_url: str = DEFAULT_UPDATE_MANIFEST_URL
+    cloud_messages_url: str = DEFAULT_CLOUD_MESSAGES_URL
 
 
 def default_app_settings() -> AppSettings:
@@ -240,6 +245,10 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
     if old_version < 2:
         migrated.setdefault("console_time_mode", CONSOLE_TIME_24H)
         migrated.setdefault("theme_id", "classic_green")
+    if old_version < 3:
+        migrated.setdefault("auto_check_updates", True)
+        migrated.setdefault("update_manifest_url", DEFAULT_UPDATE_MANIFEST_URL)
+        migrated.setdefault("cloud_messages_url", DEFAULT_CLOUD_MESSAGES_URL)
     return migrated
 
 
@@ -262,6 +271,11 @@ def validate_settings_payload(payload: object) -> AppSettings:
         gpu_acceleration_mode=normalize_gpu_acceleration_mode(payload.get("gpu_acceleration_mode", GPU_ACCELERATION_OFF)),
         console_time_mode=normalize_console_time_mode(payload.get("console_time_mode", CONSOLE_TIME_24H)),
         theme_id=normalize_theme_id(payload.get("theme_id", "classic_green")),
+        auto_check_updates=True,
+        update_manifest_url=str(payload.get("update_manifest_url") or DEFAULT_UPDATE_MANIFEST_URL).strip()
+        or DEFAULT_UPDATE_MANIFEST_URL,
+        cloud_messages_url=str(payload.get("cloud_messages_url") or DEFAULT_CLOUD_MESSAGES_URL).strip()
+        or DEFAULT_CLOUD_MESSAGES_URL,
     )
 
 

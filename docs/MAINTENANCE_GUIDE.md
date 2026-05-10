@@ -173,3 +173,11 @@
 - `file_actions.py`：扫描忽略、清理安全和输出路径。
 - `app_settings.py`：设置兼容、默认值和 worker 规划。
 - `similar_detector.py` / `similar_review_dialog.py`：相似图算法与安全删除。
+# 1.1.8 Maintenance Addendum
+
+- Settings additions must be defined in `app_settings.py` and surfaced from `settings_dialog.py`.
+- Update and cloud-message UI orchestration lives in `ui/cloud_actions.py` and `ui/cloud_dialogs.py`; do not move protocol logic into `ui_app.py`.
+- Developer mode is session-only and backed by `developer_mode.py`; never store an unlocked flag in `app_settings.json`.
+- EXIF edits must preserve ShapeYourPhoto provenance fields and block any value containing `shapeyourphoto`.
+- Startup scripts must stay fast and must not install dependencies, run benchmarks or perform update downloads.
+- GitHub auto-packaging workflow is paused in 1.1.8; release/server steps live in ignored private docs.

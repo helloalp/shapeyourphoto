@@ -41,3 +41,8 @@
 - 不得清空正式文档。
 - 旧内容不适用时，应修订、迁移、标注历史上下文，或指向当前说明。
 - 功能、模块、设置或版本变化时，同步更新 `CHANGELOG.md`、`app_metadata.py` 和对应 `docs/updates/<version>.md`。
+# 1.1.8 Documentation Note
+
+Public `docs/` keeps user, contributor and module-boundary information. Private server deployment steps, signing-key handling, release operations, internal maintenance strategy and local AI-agent instructions live under ignored `private_docs/`.
+
+See also `docs/updates/1.1.8.md`, `docs/technical/UPDATES_AND_CLOUD.md`, and `docs/specs/EXIF_AND_DEVELOPER_MODE.md`.

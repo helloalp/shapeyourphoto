@@ -11,3 +11,6 @@
 - [内部命名与 UI 显示名规范](DISPLAY_NAMES.md)
 - [用户数据目录与加密存储规范](USER_DATA_AND_ENCRYPTION.md)
 - [设置项与 UI 页面扩展规范](SETTINGS_EXTENSION.md)
+# 1.1.8 Spec Addendum
+
+See `EXIF_AND_DEVELOPER_MODE.md` for the new metadata/developer-mode boundary, and `HUD_AND_CHARTS.md` for the updated non-overlap rule.

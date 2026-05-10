@@ -132,3 +132,11 @@
 - 分析/修复进度、扫描四选项、修复完成详情、cleanup candidate、相似图列表、相似图组内对比和设置窗口都必须设置合理最小尺寸。
 - 可调整大小的窗口压到最小尺寸附近时，使用统一提示“已达到最小可用窗口大小”。
 - 不适合继续缩小的窗口应固定尺寸或只允许内容区滚动，不能让底部关键按钮被遮挡。
+# 1.1.8 UI Workflow Addendum
+
+- Startup order is Splash first, then main window. Closing uses the same lifecycle through a centered Closing Splash.
+- The right diagnostics area reserves space for HUD text, chart percentage and value columns; when space is tight, text wraps or scrolls instead of overlapping.
+- Settings includes Update, Announcement and Developer Mode pages.
+- Manual update check shows a modal "checking update" progress window. Update prompts have no close X and expose only "temporarily not update", "later" and "update".
+- Cloud announcement prompts have no close X, one confirm action and optional countdown/update button.
+- Main controls include an author website button pointing to `https://helloalp.top/tools/shapeyourphoto`.
