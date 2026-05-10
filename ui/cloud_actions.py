@@ -9,7 +9,7 @@ from tkinter import messagebox
 
 from app_metadata import APP_BUILD_ID, APP_VERSION_ID
 from cloud_client import compare_builds, fetch_cloud_messages, fetch_update_manifest
-from cloud_state import remember_message, set_temporary_decline, should_suppress_update_prompt
+from cloud_state import has_seen_message, remember_message, set_temporary_decline, should_suppress_update_prompt
 from integrity_guard import check_cloud_update_modules
 from paths import user_data_dir
 from ui.cloud_dialogs import CheckingUpdateDialog, show_cloud_message_dialog, show_update_available_dialog
@@ -29,9 +29,10 @@ class UiCloudActionsMixin:
                 parent=self.root,
             )
             return
-        self._check_cloud_messages_async()
         if getattr(self.settings, "auto_check_updates", True):
-            self._check_updates_async(manual=False)
+            self._check_updates_async(manual=False, after_done=self._check_cloud_messages_async)
+        else:
+            self._check_cloud_messages_async()
 
     def check_updates_now(self) -> None:
         progress = CheckingUpdateDialog(self.root)
@@ -57,34 +58,44 @@ class UiCloudActionsMixin:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _check_updates_async(self, *, manual: bool) -> None:
+    def _check_updates_async(self, *, manual: bool, after_done=None) -> None:
         def _worker() -> None:
             result = fetch_update_manifest("")
             if not result.ok or result.payload is None:
                 self._log_console(f"auto update check skipped: {result.error}")
+                if after_done is not None:
+                    self._dispatch_ui(after_done)
                 return
-            self._dispatch_ui(lambda: self._handle_update_manifest(result.payload, manual=manual))
+
+            def _finish() -> None:
+                outcome = self._handle_update_manifest(result.payload, manual=manual)
+                if after_done is not None and outcome != "update":
+                    after_done()
+
+            self._dispatch_ui(_finish)
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _handle_update_manifest(self, manifest: dict, *, manual: bool) -> None:
+    def _handle_update_manifest(self, manifest: dict, *, manual: bool) -> str:
         if compare_builds(manifest) <= 0:
             if manual:
                 messagebox.showinfo("检查更新", "当前已经是最新版本。", parent=self.root)
-            return
+            return "current"
         remote_id = int(manifest.get("version_id") or manifest.get("build_id") or 0)
         if not manual and should_suppress_update_prompt(remote_id):
             self._log_console(f"update available but prompt suppressed for version_id={remote_id}")
-            return
+            return "suppressed"
         result = show_update_available_dialog(self.root, manifest, manual=manual)
         if result == "decline":
             if not manual:
                 set_temporary_decline(remote_id)
             else:
                 set_temporary_decline(remote_id)
-            return
+            return result
         if result == "update":
             self._launch_updater(manifest)
+            return result
+        return result
 
     def _launch_updater(self, manifest: dict) -> None:
         pending = user_data_dir() / "pending_update_manifest.json"
@@ -138,6 +149,8 @@ class UiCloudActionsMixin:
             message_id = str(message.get("id") or "")
             if not message_id:
                 continue
-            show_cloud_message_dialog(self.root, message, update_callback=self.check_updates_now)
+            if has_seen_message(message_id):
+                continue
             remember_message(message_id)
+            show_cloud_message_dialog(self.root, message, update_callback=self.check_updates_now)
             break

@@ -102,3 +102,9 @@ def remember_message(message_id: str) -> None:
         seen.append(message_id)
     state["last_seen_message_ids"] = seen[-50:]
     save_cloud_state(state)
+
+
+def has_seen_message(message_id: str) -> bool:
+    state = load_cloud_state()
+    seen = {str(item) for item in state.get("last_seen_message_ids", []) if item}
+    return str(message_id) in seen

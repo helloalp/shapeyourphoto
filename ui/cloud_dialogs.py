@@ -8,6 +8,31 @@ from ui.window_titles import app_window_title
 from window_layout import center_window
 
 
+def _activate_modal(dialog: tk.Toplevel, parent: tk.Widget) -> None:
+    dialog.update_idletasks()
+    dialog.deiconify()
+    dialog.lift(parent.winfo_toplevel())
+    try:
+        dialog.attributes("-topmost", True)
+
+        def _clear_topmost() -> None:
+            try:
+                if dialog.winfo_exists():
+                    dialog.attributes("-topmost", False)
+            except tk.TclError:
+                pass
+
+        dialog.after(250, _clear_topmost)
+    except tk.TclError:
+        pass
+    try:
+        dialog.wait_visibility()
+    except tk.TclError:
+        pass
+    dialog.grab_set()
+    dialog.focus_force()
+
+
 UPDATE_RECOMMENDATION = "建议更新以获得更多算法、更强性能与更佳体验。"
 
 
@@ -24,11 +49,9 @@ class UpdateAvailableDialog(tk.Toplevel):
         self.result = "later"
         self.title(app_window_title("发现新版本"))
         self.transient(parent.winfo_toplevel())
-        self.grab_set()
         self.resizable(True, True)
         self.minsize(620, 430)
-        self.protocol("WM_DELETE_WINDOW", lambda: None)
-        self.overrideredirect(True)
+        self.protocol("WM_DELETE_WINDOW", lambda: self._finish("later"))
         try:
             self.attributes("-toolwindow", True)
         except tk.TclError:
@@ -65,6 +88,7 @@ class UpdateAvailableDialog(tk.Toplevel):
         ttk.Button(actions, text="稍后更新", command=lambda: self._finish("later")).grid(row=0, column=1)
         ttk.Button(actions, text="更新", command=lambda: self._finish("update")).grid(row=0, column=2, sticky="e")
         center_window(self, 700, 520)
+        _activate_modal(self, parent)
 
     def _finish(self, result: str) -> None:
         self.result = result
@@ -82,10 +106,8 @@ class CheckingUpdateDialog(tk.Toplevel):
         super().__init__(parent)
         self.title(app_window_title("检查更新"))
         self.transient(parent.winfo_toplevel())
-        self.grab_set()
         self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", lambda: None)
-        self.overrideredirect(True)
         outer = ttk.Frame(self, padding=18)
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text="正在检查更新...", font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
@@ -93,6 +115,7 @@ class CheckingUpdateDialog(tk.Toplevel):
         bar.pack(fill="x", pady=(14, 0))
         bar.start(12)
         center_window(self, 360, 150)
+        _activate_modal(self, parent)
 
 
 class CloudMessageDialog(tk.Toplevel):
@@ -106,11 +129,9 @@ class CloudMessageDialog(tk.Toplevel):
         super().__init__(parent)
         self.title(app_window_title(str(message.get("title") or "云端公告")))
         self.transient(parent.winfo_toplevel())
-        self.grab_set()
         self.resizable(True, True)
         self.minsize(560, 360)
-        self.protocol("WM_DELETE_WINDOW", lambda: None)
-        self.overrideredirect(True)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._remaining = int(message.get("countdown_seconds") or 0) if message.get("countdown_enabled") else 0
         self._confirm_var = tk.StringVar(value="确认")
         outer = ttk.Frame(self, padding=16)
@@ -133,13 +154,18 @@ class CloudMessageDialog(tk.Toplevel):
         actions.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         actions.columnconfigure(0, weight=1)
         if message.get("show_update_button") and update_callback is not None:
-            ttk.Button(actions, text="更新", command=update_callback).grid(row=0, column=1, padx=(0, 8))
+            ttk.Button(actions, text="更新", command=lambda: self._start_update(update_callback)).grid(row=0, column=1, padx=(0, 8))
         self.confirm_button = ttk.Button(actions, textvariable=self._confirm_var, command=self.destroy)
         self.confirm_button.grid(row=0, column=2)
         if self._remaining > 0:
             self.confirm_button.configure(state="disabled")
             self._tick()
         center_window(self, 650, 460)
+        _activate_modal(self, parent)
+
+    def _start_update(self, update_callback: Callable[[], None]) -> None:
+        self.destroy()
+        update_callback()
 
     def _tick(self) -> None:
         if self._remaining <= 0:
