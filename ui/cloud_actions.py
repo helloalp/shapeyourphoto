@@ -48,7 +48,7 @@ class UiCloudActionsMixin:
             self._dispatch_ui(_wrapped)
 
         def _worker() -> None:
-            result = fetch_update_manifest(getattr(self.settings, "update_manifest_url", ""))
+            result = fetch_update_manifest("")
             if not result.ok or result.payload is None:
                 _finish(lambda: messagebox.showwarning("检查更新失败", result.error or "无法读取更新信息。", parent=self.root))
                 self._log_console(f"manual update check failed: {result.error}")
@@ -59,7 +59,7 @@ class UiCloudActionsMixin:
 
     def _check_updates_async(self, *, manual: bool) -> None:
         def _worker() -> None:
-            result = fetch_update_manifest(getattr(self.settings, "update_manifest_url", ""))
+            result = fetch_update_manifest("")
             if not result.ok or result.payload is None:
                 self._log_console(f"auto update check skipped: {result.error}")
                 return
@@ -113,7 +113,7 @@ class UiCloudActionsMixin:
 
     def _check_cloud_messages_async(self) -> None:
         def _worker() -> None:
-            result = fetch_cloud_messages(getattr(self.settings, "cloud_messages_url", ""))
+            result = fetch_cloud_messages("")
             if not result.ok or result.payload is None:
                 self._log_console(f"cloud message check skipped: {result.error}")
                 return

@@ -1,6 +1,6 @@
 # Maintenance Guide
 
-本文是 1.1.7 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
+本文是 1.1.9 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
 
 ## 基本原则
 
@@ -157,6 +157,14 @@
 - 产品和界面规范变化：更新或新增 `docs/specs/` 专题。
 - 版本升级：更新 `CHANGELOG.md`、`app_metadata.py` 和 `docs/updates/<version>.md`。
 
+## 版本记录语言规范
+
+- `app_metadata.py` 内置 `CHANGELOG` 会在应用内展示，默认必须使用中文书写。
+- 根目录 `CHANGELOG.md` 和 `docs/updates/<version>.md` 默认也使用中文书写，并与 `app_metadata.CHANGELOG` 保持同一事实口径。
+- 内部模块名、文件名、函数名、字段名、code、enum、storage key、环境变量和协议字段继续保留英文原文，不为了中文化而改写技术标识。
+- 如必须引用英文库名、异常名、命令名或协议字段，可直接保留英文；解释性文案仍使用中文。
+- 发布前检查 1.1.8 及之后的新增版本记录，不得出现整条英文更新说明混入中文版本历史。
+
 ## 推荐验证顺序
 
 1. `python -m compileall -q .`
@@ -181,3 +189,10 @@
 - EXIF edits must preserve ShapeYourPhoto provenance fields and block any value containing `shapeyourphoto`.
 - Startup scripts must stay fast and must not install dependencies, run benchmarks or perform update downloads.
 - GitHub auto-packaging workflow is paused in 1.1.8; release/server steps live in ignored private docs.
+
+# 1.1.9 Maintenance Addendum
+
+- Production update and cloud-message URLs are fixed internal constants. Do not expose them in Settings, do not persist them in ordinary `app_settings.json`, and do not add user-editable URL fields back.
+- Settings pages shown to regular users should use short, understandable descriptions. Keep implementation notes in docs or private docs instead of user-facing labels.
+- Theme settings may show theme names only; do not expose concrete color token values in the user settings dialog.
+- The main window title format is `Shape Your Photo | v<version> | by Helloalp`.

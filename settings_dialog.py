@@ -3,6 +3,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from app_metadata import APP_BUILD_ID, APP_NAME, APP_VERSION, APP_VERSION_ID
 from app_settings import (
     ANALYSIS_CONCURRENCY_OPTIONS,
     AppSettings,
@@ -22,14 +23,15 @@ from app_settings import (
 )
 from developer_mode import developer_session
 from gpu_accel import detect_gpu_backend
-from ui.themes import THEME_OPTIONS, get_theme, normalize_theme_id
+from ui.themes import THEME_OPTIONS, normalize_theme_id
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
 class AppSettingsDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Widget, settings: AppSettings) -> None:
+    def __init__(self, parent: tk.Widget, settings: AppSettings, update_check_callback=None) -> None:
         super().__init__(parent)
+        self._update_check_callback = update_check_callback
         self.title(app_window_title("应用设置"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
@@ -135,7 +137,7 @@ class AppSettingsDialog(tk.Toplevel):
 
         ttk.Label(
             behavior_tab,
-            text="后续新增设置应继续复用 app_settings.py 的统一默认值、校验、读写和容错接口。",
+            text="这些选项只影响之后的新任务，不会改动已经完成的分析结果。",
             wraplength=680,
             justify="left",
         ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 0))
@@ -147,7 +149,7 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(performance_tab, text="分析并发", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             performance_tab,
-            text="控制批量分析 worker 数。自动模式会按 CPU 核心数和任务数量选择安全值；大图很多时建议先使用自动或中等。",
+            text="控制同时分析图片的数量。通常保持自动即可；如果电脑变卡，可以调低。",
             wraplength=680,
             justify="left",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
@@ -162,7 +164,7 @@ class AppSettingsDialog(tk.Toplevel):
             width=28,
         ).grid(row=2, column=1, sticky="w")
 
-        ttk.Label(performance_tab, text="自定义 worker 数：").grid(row=3, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(performance_tab, text="同时处理数量：").grid(row=3, column=0, sticky="w", pady=(12, 0))
         self.custom_workers_var = tk.StringVar(value=str(normalized.analysis_custom_workers or ""))
         ttk.Spinbox(
             performance_tab,
@@ -175,7 +177,7 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(performance_tab, text="GPU 加速", font=("Microsoft YaHei UI", 11, "bold")).grid(row=4, column=0, columnspan=2, sticky="w", pady=(22, 0))
         ttk.Label(
             performance_tab,
-            text="GPU 是可选能力；未检测到可用后端时会自动回退 CPU，不会影响启动和现有分析流程。",
+            text="有可用加速能力时可以尝试开启；没有检测到时会自动使用 CPU。",
             wraplength=680,
             justify="left",
         ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 10))
@@ -192,7 +194,7 @@ class AppSettingsDialog(tk.Toplevel):
 
         backend_status = detect_gpu_backend()
         backend_label = backend_status.backend_name if backend_status.available else "未检测到"
-        ttk.Label(performance_tab, text="可用后端：").grid(row=7, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(performance_tab, text="加速状态：").grid(row=7, column=0, sticky="w", pady=(12, 0))
         ttk.Label(performance_tab, text=backend_label).grid(row=7, column=1, sticky="w", pady=(12, 0))
         ttk.Label(
             performance_tab,
@@ -207,7 +209,7 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(console_tab, text="Console 时间显示", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             console_tab,
-            text="只影响保存设置之后新写入的 Console 日志；旧日志不会重写。",
+            text="选择 Console 新日志的时间显示方式。",
             wraplength=680,
             justify="left",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
@@ -222,7 +224,7 @@ class AppSettingsDialog(tk.Toplevel):
         ).grid(row=2, column=1, sticky="w")
         ttk.Label(
             console_tab,
-            text="24 小时制适合日常记录；12 小时制会明确显示 AM/PM；启动后经过时间适合排查长任务耗时。",
+            text="跨时区沟通或排查问题时，可以选择带时区的时间格式。",
             wraplength=680,
             justify="left",
         ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(14, 0))
@@ -233,7 +235,7 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(appearance_tab, text="应用风格", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             appearance_tab,
-            text="风格通过颜色 token、字体微调和间距微调应用到主窗口及主要弹窗。默认“经典清绿”尽量贴近当前视觉。",
+            text="选择你喜欢的界面配色。",
             wraplength=680,
             justify="left",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
@@ -247,35 +249,29 @@ class AppSettingsDialog(tk.Toplevel):
             width=28,
         )
         theme_box.grid(row=2, column=1, sticky="w")
-        self.theme_preview_var = tk.StringVar()
-        ttk.Label(appearance_tab, textvariable=self.theme_preview_var, wraplength=680, justify="left").grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(14, 0)
-        )
-
-        def _refresh_theme_preview(_event=None) -> None:
-            theme_id = normalize_theme_id(self._theme_label_to_value.get(self.theme_var.get()))
-            theme = get_theme(theme_id)
-            self.theme_preview_var.set(
-                f"主色 {theme.primary}；强调色 {theme.accent}；背景 {theme.background}；"
-                f"面板 {theme.panel}；按钮 {theme.button}；选中 {theme.selection}。"
-            )
-
-        theme_box.bind("<<ComboboxSelected>>", _refresh_theme_preview)
-        _refresh_theme_preview()
+        ttk.Label(
+            appearance_tab,
+            text="这里只显示配色名称。具体颜色细节不在用户设置页公开。",
+            wraplength=680,
+            justify="left",
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(14, 0))
 
         update_tab = ttk.Frame(notebook, padding=14)
         update_tab.columnconfigure(1, weight=1)
         notebook.add(update_tab, text="更新")
-        ttk.Label(update_tab, text="自动检查更新", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(update_tab, text="当前版本", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            update_tab,
+            text=f"{APP_NAME} v{APP_VERSION}    version_id={APP_VERSION_ID}    build_id={APP_BUILD_ID}",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
+        ttk.Button(update_tab, text="检查更新", command=self._check_updates_now).grid(row=2, column=0, sticky="w")
+        ttk.Label(update_tab, text="自动检查更新", font=("Microsoft YaHei UI", 11, "bold")).grid(row=3, column=0, columnspan=2, sticky="w", pady=(22, 0))
         self.auto_update_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(update_tab, text="启动后自动检查更新（1.1.8 暂不支持关闭）", variable=self.auto_update_var, state="disabled").grid(
-            row=1, column=0, columnspan=2, sticky="w", pady=(8, 12)
+        ttk.Checkbutton(update_tab, text="启动后自动检查更新", variable=self.auto_update_var, state="disabled").grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(8, 12)
         )
-        ttk.Label(update_tab, text="更新 manifest URL：").grid(row=2, column=0, sticky="w")
-        self.update_manifest_url_var = tk.StringVar(value=normalized.update_manifest_url)
-        ttk.Entry(update_tab, textvariable=self.update_manifest_url_var).grid(row=2, column=1, sticky="ew")
-        ttk.Label(update_tab, text="云端更新响应必须通过签名校验，下载包必须通过 sha256 校验。", wraplength=680, justify="left").grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(12, 0)
+        ttk.Label(update_tab, text="更新地址由 Shape Your Photo 自动管理。", wraplength=680, justify="left").grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(12, 0)
         )
 
         message_tab = ttk.Frame(notebook, padding=14)
@@ -284,13 +280,11 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(message_tab, text="云端公告", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             message_tab,
-            text="启动后后台静默查询。失败只写入 Console，不影响主程序启动。",
+            text="启动后自动查询重要提示。网络失败时不会打扰你。",
             wraplength=680,
             justify="left",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
-        ttk.Label(message_tab, text="消息 URL：").grid(row=2, column=0, sticky="w")
-        self.cloud_messages_url_var = tk.StringVar(value=normalized.cloud_messages_url)
-        ttk.Entry(message_tab, textvariable=self.cloud_messages_url_var).grid(row=2, column=1, sticky="ew")
+        ttk.Label(message_tab, text="公告地址由 Shape Your Photo 自动管理。").grid(row=2, column=0, columnspan=2, sticky="w")
 
         developer_tab = ttk.Frame(notebook, padding=14)
         developer_tab.columnconfigure(1, weight=1)
@@ -304,7 +298,7 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Button(developer_tab, text="本次运行解锁", command=self._unlock_developer_mode).grid(row=3, column=1, sticky="w", pady=(10, 0))
         ttk.Label(
             developer_tab,
-            text="密码哈希来自环境变量或本机 developer_secret.json；不会写入普通 app_settings.json，程序重启后自动失效。",
+            text="仅用于本机调试和高级维护。本次运行有效，重启后会自动关闭。",
             wraplength=680,
             justify="left",
         ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(16, 0))
@@ -378,8 +372,6 @@ class AppSettingsDialog(tk.Toplevel):
             console_time_mode=console_time_mode,
             theme_id=theme_id,
             auto_check_updates=True,
-            update_manifest_url=self.update_manifest_url_var.get().strip(),
-            cloud_messages_url=self.cloud_messages_url_var.get().strip(),
         )
         self.destroy()
 
@@ -397,8 +389,14 @@ class AppSettingsDialog(tk.Toplevel):
             self.developer_status_var.set("未解锁")
             messagebox.showwarning("开发者模式", message, parent=self)
 
+    def _check_updates_now(self) -> None:
+        if self._update_check_callback is None:
+            messagebox.showinfo("检查更新", "当前无法从设置窗口发起检查。", parent=self)
+            return
+        self._update_check_callback()
 
-def show_app_settings_dialog(parent: tk.Widget, settings: AppSettings) -> AppSettings | None:
-    dialog = AppSettingsDialog(parent, settings)
+
+def show_app_settings_dialog(parent: tk.Widget, settings: AppSettings, update_check_callback=None) -> AppSettings | None:
+    dialog = AppSettingsDialog(parent, settings, update_check_callback=update_check_callback)
     dialog.wait_window()
     return dialog.result

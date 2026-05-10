@@ -37,6 +37,13 @@
 - UI 主流程变化：更新 [UI_AND_WORKFLOWS.md](/E:/aitools/shapeyourphoto/docs/UI_AND_WORKFLOWS.md)。
 - 并发、性能、扫描、cleanup、相似图、分析链路变化：优先在 `docs/technical/` 新增或修订专题。
 - 版本升级：更新 [CHANGELOG.md](/E:/aitools/shapeyourphoto/CHANGELOG.md)、[app_metadata.py](/E:/aitools/shapeyourphoto/app_metadata.py) 和 `docs/updates/<version>.md`。
+
+## 版本记录语言规则
+
+- `app_metadata.py` 的 `CHANGELOG` 属于应用内用户可见版本历史，默认必须使用中文。
+- 根 `CHANGELOG.md` 与 `docs/updates/<version>.md` 默认必须使用中文，并与 `app_metadata.CHANGELOG` 同步同一批事实。
+- 英文只用于技术标识原文，例如文件名、函数名、模块名、环境变量、协议字段、第三方库名、内部 code/enum/storage value。
+- 不得把整条英文 release note 直接放进 `app_metadata.CHANGELOG` 作为正式版本记录。
 # 1.1.8 Public / Private Documentation Rule
 
 Starting with 1.1.8, public docs must remain useful but should not contain private server operation details, signing private-key handling, internal release scripts, commercial maintenance strategy or deep private AI-agent prompts. Those belong in ignored `private_docs/for_developer/` and `private_docs/for_developai/`.

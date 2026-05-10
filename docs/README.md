@@ -9,7 +9,7 @@
 - `docs/`：当前维护规则、系统总览、模块参考和 UI 工作流，是日常维护的权威说明。
 - `docs/technical/`：专题技术文档，记录分析链路、性能并发、相似图、cleanup、设置扫描等跨模块规则。
 - `docs/specs/`：产品、界面、信息呈现、Console、display mapping、用户数据和设置扩展规范；不替代 technical 文档。
-- `docs/updates/`：按版本归档的更新记录。旧版本文档保留历史上下文；如与当前行为冲突，以 1.1.7 文档和代码为准。
+- `docs/updates/`：按版本归档的更新记录。旧版本文档保留历史上下文；如与当前行为冲突，以 1.1.9 文档和代码为准。
 
 ## 建议阅读顺序
 
@@ -24,7 +24,7 @@
 
 ## 当前维护主题
 
-1.1.7 的文档体系以这些当前事实为准：
+1.1.9 的文档体系以这些当前事实为准：
 
 - `analyzer.py` 是兼容入口，分析主逻辑在 `analysis/` 包。
 - 主界面以主列表工作流为准；没有独立单图窗口主路径。
@@ -33,7 +33,7 @@
 - 相似图是批次级附加结果，不写回单张 `AnalysisResult`。
 - 性能计时统一用 `perf_timings` / `perf_notes`，Console 只做合并后的用户可读摘要。
 - GPU 只是可选检测和 CPU 回退提示，不能成为必需依赖。
-- 1.1.7 融合跨平台打包、拖放、平台检测和本地 UI/设置/统计/修复取消能力；`ui/` 基础设施、Console 时间设置、外观主题、DPAPI 统计、EXIF 安全编辑和 `docs/specs/` 规范目录继续作为当前维护口径。
+- 1.1.9 保留 1.1.8 的 EXIF、更新、公告和私有文档体系，并补充固定更新/公告 URL、Console 时区时间戳、设置页用户化说明、主窗口标题和 README 普通用户入口。
 
 ## 文档维护规则
 
@@ -41,8 +41,9 @@
 - 不得清空正式文档。
 - 旧内容不适用时，应修订、迁移、标注历史上下文，或指向当前说明。
 - 功能、模块、设置或版本变化时，同步更新 `CHANGELOG.md`、`app_metadata.py` 和对应 `docs/updates/<version>.md`。
-# 1.1.8 Documentation Note
+- 版本记录默认使用中文：`app_metadata.CHANGELOG`、根 `CHANGELOG.md` 和 `docs/updates/<version>.md` 必须保持中文事实口径一致；英文仅保留在文件名、函数名、协议字段、环境变量和内部 code/enum 等技术标识中。
+# 1.1.9 Documentation Note
 
 Public `docs/` keeps user, contributor and module-boundary information. Private server deployment steps, signing-key handling, release operations, internal maintenance strategy and local AI-agent instructions live under ignored `private_docs/`.
 
-See also `docs/updates/1.1.8.md`, `docs/technical/UPDATES_AND_CLOUD.md`, and `docs/specs/EXIF_AND_DEVELOPER_MODE.md`.
+See also `docs/updates/1.1.9.md`, `docs/technical/UPDATES_AND_CLOUD.md`, and `docs/technical/UI_SETTINGS_DATA.md`.

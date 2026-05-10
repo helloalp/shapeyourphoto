@@ -21,6 +21,7 @@ Console 时间模式由 `app_settings.py` 管理：
 
 - `24h`：`[20:28:14]`
 - `12h`：`[08:28:14 PM]`
+- `24h_tz`：`[20:28:14 UTC+09:00]`
 - `elapsed`：`[T+00:20:28]`
 
 `AppConsole` 负责格式化时间戳。设置变更只影响新日志，不重写旧日志。后台线程仍只排队日志，Text 控件刷新由主线程合并执行。
@@ -35,7 +36,16 @@ Console 时间模式由 `app_settings.py` 管理：
 - `warm_paper`：暖白纸。
 - `high_contrast`：高对比。
 
-每个主题至少定义主色、强调色、背景、面板、按钮、文字、选中和字体/间距微调。主题不得绕开 HiDPI 字体配置。
+每个主题至少定义主色、强调色、背景、面板、按钮、文字、选中和字体/间距微调。主题不得绕开 HiDPI 字体配置。1.1.9 起，用户设置页只显示配色名称，不公开具体颜色 token。
+
+## 更新与公告设置
+
+1.1.9 起，客户端更新和公告地址由程序内部固定：
+
+- manifest：`https://helloalp.top/shapeyourphoto/updates/manifest.json`
+- messages：`https://helloalp.top/shapeyourphoto/updates/messages.json`
+
+这两个地址不在设置页显示，不允许用户修改，也不写入普通 `app_settings.json`。设置页“更新”页面只显示当前版本名称、version_id、build_id 和“检查更新”按钮。
 
 ## 用户数据与统计
 

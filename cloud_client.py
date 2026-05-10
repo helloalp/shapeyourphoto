@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app_metadata import APP_BUILD_ID, APP_UPDATE_CHANNEL, APP_VERSION, APP_VERSION_ID
+from app_settings import FIXED_CLOUD_MESSAGES_URL, FIXED_UPDATE_MANIFEST_URL
 from cloud_security import verify_signed_envelope
 
 
@@ -61,7 +62,7 @@ def fetch_json(url: str, *, params: dict[str, str | int] | None = None) -> Cloud
 
 def fetch_update_manifest(url: str) -> CloudResult:
     return fetch_json(
-        url,
+        FIXED_UPDATE_MANIFEST_URL,
         params={
             "version": APP_VERSION,
             "version_id": APP_VERSION_ID,
@@ -73,7 +74,7 @@ def fetch_update_manifest(url: str) -> CloudResult:
 
 def fetch_cloud_messages(url: str) -> CloudResult:
     return fetch_json(
-        url,
+        FIXED_CLOUD_MESSAGES_URL,
         params={
             "version": APP_VERSION,
             "version_id": APP_VERSION_ID,

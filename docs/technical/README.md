@@ -26,7 +26,7 @@
 ## 维护规则
 
 - 新增跨模块能力时，优先补专题文档，而不是只改根 README。
-- 旧版本行为可在更新文档中保留；专题文档描述当前 1.1.7 维护口径。
+- 旧版本行为可在更新文档中保留；专题文档描述当前 1.1.9 维护口径。
 - 如果专题文档和旧 `docs/updates/` 冲突，以当前专题文档和代码为准。
 - benchmark 自动报告写入被忽略的 `benchmark_reports/`，本地 manifest 使用 `test/manifest.json`，二者都不应提交；可提交的模板是 `test/manifest.example.json`。
 # 1.1.8 Technical Addendum
@@ -35,3 +35,9 @@ New technical topics:
 
 - `UPDATES_AND_CLOUD.md` for signed update checks, cloud messages and updater client safety.
 - `docs/specs/EXIF_AND_DEVELOPER_MODE.md` for EXIF protection and session-only developer mode boundaries.
+
+# 1.1.9 Technical Addendum
+
+- Update and cloud-message URLs are fixed internal endpoints and must not be exposed as user-editable settings.
+- Console has a timezone timestamp mode.
+- Settings UI should show ordinary user descriptions; implementation details belong in technical or private docs.

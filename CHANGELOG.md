@@ -1,5 +1,16 @@
 # 更新历史
 
+## 1.1.9 - 2026-05-10
+
+- Console 时间戳新增带时区格式，便于跨地区沟通和排查日志。
+- “分析全部”按钮改为普通按钮样式，不再加粗突出。
+- 客户端更新 manifest URL 固定为 `https://helloalp.top/shapeyourphoto/updates/manifest.json`，云端消息 URL 固定为 `https://helloalp.top/shapeyourphoto/updates/messages.json`；设置页不再公开显示或允许修改，也不写入普通设置 JSON。
+- 配色方案页面只显示配色名称，不再公开具体颜色 token。
+- 设置页更新页面新增“检查更新”按钮，并显示当前版本名称、version_id 和 build_id。
+- 设置页文案改为面向普通用户的简短说明，减少开发者实现细节。
+- 主窗口标题改为 `Shape Your Photo | v1.1.9 | by Helloalp`。
+- README 改为普通用户说明：Windows 用户进入 Release 下载并运行 `setup_deps.bat`、`start_app.bat`；macOS 当前说明改为后续补充。
+
 ## 1.1.8 - 2026-05-10
 
 - EXIF 编辑升级为普通安全模式与开发者高级模式；开发者模式可在存在 `exiftool` 时写入 GPS/XMP/IPTC 高级字段，任何包含 `shapeyourphoto` 的字段都作为软件完整性/溯源字段锁定，保存前再次校验，不能由高级模式绕过。
@@ -10,6 +21,8 @@
 - 新增签名更新检查、云端公告、HMAC 本地状态、模块存在性检查和独立 `updater.py`；updater 支持 sha256 校验、安全解压、托管文件替换、删除项隔离和失败回滚。
 - 新建 `private_docs/for_developer/` 与 `private_docs/for_developai/` 私有文档体系，并将 `private_docs/` 加入 `.gitignore`。
 - 暂时移除 GitHub 自动打包 workflow，公开文档说明 1.1.8 后发布链路将重新设计。
+
+- 明确版本记录语言规范：`app_metadata.CHANGELOG`、根 `CHANGELOG.md` 和 `docs/updates/<version>.md` 默认使用中文；英文仅保留在文件名、函数名、协议字段、环境变量和内部 code/enum 等技术标识中。
 
 ## 1.1.7 - 2026-05-10
 

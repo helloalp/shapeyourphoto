@@ -190,7 +190,7 @@ class PhotoAnalyzerApp(
 
         choose_folder_button = ttk.Button(controls, text="选择目录", command=self.choose_folder)
         choose_image_button = ttk.Button(controls, text="选择图片", command=self.choose_image)
-        analyze_all_button = ttk.Button(controls, text="分析全部", style="Accent.TButton", command=self.analyze_all)
+        analyze_all_button = ttk.Button(controls, text="分析全部", command=self.analyze_all)
         analyze_selected_button = ttk.Button(controls, text="分析选中", command=self.analyze_selected)
         repair_current_button = ttk.Button(controls, text="修复当前", command=self.repair_current)
         repair_checked_button = ttk.Button(controls, text="批量修复勾选", command=self.repair_checked)
@@ -516,7 +516,7 @@ class PhotoAnalyzerApp(
         show_stats_dialog(self.root, self.stats)
 
     def open_settings_panel(self) -> None:
-        settings = show_app_settings_dialog(self.root, self.settings)
+        settings = show_app_settings_dialog(self.root, self.settings, update_check_callback=self.check_updates_now)
         if settings is None:
             return
         try:

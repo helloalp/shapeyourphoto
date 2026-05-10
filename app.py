@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app_metadata import APP_NAME, APP_VERSION
+from app_metadata import APP_VERSION
 from desktop_integration import configure_window_icon
 from dnd_support import create_root
 from ui.hidpi import configure_fonts, configure_tk_scaling, enable_dpi_awareness
@@ -16,7 +16,7 @@ def main() -> None:
     configure_fonts(root)
     root.withdraw()
     splash = SplashScreen(root)
-    root.title(f"{APP_NAME} v{APP_VERSION}")
+    root.title(f"Shape Your Photo | v{APP_VERSION} | by Helloalp")
     configure_window_icon(root)
     try:
         PhotoAnalyzerApp(root)

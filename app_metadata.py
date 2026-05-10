@@ -1,24 +1,39 @@
 from __future__ import annotations
 
-APP_NAME = "图片质量分析、修复与清理工具"
-APP_VERSION = "1.1.8"
-APP_VERSION_ID = 2
-APP_BUILD_ID = 2
+APP_NAME = "Shape Your Photo"
+APP_VERSION = "1.1.9"
+APP_VERSION_ID = 3
+APP_BUILD_ID = 3
 APP_UPDATE_CHANNEL = "stable"
 APP_ID = "codex.photo.analyzer.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
     {
+        "version": "1.1.9",
+        "date": "2026-05-10",
+        "items": [
+            "Console 时间格式新增带时区的时间戳选项，便于跨地区排查日志。",
+            "主界面“分析全部”按钮改为普通按钮样式，不再使用加粗强调。",
+            "更新 manifest 与云端消息地址改为客户端内部固定地址，不在设置页公开显示或写入普通设置 JSON。",
+            "配色方案设置页只展示配色名称，不再公开具体颜色 token。",
+            "设置页更新区域新增当前版本名称、version_id、build_id 显示和手动检查更新按钮。",
+            "设置页说明文案改为面向普通用户的简短描述，减少开发者实现细节。",
+            "主窗口标题改为 Shape Your Photo | v1.1.9 | by Helloalp。",
+            "README 改为面向普通 Windows 用户的简洁下载与启动说明，移除过时安装和自动打包说明。",
+        ],
+    },
+    {
         "version": "1.1.8",
         "date": "2026-05-10",
         "items": [
-            "EXIF editing now has normal safe fields and session-only developer advanced fields.",
-            "ShapeYourPhoto provenance fields are locked whenever a metadata value contains shapeyourphoto.",
-            "Right-side HUD and diagnostics bars reserve fixed numeric columns to avoid overlap.",
-            "Settings now include update, cloud message, and developer mode pages.",
-            "Signed update checks, cloud messages, local state HMAC, module integrity checks, and an independent updater were added.",
-            "Startup and shutdown now use the centered Splash flow, and the main UI includes an author website button.",
-            "private_docs is generated locally and ignored by Git; GitHub auto-packaging workflow is paused.",
+            "EXIF 编辑升级为普通安全字段与本次运行有效的开发者高级字段两层。",
+            "任何元数据值包含 shapeyourphoto 的字段都视为 ShapeYourPhoto 溯源字段并锁定，不允许普通或高级编辑绕过。",
+            "右侧 HUD、诊断条图、风险值、百分比和数字区域预留固定列宽，避免遮挡与重叠。",
+            "设置页新增更新、云端公告和开发者模式入口，并统一接入 app_settings.py 与 settings_dialog.py。",
+            "新增签名更新检查、云端公告、本地状态 HMAC、模块完整性检查和独立 updater。",
+            "启动和关闭流程改为居中 Splash 顺序，主界面新增作者官网按钮。",
+            "建立被 Git 忽略的 private_docs 私有文档体系，暂时移除 GitHub 自动打包 workflow。",
+            "明确版本记录编写规范：app_metadata.CHANGELOG、根 CHANGELOG 和 docs/updates 默认使用中文书写，内部 code/enum/storage 名称保持英文。",
         ],
     },
     {

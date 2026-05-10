@@ -140,3 +140,12 @@
 - Manual update check shows a modal "checking update" progress window. Update prompts have no close X and expose only "temporarily not update", "later" and "update".
 - Cloud announcement prompts have no close X, one confirm action and optional countdown/update button.
 - Main controls include an author website button pointing to `https://helloalp.top/tools/shapeyourphoto`.
+
+# 1.1.9 UI Workflow Addendum
+
+- Main window title uses `Shape Your Photo | v<version> | by Helloalp`.
+- The "分析全部" button uses normal button weight.
+- Settings -> Update shows current version, version_id, build_id and a manual "检查更新" button.
+- Update and message URLs are not shown in Settings and are not user-editable.
+- Theme settings show theme names only, not color token values.
+- User-facing settings descriptions should stay short and understandable.

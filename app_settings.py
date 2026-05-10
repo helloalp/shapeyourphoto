@@ -10,10 +10,12 @@ from typing import Callable
 from paths import migrate_legacy_file
 
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 3
+SETTINGS_SCHEMA_VERSION = 4
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
-DEFAULT_UPDATE_MANIFEST_URL = "https://helloalp.top/tools/shapeyourphoto/updates/manifest.json"
-DEFAULT_CLOUD_MESSAGES_URL = "https://helloalp.top/tools/shapeyourphoto/updates/messages.json"
+FIXED_UPDATE_MANIFEST_URL = "https://helloalp.top/shapeyourphoto/updates/manifest.json"
+FIXED_CLOUD_MESSAGES_URL = "https://helloalp.top/shapeyourphoto/updates/messages.json"
+DEFAULT_UPDATE_MANIFEST_URL = FIXED_UPDATE_MANIFEST_URL
+DEFAULT_CLOUD_MESSAGES_URL = FIXED_CLOUD_MESSAGES_URL
 
 SCAN_MODE_ASK = "ask"
 SCAN_MODE_ALL = "all"
@@ -31,7 +33,7 @@ ANALYSIS_CONCURRENCY_OPTIONS: list[tuple[str, str]] = [
     (ANALYSIS_CONCURRENCY_LOW, "低"),
     (ANALYSIS_CONCURRENCY_MEDIUM, "中"),
     (ANALYSIS_CONCURRENCY_HIGH, "高"),
-    (ANALYSIS_CONCURRENCY_CUSTOM, "自定义 worker 数"),
+    (ANALYSIS_CONCURRENCY_CUSTOM, "自定义同时处理数量"),
 ]
 ANALYSIS_CONCURRENCY_LABELS = {value: label for value, label in ANALYSIS_CONCURRENCY_OPTIONS}
 
@@ -48,11 +50,13 @@ GPU_ACCELERATION_LABELS = {value: label for value, label in GPU_ACCELERATION_OPT
 
 CONSOLE_TIME_24H = "24h"
 CONSOLE_TIME_12H = "12h"
+CONSOLE_TIME_24H_TZ = "24h_tz"
 CONSOLE_TIME_ELAPSED = "elapsed"
 
 CONSOLE_TIME_MODE_OPTIONS: list[tuple[str, str]] = [
     (CONSOLE_TIME_24H, "24 小时制 [20:28:14]"),
     (CONSOLE_TIME_12H, "12 小时制 [08:28:14 PM]"),
+    (CONSOLE_TIME_24H_TZ, "24 小时制 + 时区 [20:28:14 UTC+09:00]"),
     (CONSOLE_TIME_ELAPSED, "启动后经过时间 [T+00:20:28]"),
 ]
 CONSOLE_TIME_MODE_LABELS = {value: label for value, label in CONSOLE_TIME_MODE_OPTIONS}
@@ -230,8 +234,6 @@ class AppSettings:
     console_time_mode: str = CONSOLE_TIME_24H
     theme_id: str = "classic_green"
     auto_check_updates: bool = True
-    update_manifest_url: str = DEFAULT_UPDATE_MANIFEST_URL
-    cloud_messages_url: str = DEFAULT_CLOUD_MESSAGES_URL
 
 
 def default_app_settings() -> AppSettings:
@@ -247,8 +249,9 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
         migrated.setdefault("theme_id", "classic_green")
     if old_version < 3:
         migrated.setdefault("auto_check_updates", True)
-        migrated.setdefault("update_manifest_url", DEFAULT_UPDATE_MANIFEST_URL)
-        migrated.setdefault("cloud_messages_url", DEFAULT_CLOUD_MESSAGES_URL)
+    if old_version < 4:
+        migrated.pop("update_manifest_url", None)
+        migrated.pop("cloud_messages_url", None)
     return migrated
 
 
@@ -272,10 +275,6 @@ def validate_settings_payload(payload: object) -> AppSettings:
         console_time_mode=normalize_console_time_mode(payload.get("console_time_mode", CONSOLE_TIME_24H)),
         theme_id=normalize_theme_id(payload.get("theme_id", "classic_green")),
         auto_check_updates=True,
-        update_manifest_url=str(payload.get("update_manifest_url") or DEFAULT_UPDATE_MANIFEST_URL).strip()
-        or DEFAULT_UPDATE_MANIFEST_URL,
-        cloud_messages_url=str(payload.get("cloud_messages_url") or DEFAULT_CLOUD_MESSAGES_URL).strip()
-        or DEFAULT_CLOUD_MESSAGES_URL,
     )
 
 

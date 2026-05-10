@@ -1,6 +1,6 @@
 # Updates And Cloud Messages
 
-ShapeYourPhoto 1.1.8 adds a signed cloud update and announcement path. Public docs describe the client contract and safety boundary only; server deployment details and private key handling live in ignored `private_docs/`.
+ShapeYourPhoto 1.1.8 adds a signed cloud update and announcement path. 1.1.9 fixes the production client URLs internally. Public docs describe the client contract and safety boundary only; server deployment details and private key handling live in ignored `private_docs/`.
 
 ## Client Modules
 
@@ -18,10 +18,10 @@ The signed object should include:
 
 ```json
 {
-  "version": "1.1.8",
-  "version_id": 2,
-  "build_id": 2,
-  "package_url": "https://helloalp.top/shapeyourphoto/updates/packages/shapeyourphoto-1.1.8.zip",
+  "version": "1.1.9",
+  "version_id": 3,
+  "build_id": 3,
+  "package_url": "https://helloalp.top/shapeyourphoto/updates/packages/shapeyourphoto-1.1.9.zip",
   "sha256": "...",
   "package_size": 123456,
   "release_notes": ["..."],
@@ -43,6 +43,12 @@ The wire response is an envelope:
 `version_id` / `build_id` are monotonic and are compared against `APP_VERSION_ID` / `APP_BUILD_ID`.
 
 The current production update base is `https://helloalp.top/shapeyourphoto/updates/`.
+The client uses fixed internal endpoints:
+
+- Manifest: `https://helloalp.top/shapeyourphoto/updates/manifest.json`
+- Messages: `https://helloalp.top/shapeyourphoto/updates/messages.json`
+
+These URLs are not exposed in Settings, are not user-editable, and are not persisted in ordinary `app_settings.json`.
 Server release steps, Apache/httpd paths, upload commands, signing keys and rollback notes are private operational docs and are not published with the public repository.
 
 ## Message Contract
@@ -56,7 +62,7 @@ Messages are returned in the same signed envelope:
       "id": "notice-2026-05-10",
       "enabled": true,
       "min_version_id": 1,
-      "max_version_id": 2,
+      "max_version_id": 3,
       "title": "公告",
       "body": "可滚动正文",
       "countdown_enabled": true,
