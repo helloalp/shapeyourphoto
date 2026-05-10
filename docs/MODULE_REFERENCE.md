@@ -213,3 +213,10 @@ Windows 原生拖拽支持。平台相关且高风险，修改后要验证图片
 - `ui/cloud_actions.py`, `ui/cloud_dialogs.py`: update and cloud-message Tk UI flow.
 - `updater.py`: independent update process with safe extraction, replacement, quarantine and rollback.
 - `ui/metadata_editor.py`: normal/developer EXIF editor with ShapeYourPhoto provenance protection.
+
+# 1.2.0 Module Addendum
+
+- `cloud_security.py`: 继续使用小写 `cryptography` 包导入 Ed25519 验签后端；缺少依赖时返回面向用户可理解的依赖安装提示，同时保留维护者调试信息。
+- `assets/update_public_key.pem`: 正式内置更新公钥。该文件只能包含 public key，不得替换为私钥。
+- `requirements.txt` / `setup_deps.bat`: 源码包依赖入口，包含 `cryptography>=42.0.0`。启动脚本不承担依赖安装。
+- `build/shapeyourphoto.spec`: 打包入口显式包含 `cryptography` Ed25519 验签相关 hidden imports。

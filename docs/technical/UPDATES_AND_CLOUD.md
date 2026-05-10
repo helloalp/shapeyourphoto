@@ -1,27 +1,39 @@
-# Updates And Cloud Messages
+# 更新与云端公告
 
-ShapeYourPhoto 1.1.8 adds a signed cloud update and announcement path. 1.1.9 fixes the production client URLs internally. Public docs describe the client contract and safety boundary only; server deployment details and private key handling live in ignored `private_docs/`.
+ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 updater；1.1.9 将生产更新地址和公告地址固定在客户端内部；1.2.0 将 `cryptography` 依赖、公钥资产和真实 updater 测试流程整理为正式可用基础状态。
 
-## Client Modules
+公开文档只说明客户端契约、安全边界和用户可见行为。服务器目录、发布脚本、私钥位置、手工签名步骤和真实发布操作只写在被 `.gitignore` 忽略的 `private_docs/` 中。
 
-- `cloud_client.py`: fetches signed update manifests and message payloads.
-- `cloud_security.py`: canonical JSON, sha256, Ed25519 signature verification, safe path helpers.
-- `cloud_state.py`: local update deferral state with HMAC integrity.
-- `integrity_guard.py`: required update/message module existence checks and optional signed core hash manifest verification.
-- `ui/cloud_actions.py`: Tk-main-thread safe UI orchestration for startup checks, manual checks, message dialogs and updater launch.
-- `ui/cloud_dialogs.py`: update, checking and cloud-message dialogs.
-- `updater.py`: independent GUI updater with package verification, safe extraction, replacement, quarantine and rollback.
+## 客户端模块
 
-## Manifest Contract
+- `cloud_client.py`：读取签名更新 manifest 和云端公告。
+- `cloud_security.py`：canonical JSON、sha256、Ed25519 签名验证和安全路径工具。
+- `cloud_state.py`：带 HMAC 完整性保护的本地更新延后状态。
+- `integrity_guard.py`：更新/公告关键模块存在性检查，以及可选的签名核心哈希 manifest 验证。
+- `ui/cloud_actions.py`：启动检查、手动检查、公告弹窗和 updater 启动的 UI 编排。
+- `ui/cloud_dialogs.py`：更新、检查中和云端公告弹窗。
+- `updater.py`：独立 GUI updater，负责下载、sha256 校验、安全解压、替换、隔离删除项和失败回滚。
 
-The signed object should include:
+## 依赖与公钥
+
+- 源码包依赖由 `requirements.txt` 统一声明，`setup_deps.bat` 负责安装。
+- `cryptography>=42.0.0` 是正式依赖，用于 Ed25519 验签。
+- 正式包应内置 `assets/update_public_key.pem`。
+- `SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE` 只作为开发测试覆盖方式，普通用户不需要设置。
+- 私钥永远不能进入公开仓库、源码包或发布包。
+
+缺少 `cryptography` 时，客户端应明确提示本地 Python 环境缺少依赖，并提示运行 `setup_deps.bat` 或 `python -m pip install cryptography`。这类问题不是服务器 manifest 签名失败，也不应显示成网络错误或服务器错误。
+
+## Manifest 契约
+
+签名对象示例：
 
 ```json
 {
-  "version": "1.1.9",
-  "version_id": 3,
-  "build_id": 3,
-  "package_url": "https://helloalp.top/shapeyourphoto/updates/packages/shapeyourphoto-1.1.9.zip",
+  "version": "1.2.1",
+  "version_id": 5,
+  "build_id": 5,
+  "package_url": "https://helloalp.top/shapeyourphoto/updates/packages/shapeyourphoto-1.2.1.zip",
   "sha256": "...",
   "package_size": 123456,
   "release_notes": ["..."],
@@ -31,7 +43,7 @@ The signed object should include:
 }
 ```
 
-The wire response is an envelope:
+线上响应是签名 envelope：
 
 ```json
 {
@@ -40,20 +52,18 @@ The wire response is an envelope:
 }
 ```
 
-`version_id` / `build_id` are monotonic and are compared against `APP_VERSION_ID` / `APP_BUILD_ID`.
+`version_id` / `build_id` 单调递增，并与本地 `APP_VERSION_ID` / `APP_BUILD_ID` 比较。
 
-The current production update base is `https://helloalp.top/shapeyourphoto/updates/`.
-The client uses fixed internal endpoints:
+客户端固定使用：
 
 - Manifest: `https://helloalp.top/shapeyourphoto/updates/manifest.json`
 - Messages: `https://helloalp.top/shapeyourphoto/updates/messages.json`
 
-These URLs are not exposed in Settings, are not user-editable, and are not persisted in ordinary `app_settings.json`.
-Server release steps, Apache/httpd paths, upload commands, signing keys and rollback notes are private operational docs and are not published with the public repository.
+这两个 URL 不在设置页公开、不允许用户修改，也不写入普通 `app_settings.json`。
 
-## Message Contract
+## 公告契约
 
-Messages are returned in the same signed envelope:
+公告同样使用签名 envelope。`signed` 内部结构示例：
 
 ```json
 {
@@ -62,7 +72,7 @@ Messages are returned in the same signed envelope:
       "id": "notice-2026-05-10",
       "enabled": true,
       "min_version_id": 1,
-      "max_version_id": 3,
+      "max_version_id": 5,
       "title": "公告",
       "body": "可滚动正文",
       "countdown_enabled": true,
@@ -73,12 +83,17 @@ Messages are returned in the same signed envelope:
 }
 ```
 
-Fetch failure is user-invisible during startup and only writes a short Console line.
+启动时公告读取失败只写 Console 简短日志，不打断普通启动。
 
-## Updater Safety
+## Updater 安全边界
 
-- The main app writes the verified manifest to the user data directory, starts `updater.py`, then enters the normal closing splash flow.
-- The updater downloads the package, validates size and sha256, rejects zip-slip paths, writes only under the app directory and only for managed paths.
-- Deleted paths are quarantined under `data/update_quarantine/`.
-- Protected local data directories are never deleted or replaced by delete-list logic.
-- Cancel confirmation does not pause the running update before the user confirms; after confirmation, rollback is attempted at the next safe point.
+- 主程序只在 manifest 验签通过后，将 manifest 写入用户数据目录并启动 `updater.py`。
+- updater 下载 package 后校验大小和 sha256。
+- zip 解压会拒绝 zip-slip 路径。
+- updater 只写入应用目录下的受管理路径。
+- `deleted_paths` 只做隔离，不直接永久删除。
+- `data/`、`private_docs/`、`test/`、`benchmark_reports/`、`tmp/` 等本地目录不得被更新包覆盖或删除。
+
+## 版本示例说明
+
+历史文档中出现的 `1.1.9` 是历史示例，不应机械替换。当前 updater 基线版本是 `1.2.0`；第一次真实更新链路测试目标是 `1.2.1`，也就是用本地 `1.2.0` 检查并更新到服务器上的 `1.2.1`。

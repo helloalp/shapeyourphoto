@@ -196,3 +196,11 @@
 - Settings pages shown to regular users should use short, understandable descriptions. Keep implementation notes in docs or private docs instead of user-facing labels.
 - Theme settings may show theme names only; do not expose concrete color token values in the user settings dialog.
 - The main window title format is `Shape Your Photo | v<version> | by Helloalp`.
+
+# 1.2.0 Maintenance Addendum
+
+- `cryptography` 是 updater 验签的正式依赖，必须通过 `requirements.txt`、`setup_deps.bat` 和打包配置进入发布流程。
+- `start.bat` / `start_app.bat` 仍然只能负责启动，不得加入 `pip install`、更新下载、benchmark、扫描或其他耗时逻辑。
+- 正式包应包含 `assets/update_public_key.pem`；开发测试可用 `SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE` 覆盖公钥文件。
+- `update_private_key.pem` 永远不得进入仓库、源码包、安装包或普通项目目录。
+- 文档中的历史版本号可保留上下文；下一次真实 updater 测试流程使用 `1.2.0 -> 1.2.1`。

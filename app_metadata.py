@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 APP_NAME = "Shape Your Photo"
-APP_VERSION = "1.1.9"
-APP_VERSION_ID = 3
-APP_BUILD_ID = 3
+APP_VERSION = "1.2.0"
+APP_VERSION_ID = 4
+APP_BUILD_ID = 4
 APP_UPDATE_CHANNEL = "stable"
 APP_ID = "codex.photo.analyzer.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
+    {
+        "version": "1.2.0",
+        "date": "2026-05-10",
+        "items": [
+            "将 cryptography 纳入正式依赖安装流程，确保 Ed25519 manifest 验签不再依赖手工临时安装。",
+            "内置 assets/update_public_key.pem 作为正式更新公钥来源，保留 SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE 作为开发测试覆盖方式。",
+            "优化缺少 cryptography 时的错误提示，明确提示运行 setup_deps.bat 或手动安装依赖，并区分本地依赖缺失与服务器签名失败。",
+            "补齐 PyInstaller 打包配置中的 cryptography 验签模块，确保 Windows/macOS 发布包包含更新验签能力。",
+            "修正 updater 部署和测试文档中的启动入口、公钥接入、固定 URL 与 1.2.0 到 1.2.1 真实更新链路测试流程。",
+        ],
+    },
     {
         "version": "1.1.9",
         "date": "2026-05-10",

@@ -58,8 +58,23 @@ def verify_signature(payload: Any, signature_b64: str | None) -> SignatureResult
     try:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    except ModuleNotFoundError as exc:
+        missing_name = getattr(exc, "name", "") or ""
+        if missing_name == "cryptography" or missing_name.startswith("cryptography."):
+            return SignatureResult(
+                False,
+                "本地 Python 环境缺少 cryptography，无法执行 Ed25519 验签。"
+                "请运行 setup_deps.bat，或手动执行 python -m pip install cryptography。"
+                f"这不是服务器 manifest 签名失败。维护者调试信息：{exc}",
+            )
+        return SignatureResult(False, f"Ed25519 验签依赖导入失败：{exc}")
     except Exception as exc:
-        return SignatureResult(False, f"cryptography Ed25519 backend unavailable: {exc}")
+        return SignatureResult(
+            False,
+            "本地 cryptography Ed25519 验签后端不可用。"
+            "请运行 setup_deps.bat，或手动执行 python -m pip install cryptography。"
+            f"维护者调试信息：{exc}",
+        )
     try:
         public_key = serialization.load_pem_public_key(key_pem)
         if not isinstance(public_key, Ed25519PublicKey):

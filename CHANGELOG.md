@@ -1,5 +1,13 @@
 # 更新历史
 
+## 1.2.0 - 2026-05-10
+
+- 将 `cryptography>=42.0.0` 纳入正式依赖安装流程；`setup_deps.bat` 继续通过 `requirements.txt` 统一安装依赖，日常启动脚本不执行联网安装或慢检查。
+- 内置 `assets/update_public_key.pem` 作为正式更新公钥来源，保留 `SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE` 仅用于开发和临时测试覆盖；私钥仍只允许留在服务器私有目录。
+- 缺少 `cryptography` 时，更新检查会明确提示本地 Python 环境缺少依赖，并提示运行 `setup_deps.bat` 或 `python -m pip install cryptography`，不再把依赖缺失伪装成服务器签名失败。
+- PyInstaller 打包配置补齐 `cryptography` Ed25519 验签模块，发布包应包含云端 manifest 和 messages 验签能力。
+- 更新公开文档、版本记录和私有部署手册，明确 1.2.0 是 updater 基线版本，下一次真实链路测试使用 1.2.0 -> 1.2.1。
+
 ## 1.1.9 - 2026-05-10
 
 - Console 时间戳新增带时区格式，便于跨地区沟通和排查日志。

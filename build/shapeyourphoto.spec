@@ -37,7 +37,12 @@ else:
     icon_file = None
 
 # tkinterdnd2 自带 tkdnd Tcl 扩展（动态库），必须显式收集
-tkdnd_data = collect_data_files("tkinterdnd2", include_py_files=False)
+try:
+    tkdnd_data = collect_data_files("tkinterdnd2", include_py_files=False)
+    tkdnd_hiddenimports = ["tkinterdnd2"]
+except Exception:
+    tkdnd_data = []
+    tkdnd_hiddenimports = []
 
 # analysis 包内有动态导入，显式收集子模块更稳
 analysis_submodules = collect_submodules("analysis")
@@ -48,9 +53,12 @@ datas = [
 
 hiddenimports = [
     "PIL._tkinter_finder",
-    "tkinterdnd2",
     "platformdirs",
-] + analysis_submodules
+    "cryptography",
+    "cryptography.hazmat.primitives",
+    "cryptography.hazmat.primitives.serialization",
+    "cryptography.hazmat.primitives.asymmetric.ed25519",
+] + tkdnd_hiddenimports + analysis_submodules
 
 excludes = [
     "matplotlib",
