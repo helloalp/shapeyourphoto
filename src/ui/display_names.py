@@ -20,8 +20,36 @@ ISSUE_CODE_LABELS = {
     "over_saturated": "色彩过饱和",
     "out_of_focus": "清晰度不足",
     "portrait_out_of_focus": "人像主体虚焦",
+    "global_out_of_focus": "整张图片严重模糊",
+    "severe_overexposed": "严重过度曝光",
+    "severe_underexposed": "严重曝光不足",
     "high_noise": "噪点偏高",
     "color_cast": "色偏",
+}
+
+CLEANUP_REASON_LABELS = {
+    "portrait_out_of_focus": "人像主体严重虚焦",
+    "global_out_of_focus": "整张图片严重模糊",
+    "severe_overexposed": "严重过度曝光",
+    "severe_underexposed": "严重曝光不足",
+}
+
+SEVERITY_LABELS = {
+    "low": "一般",
+    "medium": "较严重",
+    "high": "严重",
+    "critical": "极其严重",
+    "warning": "需留意",
+    "severe": "严重",
+}
+
+STATUS_LABELS = {
+    "pending": "待定",
+    "selected": "已选",
+    "current": "当前",
+    "done": "已完成",
+    "failed": "失败",
+    "skipped": "已跳过",
 }
 
 SCENE_TYPE_LABELS = {
@@ -90,12 +118,12 @@ OUTCOME_LABELS = {
     "forced_saved": "强制尝试后保存",
     "forced_rollback": "强制尝试后回退",
     "forced_skip_unsuitable": "强制尝试后仍跳过",
-    "discard_candidate_skipped": "清理候选默认跳过",
-    "normal_skipped": "常规跳过 / no-op",
+    "discard_candidate_skipped": "不适合保留图片已跳过",
+    "normal_skipped": "未保存新图片",
     "failed": "失败",
     "skipped": "已跳过",
     "rollback": "已回退",
-    "noop": "无收益 no-op",
+    "noop": "未保存新图片",
 }
 
 PERF_STAGE_LABELS = {
@@ -116,14 +144,14 @@ PERF_STAGE_LABELS = {
     "portrait_region_build": "人像区域构建",
     "quality_stats": "质量统计",
     "issue_build": "问题与建议生成",
-    "cleanup_candidate": "清理候选判断",
+    "cleanup_candidate": "不适合保留判断",
     "similar_detection": "相似图检测",
     "ui_refresh": "UI 刷新",
     "UI_update": "UI 刷新",
     "console_flush": "Console 刷新",
     "planner": "生成修复方案",
-    "candidate_generation": "生成修复候选",
-    "candidate_scoring": "候选评分",
+    "candidate_generation": "生成修复方案",
+    "candidate_scoring": "选择修复方案",
     "mask_build": "构建局部蒙版",
     "mask_feather": "蒙版羽化",
     "save_output": "保存输出",
@@ -135,6 +163,9 @@ def display_name(kind: str, value: object, *, unknown_prefix: str = "未知类�
     raw = "" if value is None else str(value)
     tables = {
         "issue": ISSUE_CODE_LABELS,
+        "cleanup_reason": CLEANUP_REASON_LABELS,
+        "severity": SEVERITY_LABELS,
+        "status": STATUS_LABELS,
         "scene_type": SCENE_TYPE_LABELS,
         "portrait_type": PORTRAIT_TYPE_LABELS,
         "portrait_scene_type": PORTRAIT_SCENE_LABELS,

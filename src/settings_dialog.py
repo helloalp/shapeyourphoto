@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from app_metadata import APP_BUILD_ID, APP_NAME, APP_VERSION, APP_VERSION_ID
+from app_metadata import APP_NAME, APP_VERSION, APP_VERSION_ID
 from app_settings import (
     ANALYSIS_CONCURRENCY_OPTIONS,
     AppSettings,
@@ -21,17 +22,20 @@ from app_settings import (
     normalize_scan_ignore_prefixes,
     validate_settings_payload,
 )
+from cloud_client import fetch_cloud_messages
 from developer_mode import developer_session
 from gpu_accel import detect_gpu_backend
+from ui.language import LANGUAGE_OPTIONS, language_label, normalize_language
 from ui.themes import THEME_OPTIONS, normalize_theme_id
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
 class AppSettingsDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Widget, settings: AppSettings, update_check_callback=None) -> None:
+    def __init__(self, parent: tk.Widget, settings: AppSettings, update_check_callback=None, log_callback=None) -> None:
         super().__init__(parent)
         self._update_check_callback = update_check_callback
+        self._log_callback = log_callback
         self.title(app_window_title("应用设置"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
@@ -53,6 +57,8 @@ class AppSettingsDialog(tk.Toplevel):
         self._console_time_label_to_value = {label: value for value, label in CONSOLE_TIME_MODE_OPTIONS}
         self._theme_value_to_label = dict(THEME_OPTIONS)
         self._theme_label_to_value = {label: value for value, label in THEME_OPTIONS}
+        self._language_value_to_label = dict(LANGUAGE_OPTIONS)
+        self._language_label_to_value = {label: value for value, label in LANGUAGE_OPTIONS}
 
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
@@ -69,10 +75,10 @@ class AppSettingsDialog(tk.Toplevel):
         scan_tab.rowconfigure(3, weight=1)
         notebook.add(scan_tab, text="扫描")
 
-        ttk.Label(scan_tab, text="扫描忽略目录前缀", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(scan_tab, text="扫描忽略文件夹前缀", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(
             scan_tab,
-            text="命中前缀的目录及其全部子目录都不会被扫描。默认至少保留 `_repair`，避免误扫输出目录。",
+            text="名称以这些内容开头的文件夹会被跳过，包括它里面的图片。",
             wraplength=680,
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(8, 10))
@@ -110,7 +116,7 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(behavior_tab, text="默认扫描行为", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(
             behavior_tab,
-            text="当目录包含子目录时，可以选择每次询问，或直接使用固定扫描模式。",
+            text="当文件夹包含子文件夹时，可以选择每次询问，或使用固定扫描模式。",
             wraplength=680,
             justify="left",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
@@ -249,12 +255,19 @@ class AppSettingsDialog(tk.Toplevel):
             width=28,
         )
         theme_box.grid(row=2, column=1, sticky="w")
-        ttk.Label(
-            appearance_tab,
-            text="这里只显示配色名称。具体颜色细节不在用户设置页公开。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(14, 0))
+        language_tab = ttk.Frame(notebook, padding=14)
+        language_tab.columnconfigure(1, weight=1)
+        notebook.add(language_tab, text="语言")
+        ttk.Label(language_tab, text="界面语言", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(language_tab, text="语言：").grid(row=1, column=0, sticky="w", pady=(12, 0))
+        self.language_var = tk.StringVar(value=language_label(normalized.language))
+        ttk.Combobox(
+            language_tab,
+            textvariable=self.language_var,
+            state="readonly",
+            values=[label for _value, label in LANGUAGE_OPTIONS],
+            width=28,
+        ).grid(row=1, column=1, sticky="w", pady=(12, 0))
 
         update_tab = ttk.Frame(notebook, padding=14)
         update_tab.columnconfigure(1, weight=1)
@@ -262,7 +275,7 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(update_tab, text="当前版本", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             update_tab,
-            text=f"{APP_NAME} v{APP_VERSION}    version_id={APP_VERSION_ID}    build_id={APP_BUILD_ID}",
+            text=f"{APP_NAME} v{APP_VERSION} · 版本 ID {APP_VERSION_ID}",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
         ttk.Button(update_tab, text="检查更新", command=self._check_updates_now).grid(row=2, column=0, sticky="w")
         ttk.Label(update_tab, text="自动检查更新", font=("Microsoft YaHei UI", 11, "bold")).grid(row=3, column=0, columnspan=2, sticky="w", pady=(22, 0))
@@ -270,38 +283,48 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Checkbutton(update_tab, text="启动后自动检查更新", variable=self.auto_update_var, state="disabled").grid(
             row=4, column=0, columnspan=2, sticky="w", pady=(8, 12)
         )
-        ttk.Label(update_tab, text="更新地址由 Shape Your Photo 自动管理。", wraplength=680, justify="left").grid(
+        ttk.Label(update_tab, text="有新版本时会在启动后提示，也可以随时手动检查。", wraplength=680, justify="left").grid(
             row=5, column=0, columnspan=2, sticky="w", pady=(12, 0)
         )
 
         message_tab = ttk.Frame(notebook, padding=14)
         message_tab.columnconfigure(1, weight=1)
+        message_tab.rowconfigure(2, weight=1)
         notebook.add(message_tab, text="公告")
-        ttk.Label(message_tab, text="云端公告", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(
-            message_tab,
-            text="启动后自动查询重要提示。网络失败时不会打扰你。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
-        ttk.Label(message_tab, text="公告地址由 Shape Your Photo 自动管理。").grid(row=2, column=0, columnspan=2, sticky="w")
+        ttk.Label(message_tab, text="公告", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Button(message_tab, text="刷新公告", command=self._refresh_announcements_now).grid(row=0, column=1, sticky="e")
+        self.announcement_status_var = tk.StringVar(value="暂无公告。")
+        ttk.Label(message_tab, textvariable=self.announcement_status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 8))
+        message_frame = ttk.Frame(message_tab)
+        message_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
+        message_frame.columnconfigure(0, weight=1)
+        message_frame.rowconfigure(0, weight=1)
+        self.announcement_text = tk.Text(
+            message_frame,
+            height=10,
+            wrap="word",
+            font=("Microsoft YaHei UI", 10),
+            bg="#f8fbf8",
+            relief="flat",
+            padx=10,
+            pady=10,
+        )
+        announcement_scroll = ttk.Scrollbar(message_frame, orient="vertical", command=self.announcement_text.yview)
+        self.announcement_text.configure(yscrollcommand=announcement_scroll.set)
+        self.announcement_text.grid(row=0, column=0, sticky="nsew")
+        announcement_scroll.grid(row=0, column=1, sticky="ns")
+        self._set_announcement_text("暂无公告。")
 
         developer_tab = ttk.Frame(notebook, padding=14)
         developer_tab.columnconfigure(1, weight=1)
         notebook.add(developer_tab, text="开发者模式")
-        ttk.Label(developer_tab, text="高级开发者能力", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        self.developer_status_var = tk.StringVar(value="已解锁（本次运行有效）" if developer_session.unlocked else "未解锁")
+        ttk.Label(developer_tab, text="开发者模式", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.developer_status_var = tk.StringVar(value="已解锁" if developer_session.unlocked else "未解锁")
         ttk.Label(developer_tab, textvariable=self.developer_status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
         ttk.Label(developer_tab, text="开发者密码：").grid(row=2, column=0, sticky="w")
         self.developer_password_var = tk.StringVar()
         ttk.Entry(developer_tab, textvariable=self.developer_password_var, show="*").grid(row=2, column=1, sticky="ew")
-        ttk.Button(developer_tab, text="本次运行解锁", command=self._unlock_developer_mode).grid(row=3, column=1, sticky="w", pady=(10, 0))
-        ttk.Label(
-            developer_tab,
-            text="仅用于本机调试和高级维护。本次运行有效，重启后会自动关闭。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(16, 0))
+        ttk.Button(developer_tab, text="解锁", command=self._unlock_developer_mode).grid(row=3, column=1, sticky="w", pady=(10, 0))
 
         buttons = ttk.Frame(outer)
         buttons.grid(row=2, column=0, sticky="ew", pady=(14, 0))
@@ -362,6 +385,7 @@ class AppSettingsDialog(tk.Toplevel):
         gpu_mode = normalize_gpu_acceleration_mode(self._gpu_label_to_value.get(self.gpu_mode_var.get()))
         console_time_mode = normalize_console_time_mode(self._console_time_label_to_value.get(self.console_time_var.get()))
         theme_id = normalize_theme_id(self._theme_label_to_value.get(self.theme_var.get()))
+        language = normalize_language(self._language_label_to_value.get(self.language_var.get()))
         self.result = AppSettings(
             scan_ignore_prefixes=prefixes,
             default_scan_mode=scan_mode,
@@ -371,6 +395,7 @@ class AppSettingsDialog(tk.Toplevel):
             gpu_acceleration_mode=gpu_mode,
             console_time_mode=console_time_mode,
             theme_id=theme_id,
+            language=language,
             auto_check_updates=True,
         )
         self.destroy()
@@ -383,7 +408,7 @@ class AppSettingsDialog(tk.Toplevel):
         ok, message = developer_session.unlock(self.developer_password_var.get())
         if ok:
             self.developer_password_var.set("")
-            self.developer_status_var.set("已解锁（本次运行有效）")
+            self.developer_status_var.set("已解锁")
             messagebox.showinfo("开发者模式", message, parent=self)
         else:
             self.developer_status_var.set("未解锁")
@@ -395,8 +420,64 @@ class AppSettingsDialog(tk.Toplevel):
             return
         self._update_check_callback()
 
+    def _log(self, message: str) -> None:
+        if self._log_callback is not None:
+            try:
+                self._log_callback(message)
+            except Exception:
+                pass
 
-def show_app_settings_dialog(parent: tk.Widget, settings: AppSettings, update_check_callback=None) -> AppSettings | None:
-    dialog = AppSettingsDialog(parent, settings, update_check_callback=update_check_callback)
+    def _set_announcement_text(self, text: str) -> None:
+        self.announcement_text.config(state="normal")
+        self.announcement_text.delete("1.0", "end")
+        self.announcement_text.insert("1.0", text)
+        self.announcement_text.config(state="disabled")
+
+    def _refresh_announcements_now(self) -> None:
+        self.announcement_status_var.set("正在刷新公告...")
+        self._set_announcement_text("正在获取公告。")
+        self._log("cloud message manual refresh requested from settings")
+
+        def _worker() -> None:
+            result = fetch_cloud_messages("")
+
+            def _finish() -> None:
+                if not self.winfo_exists():
+                    return
+                if not result.ok or result.payload is None:
+                    self.announcement_status_var.set("暂时没有获取到公告。")
+                    self._set_announcement_text("稍后可以再试一次。")
+                    self._log(f"cloud message manual refresh failed: {result.error}")
+                    return
+                messages = result.payload.get("messages", [])
+                if isinstance(messages, dict):
+                    messages = [messages]
+                if not isinstance(messages, list):
+                    messages = []
+                enabled_messages = [item for item in messages if isinstance(item, dict) and item.get("enabled", True)]
+                if not enabled_messages:
+                    self.announcement_status_var.set("暂无公告。")
+                    self._set_announcement_text("暂无公告。")
+                    self._log("cloud message manual refresh completed: empty")
+                    return
+                lines: list[str] = []
+                for item in enabled_messages[:5]:
+                    title = str(item.get("title") or "公告")
+                    body = str(item.get("body") or "").strip()
+                    lines.append(title)
+                    if body:
+                        lines.append(body)
+                    lines.append("")
+                self.announcement_status_var.set(f"已获取 {len(enabled_messages)} 条公告。")
+                self._set_announcement_text("\n".join(lines).strip())
+                self._log(f"cloud message manual refresh completed: count={len(enabled_messages)}")
+
+            self.after(0, _finish)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+
+def show_app_settings_dialog(parent: tk.Widget, settings: AppSettings, update_check_callback=None, log_callback=None) -> AppSettings | None:
+    dialog = AppSettingsDialog(parent, settings, update_check_callback=update_check_callback, log_callback=log_callback)
     dialog.wait_window()
     return dialog.result

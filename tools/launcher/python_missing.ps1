@@ -1,0 +1,13 @@
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+Write-Host ""
+Write-Host "未找到 Python / Python was not found."
+Write-Host ""
+Write-Host "源码包需要先安装 Python 3.10 或更新版本。"
+Write-Host "The source package needs Python 3.10 or newer."
+Write-Host ""
+Write-Host "建议普通用户优先下载正式发布包；如果继续使用源码包，请安装 Python 后再次双击 start.bat。"
+Write-Host "For regular users, the packaged release is recommended. For the source package, install Python and run start.bat again."
+Write-Host ""
+Write-Host "下载地址 / Download: https://www.python.org/downloads/"
+Write-Host ""
+Read-Host "按 Enter 关闭 / Press Enter to close"

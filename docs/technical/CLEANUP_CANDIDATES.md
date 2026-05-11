@@ -1,4 +1,4 @@
-# Cleanup Candidates
+﻿# Cleanup Candidates
 
 ## 定位
 
@@ -7,7 +7,7 @@ cleanup candidate 表示“不适合保留 / 建议人工复核删除”的候�
 ## 生成
 
 - 分析阶段先生成 `Issue`。
-- 如果 issue meta 中包含 cleanup candidate 标记，`analysis/discard.py` 会生成 `CleanupCandidate`。
+- 如果 issue meta 中包含 cleanup candidate 标记，`src/analysis/discard.py` 会生成 `CleanupCandidate`。
 - 当前高风险来源包括真实正面人像严重虚焦、严重全图糊片和极端不可恢复曝光。
 
 ## UI

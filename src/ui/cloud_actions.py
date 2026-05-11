@@ -100,11 +100,11 @@ class UiCloudActionsMixin:
     def _launch_updater(self, manifest: dict) -> None:
         pending = user_data_dir() / "pending_update_manifest.json"
         pending.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-        app_dir = Path(__file__).resolve().parents[1]
+        app_dir = Path(__file__).resolve().parents[2]
         restart_cmd = [sys.executable, str(app_dir / "app.py")]
         cmd = [
             sys.executable,
-            str(app_dir / "updater.py"),
+            str(app_dir / "src" / "updater.py"),
             "--manifest-cache",
             str(pending),
             "--app-dir",

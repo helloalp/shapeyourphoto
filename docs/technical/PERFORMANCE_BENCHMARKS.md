@@ -1,4 +1,4 @@
-# Performance Benchmarks
+﻿# Performance Benchmarks
 
 本文记录本地真实图片 benchmark 规则和已知基线。并发、GPU 和 Console 规则见 [PERFORMANCE_AND_CONCURRENCY.md](/E:/aitools/shapeyourphoto/docs/technical/PERFORMANCE_AND_CONCURRENCY.md)。
 
@@ -9,7 +9,7 @@
 - 图片文件被 `.gitignore` 忽略，不得提交。
 - [test/README.md](/E:/aitools/shapeyourphoto/test/README.md) 保留目录约定。
 - 推荐覆盖人像、连拍/相似图、建筑、窗景/背光、高饱和、噪点高 ISO、大尺寸照片。
-- `benchmark_test_images.py` 在目录缺失或无图片时必须安全跳过。
+- `tools/benchmark/benchmark_test_images.py` 在目录缺失或无图片时必须安全跳过。
 
 当前 `.gitignore` 约定：
 
@@ -33,13 +33,13 @@ Console 和 benchmark 摘要必须优先展示 `wall_time`，避免把 worker cu
 ## 运行方式
 
 ```powershell
-python benchmark_test_images.py
+python tools/benchmark/benchmark_test_images.py
 ```
 
 默认会在被忽略的 `benchmark_reports/` 目录生成一份 JSON 报告和一份 Markdown 报告。可用参数调整目录：
 
 ```powershell
-python benchmark_test_images.py --report-dir benchmark_reports --modes single,medium
+python tools/benchmark/benchmark_test_images.py --report-dir benchmark_reports --modes single,medium
 ```
 
 输出应包含：

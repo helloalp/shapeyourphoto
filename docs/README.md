@@ -1,4 +1,4 @@
-# ShapeYourPhoto 维护文档
+﻿# ShapeYourPhoto 维护文档
 
 `docs/` 是 ShapeYourPhoto 的正式维护文档目录。后续维护者应从这里理解项目，不要依赖临时 handover、聊天摘录或过时根文档。
 
@@ -26,7 +26,7 @@
 
 1.1.9 的文档体系以这些当前事实为准：
 
-- `analyzer.py` 是兼容入口，分析主逻辑在 `analysis/` 包。
+- `src/analyzer.py` 是兼容入口，分析主逻辑在 `src/analysis/` 包。
 - 主界面以主列表工作流为准；没有独立单图窗口主路径。
 - 降噪并入统一分析和修复链；没有孤立“去噪当前”主入口。
 - cleanup candidate 是安全复核机制，默认不修复、不删除，删除必须二次确认并走安全清理。
@@ -40,7 +40,7 @@
 - 不得删除 `docs/`、`docs/technical/`、`docs/updates/`。
 - 不得清空正式文档。
 - 旧内容不适用时，应修订、迁移、标注历史上下文，或指向当前说明。
-- 功能、模块、设置或版本变化时，同步更新 `CHANGELOG.md`、`app_metadata.py` 和对应 `docs/updates/<version>.md`。
+- 功能、模块、设置或版本变化时，同步更新 `CHANGELOG.md`、`src/app_metadata.py` 和对应 `docs/updates/<version>.md`。
 - 版本记录默认使用中文：`app_metadata.CHANGELOG`、根 `CHANGELOG.md` 和 `docs/updates/<version>.md` 必须保持中文事实口径一致；英文仅保留在文件名、函数名、协议字段、环境变量和内部 code/enum 等技术标识中。
 # 1.1.9 Documentation Note
 

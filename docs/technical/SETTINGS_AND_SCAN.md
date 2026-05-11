@@ -1,8 +1,8 @@
-# Settings And Scan
+﻿# Settings And Scan
 
 ## 设置来源
 
-[app_settings.py](/E:/aitools/shapeyourphoto/app_settings.py) 是应用设置的唯一数据入口，负责：
+[src/app_settings.py](/E:/aitools/shapeyourphoto/src/app_settings.py) 是应用设置的唯一数据入口，负责：
 
 - `settings_schema_version`。
 - 默认值。
@@ -12,7 +12,7 @@
 - 所有字段规范化。
 - `migrate_settings(old_version, data)` 迁移入口。
 
-[settings_dialog.py](/E:/aitools/shapeyourphoto/settings_dialog.py) 是统一 UI 入口。不要新增零散设置菜单项。
+[src/settings_dialog.py](/E:/aitools/shapeyourphoto/src/settings_dialog.py) 是统一 UI 入口。不要新增零散设置菜单项。
 
 ## 当前设置
 

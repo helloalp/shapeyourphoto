@@ -1,38 +1,47 @@
-# ShapeYourPhoto
+﻿# ShapeYourPhoto
 
-当前版本：`1.2.4`
+当前版本：`1.2.5`
 
 ShapeYourPhoto 是一个本地桌面图片工具，用于导入图片、批量分析、查看质量提示、执行修复、复核不适合保留的图片和相似图片。图片分析和修复默认在本机进行，不主动上传用户图片。
 
 ## Windows 用户使用方法
 
 1. 打开 [GitHub Releases](https://github.com/helloalp/shapeyourphoto/releases)。
-2. 下载最新版本的源码包或发布包。
-3. 解压到普通目录，例如：
+2. 普通用户优先下载正式发布包；源码包更适合开发者和高级用户。
+3. 如果下载的是源码包，解压到普通目录，例如：
 
 ```text
 D:\ShapeYourPhoto\
 ```
 
-4. 如果下载的是源码包，第一次使用前双击运行：
+4. 双击根目录里的：
 
 ```text
-setup_deps.bat
+start.bat
 ```
 
-`setup_deps.bat` 会按 `requirements.txt` 安装 Pillow、numpy、platformdirs 和 `cryptography`。`cryptography` 用于云端更新 manifest 和 messages 的 Ed25519 签名验证。`tkinterdnd2` 仅用于支持该库的平台；Windows 版本使用原生拖放路径。
+`start.bat` 会检查 Python 和运行依赖。依赖齐全时会快速启动；缺少依赖时会按需安装 `requirements.txt` 中的运行依赖，然后继续启动。启动流程不会运行 benchmark、目录扫描或更新包下载。
 
-5. 以后启动软件，双击运行：
+## 没有 Python 时
+
+源码包不能在没有 Python 的电脑上直接运行。双击 `start.bat` 时，如果没有找到 Python，会显示说明并保留窗口，不会直接闪退。
+
+推荐做法：
+
+- 普通用户：使用正式发布包或安装包。
+- 需要运行源码包：先安装 Python 3.10 或更新版本，再双击 `start.bat`。
+
+Python 下载地址：
 
 ```text
-start_app.bat
+https://www.python.org/downloads/
 ```
 
-`start.bat` 和 `start_app.bat` 只负责启动程序，不会联网安装依赖、下载更新包、运行 benchmark 或执行耗时扫描。
+`tools/legacy/setup_deps.bat` 和 `tools/legacy/start_app.bat` 仅作为兼容入口保留，普通用户不需要使用。
 
 ## macOS 用户
 
-macOS 打包版本会在后续补充。源码方式运行时同样需要先安装 `requirements.txt` 中的依赖。
+macOS 打包版本会在后续补充。源码方式运行时同样需要 Python 和 `requirements.txt` 中的依赖。
 
 ## 基本使用
 
@@ -49,11 +58,22 @@ ShapeYourPhoto 使用内置固定更新地址检查新版本，更新 manifest �
 
 手动检查更新：打开“设置” -> “更新” -> 点击“检查更新”。
 
-如果源码包环境提示缺少 `cryptography`，请重新运行 `setup_deps.bat`，或手动执行：
+如果源码包环境提示依赖安装失败，请检查网络连接后重新双击 `start.bat`。也可以手动执行：
 
 ```text
-python -m pip install cryptography
+python -m pip install -r requirements.txt
 ```
+
+## 项目结构
+
+- `start.bat`：普通用户入口。
+- `app.py` / `app.pyw`：源码包 GUI 启动器。
+- `src/`：应用代码。
+- `tools/launcher/`：启动环境检查和按需依赖安装。
+- `tools/legacy/`：旧入口兼容脚本。
+- `tools/benchmark/`：本地 benchmark 工具，不属于日常启动流程。
+- `build/`：打包配置。
+- `docs/`：公开维护文档。
 
 ## 隐私说明
 

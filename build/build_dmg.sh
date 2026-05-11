@@ -8,7 +8,7 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 # 从 app_metadata 读版本号
-APP_VERSION="$(python3 -c 'from app_metadata import APP_VERSION; print(APP_VERSION)')"
+APP_VERSION="$(PYTHONPATH="$PROJECT_ROOT/src" python3 -c 'from app_metadata import APP_VERSION; print(APP_VERSION)')"
 APP_NAME="ShapeYourPhoto"
 APP_PATH="dist/${APP_NAME}.app"
 DMG_DIR="dist_installer"

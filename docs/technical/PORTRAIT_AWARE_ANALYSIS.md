@@ -1,4 +1,4 @@
-# Portrait-Aware Analysis
+﻿# Portrait-Aware Analysis
 
 本文记录当前人像感知分析的维护口径。1.1.3/1.1.4 的历史演进详见 `docs/updates/`；当前以 1.1.6 说明和代码为准。
 
@@ -10,11 +10,11 @@
 
 ## 模块分工
 
-- [analysis/portrait.py](/E:/aitools/shapeyourphoto/analysis/portrait.py)：候选检测、验证、分类和区域构建。
-- [analysis/core.py](/E:/aitools/shapeyourphoto/analysis/core.py)：消费人像结果，生成 issues、场景字段、诊断说明和 cleanup candidate meta。
-- [repair_planner.py](/E:/aitools/shapeyourphoto/repair_planner.py)：根据 portrait policy 限制修复方法和强度。
-- [repair_ops.py](/E:/aitools/shapeyourphoto/repair_ops.py)：执行局部增强、背景保护和场景化降噪。
-- [repair_engine.py](/E:/aitools/shapeyourphoto/repair_engine.py)：候选评分、回退和保存决策。
+- [src/analysis/portrait.py](/E:/aitools/shapeyourphoto/src/analysis/portrait.py)：候选检测、验证、分类和区域构建。
+- [src/analysis/core.py](/E:/aitools/shapeyourphoto/src/analysis/core.py)：消费人像结果，生成 issues、场景字段、诊断说明和 cleanup candidate meta。
+- [src/repair_planner.py](/E:/aitools/shapeyourphoto/src/repair_planner.py)：根据 portrait policy 限制修复方法和强度。
+- [src/repair_ops.py](/E:/aitools/shapeyourphoto/src/repair_ops.py)：执行局部增强、背景保护和场景化降噪。
+- [src/repair_engine.py](/E:/aitools/shapeyourphoto/src/repair_engine.py)：候选评分、回退和保存决策。
 
 ## 候选分层
 

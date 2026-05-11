@@ -1,19 +1,19 @@
-# UI Settings Data
+﻿# UI Settings Data
 
 本专题记录 1.1.7 新增的 UI 基础设施、设置扩展、用户数据存储和 EXIF 安全编辑边界。
 
 ## UI 包
 
-`ui/` 是新的 UI 基础设施包：
+`src/ui/` 是新的 UI 基础设施包：
 
-- `ui/window_titles.py`：二级窗口标题统一格式。
-- `ui/display_names.py`：内部英文值到 UI 中文显示名的映射层。
-- `ui/themes.py`：外观风格 token 和预置主题。
-- `ui/hidpi.py`：Windows DPI awareness、Tk scaling 和系统字体配置。
-- `ui/splash.py`：Python GUI 启动阶段 Splash。
-- `ui/metadata_editor.py`：属性 / EXIF 安全文本字段编辑。
+- `src/ui/window_titles.py`：二级窗口标题统一格式。
+- `src/ui/display_names.py`：内部英文值到 UI 中文显示名的映射层。
+- `src/ui/themes.py`：外观风格 token 和预置主题。
+- `src/ui/hidpi.py`：Windows DPI awareness、Tk scaling 和系统字体配置。
+- `src/ui/splash.py`：Python GUI 启动阶段 Splash。
+- `src/ui/metadata_editor.py`：属性 / EXIF 安全文本字段编辑。
 
-根级 `ui_*` mixin 仍作为兼容层保留，继续承载主窗口扫描、分析、修复、列表、Console 和复核逻辑。新增 UI 基础能力优先放入 `ui/`，不要继续堆进 `ui_app.py`。
+`src/ui_*` mixin 仍作为兼容层保留，继续承载主窗口扫描、分析、修复、列表、Console 和复核逻辑。新增 UI 基础能力优先放入 `src/ui/`，不要继续堆进 `src/ui_app.py`。
 
 ## Console 设置
 
@@ -28,7 +28,7 @@ Console 时间模式由 `app_settings.py` 管理：
 
 ## 外观主题
 
-主题存储为 `theme_id`，通过 `ui/themes.py` 解析 token。当前预置：
+主题存储为 `theme_id`，通过 `src/ui/themes.py` 解析 token。当前预置：
 
 - `classic_green`：经典清绿，默认主题，接近旧视觉。
 - `graphite`：石墨灰。

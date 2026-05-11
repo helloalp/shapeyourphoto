@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 APP_NAME = "Shape Your Photo"
-APP_VERSION = "1.2.4"
-APP_VERSION_ID = 8
-APP_BUILD_ID = 8
+APP_VERSION = "1.2.5"
+APP_VERSION_ID = 9
+APP_BUILD_ID = 9
 APP_UPDATE_CHANNEL = "stable"
-APP_ID = "codex.photo.analyzer.desktop"
+APP_ID = "helloalp.shapeyourphoto.desktop"
 
 CHANGELOG: list[dict[str, object]] = [
+    {
+        "version": "1.2.5",
+        "date": "2026-05-12",
+        "items": [
+            "应用身份改为 helloalp.shapeyourphoto.desktop，Windows 任务栏 AppUserModelID、版本历史和正式文档不再暴露开发工具或上游 AI 名称。",
+            "确认用户数据目录继续使用 Helloalp/ShapeYourPhoto，设置、统计、窗口图标和云端更新链路不依赖旧身份串。",
+            "Windows 源码包统一为双击 start.bat 启动：自动检查 Python 和运行依赖，缺少依赖时按需安装，依赖齐全时直接打开主程序。",
+            "源码包在未安装 Python 的设备上不能直接运行；start.bat 会保留提示窗口，普通用户优先使用正式打包发布物。",
+            "根目录收敛为启动器、说明和依赖文件，应用代码移入 src/，旧启动脚本与 benchmark 工具移入 tools/。",
+        ],
+    },
     {
         "version": "1.2.4",
         "date": "2026-05-11",
@@ -82,7 +93,7 @@ CHANGELOG: list[dict[str, object]] = [
         "version": "1.1.7",
         "date": "2026-05-10",
         "items": [
-            "融合 main 已合入的跨平台打包、拖放、用户数据目录迁移与 Codex 平台检测修复，并重新叠回 backup-v1.1.7-before-pr 的 UI、设置、统计和修复取消能力。",
+            "融合 main 已合入的跨平台打包、拖放、用户数据目录迁移与平台检测修复，并重新叠回 backup-v1.1.7-before-pr 的 UI、设置、统计和修复取消能力。",
             "保留 macOS .dmg / Windows Inno Setup 打包链路、GitHub Actions Release 发布、assets/app_icon.icns、build/ 配置和 README 安装说明。",
             "保留 dnd_support.create_root() 跨平台根窗口选择、Windows 原生拖放、macOS/Linux tkinterdnd2 拖放和 Tcl splitlist 路径解析。",
             "新增跨平台桌面打包：macOS 输出 .dmg（Apple Silicon 原生），Windows 输出 Inno Setup 安装程序；GitHub Actions 双 runner 并行构建并自动发布到 Releases。",

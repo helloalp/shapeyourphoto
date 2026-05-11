@@ -1,4 +1,4 @@
-# Similar Images
+﻿# Similar Images
 
 ## 定位
 
@@ -6,7 +6,7 @@
 
 ## 数据结构
 
-`SimilarImageGroup` 位于 [models.py](/E:/aitools/shapeyourphoto/models.py)，包含：
+`SimilarImageGroup` 位于 [src/models.py](/E:/aitools/shapeyourphoto/src/models.py)，包含：
 
 - `group_id`
 - `paths`
@@ -20,7 +20,7 @@
 
 ## 检测模块
 
-[similar_detector.py](/E:/aitools/shapeyourphoto/similar_detector.py) 使用轻量特征：
+[src/similar_detector.py](/E:/aitools/shapeyourphoto/src/similar_detector.py) 使用轻量特征：
 
 - 缩略图颜色/亮度摘要。
 - aHash / dHash。
@@ -34,7 +34,7 @@
 
 ## UI 复核
 
-[similar_review_dialog.py](/E:/aitools/shapeyourphoto/similar_review_dialog.py) 包含两个窗口：
+[src/similar_review_dialog.py](/E:/aitools/shapeyourphoto/src/similar_review_dialog.py) 包含两个窗口：
 
 - 相似组列表：滚动、筛选、多选和开始抉择。
 - 组内对比：逐组处理，2-4 张网格，5 张以上分页。

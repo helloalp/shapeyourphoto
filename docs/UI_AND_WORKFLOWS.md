@@ -1,4 +1,4 @@
-# UI And Workflows
+﻿# UI And Workflows
 
 ## 主界面结构
 
@@ -11,16 +11,16 @@
 
 ## UI 代码边界
 
-- `ui_app.py` 保留主窗口装配、实例状态和菜单/布局 wiring。
+- `src/ui_app.py` 保留主窗口装配、实例状态和菜单/布局 wiring。
 - `ui_scan_actions.py` 承接导入、拖拽和目录扫描。
 - `ui_analysis_actions.py` 承接批量分析、取消和结果写回。
 - `ui_repair_actions.py` 承接修复入口、修复 worker 和完成详情。
 - `ui_file_list.py` 承接主列表、cleanup 列表、选择状态、HUD 和属性/诊断展示。
 - `ui_task_console.py` 承接 UI 队列、任务进度、Console 合并刷新和性能摘要。
 - `ui_review_actions.py` 承接 cleanup candidate 与相似组复核入口。
-- `ui/` 包承接窗口标题、显示名映射、主题、HiDPI、Splash 和 EXIF 安全编辑等新 UI 基础能力。
+- `src/ui/` 包承接窗口标题、显示名映射、主题、HiDPI、Splash 和 EXIF 安全编辑等新 UI 基础能力。
 
-新增 UI 逻辑时先放入对应边界；只有根窗口生命周期和控件装配继续留在 `ui_app.py`。
+新增 UI 逻辑时先放入对应边界；只有根窗口生命周期和控件装配继续留在 `src/ui_app.py`。
 
 ## 导入与扫描
 

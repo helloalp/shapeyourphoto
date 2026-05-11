@@ -3,9 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import time
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_DIR = ROOT / "src"
+if str(PACKAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_DIR))
 
 from analyzer import analyze_image
 from app_settings import ANALYSIS_CONCURRENCY_HIGH, ANALYSIS_CONCURRENCY_LOW, ANALYSIS_CONCURRENCY_MEDIUM, resolve_analysis_worker_plan

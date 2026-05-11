@@ -1,4 +1,4 @@
-# Technical Docs
+﻿# Technical Docs
 
 `docs/technical/` 存放跨模块技术专题。这里不替代代码，但要记录维护者最容易误解的链路和约束。
 

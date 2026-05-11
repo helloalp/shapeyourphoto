@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Callable
 
 from paths import migrate_legacy_file
+from ui.language import DEFAULT_LANGUAGE, normalize_language
 
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 4
+SETTINGS_SCHEMA_VERSION = 5
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
 FIXED_UPDATE_MANIFEST_URL = "https://helloalp.top/shapeyourphoto/updates/manifest.json"
 FIXED_CLOUD_MESSAGES_URL = "https://helloalp.top/shapeyourphoto/updates/messages.json"
@@ -233,6 +234,7 @@ class AppSettings:
     gpu_acceleration_mode: str = GPU_ACCELERATION_OFF
     console_time_mode: str = CONSOLE_TIME_24H
     theme_id: str = "classic_green"
+    language: str = DEFAULT_LANGUAGE
     auto_check_updates: bool = True
 
 
@@ -252,6 +254,8 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
     if old_version < 4:
         migrated.pop("update_manifest_url", None)
         migrated.pop("cloud_messages_url", None)
+    if old_version < 5:
+        migrated.setdefault("language", DEFAULT_LANGUAGE)
     return migrated
 
 
@@ -274,6 +278,7 @@ def validate_settings_payload(payload: object) -> AppSettings:
         gpu_acceleration_mode=normalize_gpu_acceleration_mode(payload.get("gpu_acceleration_mode", GPU_ACCELERATION_OFF)),
         console_time_mode=normalize_console_time_mode(payload.get("console_time_mode", CONSOLE_TIME_24H)),
         theme_id=normalize_theme_id(payload.get("theme_id", "classic_green")),
+        language=normalize_language(payload.get("language", DEFAULT_LANGUAGE)),
         auto_check_updates=True,
     )
 

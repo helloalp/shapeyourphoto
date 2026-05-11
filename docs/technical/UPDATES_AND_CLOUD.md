@@ -1,4 +1,4 @@
-# 更新与云端公告
+﻿# 更新与云端公告
 
 ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 updater；1.1.9 将生产更新地址和公告地址固定在客户端内部；1.2.0 将 `cryptography` 依赖、公钥资产和真实 updater 测试流程整理为正式可用基础状态。
 
@@ -6,23 +6,23 @@ ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 update
 
 ## 客户端模块
 
-- `cloud_client.py`：读取签名更新 manifest 和云端公告。
-- `cloud_security.py`：canonical JSON、sha256、Ed25519 签名验证和安全路径工具。
-- `cloud_state.py`：带 HMAC 完整性保护的本地更新延后状态。
-- `integrity_guard.py`：更新/公告关键模块存在性检查，以及可选的签名核心哈希 manifest 验证。
-- `ui/cloud_actions.py`：启动检查、手动检查、公告弹窗和 updater 启动的 UI 编排。
-- `ui/cloud_dialogs.py`：更新、检查中和云端公告弹窗。
-- `updater.py`：独立 GUI updater，负责下载、sha256 校验、安全解压、替换、隔离删除项和失败回滚。
+- `src/cloud_client.py`：读取签名更新 manifest 和云端公告。
+- `src/cloud_security.py`：canonical JSON、sha256、Ed25519 签名验证和安全路径工具。
+- `src/cloud_state.py`：带 HMAC 完整性保护的本地更新延后状态。
+- `src/integrity_guard.py`：更新/公告关键模块存在性检查，以及可选的签名核心哈希 manifest 验证。
+- `src/ui/cloud_actions.py`：启动检查、手动检查、公告弹窗和 updater 启动的 UI 编排。
+- `src/ui/cloud_dialogs.py`：更新、检查中和云端公告弹窗。
+- `src/updater.py`：独立 GUI updater，负责下载、sha256 校验、安全解压、替换、隔离删除项和失败回滚。
 
 ## 依赖与公钥
 
-- 源码包依赖由 `requirements.txt` 统一声明，`setup_deps.bat` 负责安装。
+- 源码包依赖由 `requirements.txt` 统一声明，`start.bat` 通过 `tools/launcher/start_helper.py` 按需安装；`tools/legacy/setup_deps.bat` 仅作兼容入口。
 - `cryptography>=42.0.0` 是正式依赖，用于 Ed25519 验签。
 - 正式包应内置 `assets/update_public_key.pem`。
 - `SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE` 只作为开发测试覆盖方式，普通用户不需要设置。
 - 私钥永远不能进入公开仓库、源码包或发布包。
 
-缺少 `cryptography` 时，客户端应明确提示本地 Python 环境缺少依赖，并提示运行 `setup_deps.bat` 或 `python -m pip install cryptography`。这类问题不是服务器 manifest 签名失败，也不应显示成网络错误或服务器错误。
+缺少 `cryptography` 时，源码包启动 helper 应按需安装 `requirements.txt`；如果安装失败，应明确提示本地 Python 环境缺少依赖，并提示重新运行 `start.bat` 或手动执行 `python -m pip install -r requirements.txt`。这类问题不是服务器 manifest 签名失败，也不应显示成网络错误或服务器错误。
 
 ## Manifest 契约
 
@@ -37,7 +37,7 @@ ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 update
   "sha256": "...",
   "package_size": 123456,
   "release_notes": ["..."],
-  "managed_files": ["app.py", "ui/cloud_actions.py"],
+  "managed_files": ["app.py", "src/ui/cloud_actions.py"],
   "deleted_paths": [],
   "channel": "stable"
 }
@@ -87,7 +87,7 @@ ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 update
 
 ## Updater 安全边界
 
-- 主程序只在 manifest 验签通过后，将 manifest 写入用户数据目录并启动 `updater.py`。
+- 主程序只在 manifest 验签通过后，将 manifest 写入用户数据目录并启动 `src/updater.py`。
 - updater 下载 package 后校验大小和 sha256。
 - zip 解压会拒绝 zip-slip 路径。
 - updater 只写入应用目录下的受管理路径。

@@ -1,16 +1,16 @@
-# Analysis Pipeline
+﻿# Analysis Pipeline
 
 本文说明当前分析流水线和维护边界。
 
 ## 入口
 
-- 外部兼容入口：[analyzer.py](/E:/aitools/shapeyourphoto/analyzer.py)
-- 主实现：[analysis/core.py](/E:/aitools/shapeyourphoto/analysis/core.py)
-- 人像专题：[analysis/portrait.py](/E:/aitools/shapeyourphoto/analysis/portrait.py)
-- cleanup candidate：[analysis/discard.py](/E:/aitools/shapeyourphoto/analysis/discard.py)
-- 共享工具：[analysis/common.py](/E:/aitools/shapeyourphoto/analysis/common.py)
+- 外部兼容入口：[src/analyzer.py](/E:/aitools/shapeyourphoto/src/analyzer.py)
+- 主实现：[src/analysis/core.py](/E:/aitools/shapeyourphoto/src/analysis/core.py)
+- 人像专题：[src/analysis/portrait.py](/E:/aitools/shapeyourphoto/src/analysis/portrait.py)
+- cleanup candidate：[src/analysis/discard.py](/E:/aitools/shapeyourphoto/src/analysis/discard.py)
+- 共享工具：[src/analysis/common.py](/E:/aitools/shapeyourphoto/src/analysis/common.py)
 
-`analyzer.py` 不承载新逻辑；新增分析能力应进入 `analysis/` 包。
+`src/analyzer.py` 不承载新逻辑；新增分析能力应进入 `src/analysis/` 包。
 
 ## 单张分析阶段
 
@@ -38,7 +38,7 @@
 
 ## 批量写回规则
 
-批量分析由 `ui_app.py` 分配 worker。后台结果写回 UI 前必须确认：
+批量分析由 `src/ui_app.py` 分配 worker。后台结果写回 UI 前必须确认：
 
 - run_id 仍是当前轮次。
 - cancel_event 未设置。

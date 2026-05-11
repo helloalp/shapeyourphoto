@@ -1,4 +1,4 @@
-# Preservation Rules
+﻿# Preservation Rules
 
 这是 ShapeYourPhoto 的正式文档保留规则。它本身也属于不可删除文档。
 
@@ -36,11 +36,11 @@
 - 模块职责变化：更新 [MODULE_REFERENCE.md](/E:/aitools/shapeyourphoto/docs/MODULE_REFERENCE.md)。
 - UI 主流程变化：更新 [UI_AND_WORKFLOWS.md](/E:/aitools/shapeyourphoto/docs/UI_AND_WORKFLOWS.md)。
 - 并发、性能、扫描、cleanup、相似图、分析链路变化：优先在 `docs/technical/` 新增或修订专题。
-- 版本升级：更新 [CHANGELOG.md](/E:/aitools/shapeyourphoto/CHANGELOG.md)、[app_metadata.py](/E:/aitools/shapeyourphoto/app_metadata.py) 和 `docs/updates/<version>.md`。
+- 版本升级：更新 [CHANGELOG.md](/E:/aitools/shapeyourphoto/CHANGELOG.md)、[src/app_metadata.py](/E:/aitools/shapeyourphoto/src/app_metadata.py) 和 `docs/updates/<version>.md`。
 
 ## 版本记录语言规则
 
-- `app_metadata.py` 的 `CHANGELOG` 属于应用内用户可见版本历史，默认必须使用中文。
+- `src/app_metadata.py` 的 `CHANGELOG` 属于应用内用户可见版本历史，默认必须使用中文。
 - 根 `CHANGELOG.md` 与 `docs/updates/<version>.md` 默认必须使用中文，并与 `app_metadata.CHANGELOG` 同步同一批事实。
 - 英文只用于技术标识原文，例如文件名、函数名、模块名、环境变量、协议字段、第三方库名、内部 code/enum/storage value。
 - 不得把整条英文 release note 直接放进 `app_metadata.CHANGELOG` 作为正式版本记录。

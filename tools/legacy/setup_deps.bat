@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 
 set "PYTHON_CMD="
 where py >nul 2>nul
@@ -17,20 +17,19 @@ if not defined PYTHON_CMD (
 
 if not defined PYTHON_CMD (
     echo.
-    echo [ERROR] Python was not found. Please install Python 3 and try again.
+    echo Python was not found. Please install Python 3.10 or newer.
     pause
     exit /b 1
 )
 
-echo [INFO] Installing project dependencies...
-call %PYTHON_CMD% -m pip install -r requirements.txt
+call %PYTHON_CMD% "%CD%\tools\launcher\start_helper.py" --install-only
 if errorlevel 1 (
     echo.
-    echo [ERROR] Dependency installation failed.
+    echo Dependency installation failed.
     pause
     exit /b 1
 )
 
 echo.
-echo [INFO] Dependencies are ready.
+echo Dependencies are ready.
 pause

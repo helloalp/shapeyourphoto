@@ -1,21 +1,23 @@
-# Maintenance Guide
+﻿# Maintenance Guide
 
-本文是 1.1.9 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
+本文是 1.2.5 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
 
 ## 基本原则
 
 1. 先核代码，再改文档或实现。
 2. 小步修改、可验证，不借维护任务重构核心算法。
 3. 保留用户数据安全边界：不上传图片、不永久删除、不暗改输出规则。
-4. 功能变化必须同步文档、CHANGELOG 和 `app_metadata.py`。
+4. 功能变化必须同步文档、CHANGELOG 和 `src/app_metadata.py`。
 5. 不提交本地样张、缓存、patch、`__pycache__`、调试输出或临时文件。
 
 ## 启动链路保护
 
-- 日常启动入口是 `start.bat` / `start_app.bat` / `app.pyw` / `app.py`。
-- 启动脚本必须短、快、稳。
-- 不得把 `pip install`、benchmark、扫描、清理或耗时检查放入日常启动。
-- 依赖安装只走 `setup_deps.bat` 或明确的人工命令。
+- 普通用户日常启动入口是根目录 `start.bat`。
+- `start.bat` 保持 ASCII-only 和短逻辑：只查找 Python，并进入 `tools/launcher/start_helper.py`。
+- `tools/launcher/start_helper.py` 可以做轻量环境检查和按需依赖安装；依赖齐全时必须快速进入 GUI。
+- 不得把 benchmark、目录扫描、清理、更新包下载或其他与启动无关的重任务放入启动链路。
+- `tools/legacy/setup_deps.bat` / `tools/legacy/start_app.bat` 只作为兼容入口，普通用户文档不得要求先运行它们。
+- 源码包在无 Python 设备上不能直接运行；`start.bat` 必须保留可读提示窗口，不能闪退。
 
 ## Tk 主线程规则
 
@@ -28,10 +30,10 @@
 
 ## UI 主类拆分规则
 
-- `ui_app.py` 只负责主窗口状态、控件装配和高层协调。
-- 扫描/导入、分析任务、修复任务、主列表、Console/perf、cleanup/similar 复核分别维护在 `ui_scan_actions.py`、`ui_analysis_actions.py`、`ui_repair_actions.py`、`ui_file_list.py`、`ui_task_console.py`、`ui_review_actions.py`。
-- `ui/` 包承载窗口标题、display mapping、主题、HiDPI、Splash 和 EXIF 安全编辑等共享 UI 基础设施。
-- 新增 UI 行为时优先放入对应 mixin 或 `ui/` 包；只有布局装配、菜单 wiring 和根窗口生命周期适合留在 `ui_app.py`。
+- `src/ui_app.py` 只负责主窗口状态、控件装配和高层协调。
+- 扫描/导入、分析任务、修复任务、主列表、Console/perf、cleanup/similar 复核分别维护在 `src/ui_scan_actions.py`、`src/ui_analysis_actions.py`、`src/ui_repair_actions.py`、`src/ui_file_list.py`、`src/ui_task_console.py`、`src/ui_review_actions.py`。
+- `src/ui/` 包承载窗口标题、display mapping、主题、HiDPI、Splash 和 EXIF 安全编辑等共享 UI 基础设施。
+- 新增 UI 行为时优先放入对应 mixin 或 `src/ui/` 包；只有布局装配、菜单 wiring 和根窗口生命周期适合留在 `src/ui_app.py`。
 - mixin 模块不得 import `ui_app.py`，共享常量放在 `ui_constants.py`，避免循环依赖。
 - 拆分 UI 代码时必须保持后台回调回主线程、run_id/cancel_event 防旧写回和 Console 合并刷新规则。
 
@@ -142,7 +144,7 @@
 - 图片文件由 `.gitignore` 忽略，不得提交。
 - 真实 `test/manifest.json` 也默认忽略，因为可能包含用户图片文件名。
 - 可提交的模板是 `test/manifest.example.json`。
-- `benchmark_test_images.py` 必须允许 `test/` 为空时安全跳过。
+- `tools/benchmark/benchmark_test_images.py` 必须允许 `test/` 为空时安全跳过。
 - benchmark 摘要应记录 wall time、worker cumulative、queue/wait、慢图、慢阶段、相似检测、问题图和 cleanup candidate 数量。
 - benchmark 报告写入被忽略的 `benchmark_reports/`，不得提交报告文件。
 
@@ -155,11 +157,11 @@
 - UI 流程变化：更新 `UI_AND_WORKFLOWS.md`。
 - 技术链路变化：更新或新增 `docs/technical/` 专题。
 - 产品和界面规范变化：更新或新增 `docs/specs/` 专题。
-- 版本升级：更新 `CHANGELOG.md`、`app_metadata.py` 和 `docs/updates/<version>.md`。
+- 版本升级：更新 `CHANGELOG.md`、`src/app_metadata.py` 和 `docs/updates/<version>.md`。
 
 ## 版本记录语言规范
 
-- `app_metadata.py` 内置 `CHANGELOG` 会在应用内展示，默认必须使用中文书写。
+- `src/app_metadata.py` 内置 `CHANGELOG` 会在应用内展示，默认必须使用中文书写。
 - 根目录 `CHANGELOG.md` 和 `docs/updates/<version>.md` 默认也使用中文书写，并与 `app_metadata.CHANGELOG` 保持同一事实口径。
 - 内部模块名、文件名、函数名、字段名、code、enum、storage key、环境变量和协议字段继续保留英文原文，不为了中文化而改写技术标识。
 - 如必须引用英文库名、异常名、命令名或协议字段，可直接保留英文；解释性文案仍使用中文。
@@ -168,15 +170,15 @@
 ## 推荐验证顺序
 
 1. `python -m compileall -q .`
-2. 静态检查 `start.bat` / `start_app.bat` 未加入依赖安装或耗时逻辑。
+2. 静态检查 `start.bat` / `tools/launcher/start_helper.py` 未加入 benchmark、扫描、更新包下载或其他启动无关重任务。
 3. 搜索旧入口描述：`single_image_window`、孤立“去噪当前”、普通 `messagebox` 长修复详情。
 4. 检查文档是否存在明显乱码。
 5. 检查 `git status --short`，确认没有本地样张、`__pycache__`、patch、tmp 或 debug 输出进入版本控制。
 
 ## 高风险修改点
 
-- `ui_app.py` 与 `ui_*` mixin：主线程、run_id、取消、列表刷新、Console 合并刷新和弹窗入口。
-- `analysis/core.py` / `analysis/portrait.py`：分析结论与人像误判。
+- `src/ui_app.py` 与 `src/ui_*` mixin：主线程、run_id、取消、列表刷新、Console 合并刷新和弹窗入口。
+- `src/analysis/core.py` / `src/analysis/portrait.py`：分析结论与人像误判。
 - `repair_ops.py` / `repair_engine.py`：视觉风格、输出安全和元数据。
 - `file_actions.py`：扫描忽略、清理安全和输出路径。
 - `app_settings.py`：设置兼容、默认值和 worker 规划。
@@ -187,7 +189,7 @@
 - Update and cloud-message UI orchestration lives in `ui/cloud_actions.py` and `ui/cloud_dialogs.py`; do not move protocol logic into `ui_app.py`.
 - Developer mode is session-only and backed by `developer_mode.py`; never store an unlocked flag in `app_settings.json`.
 - EXIF edits must preserve ShapeYourPhoto provenance fields and block any value containing `shapeyourphoto`.
-- Startup scripts must stay fast and must not install dependencies, run benchmarks or perform update downloads.
+- Startup scripts must stay fast; 1.2.5 allows only on-demand runtime dependency installation from `requirements.txt`, and still forbids benchmarks, scans or update-package downloads during startup.
 - GitHub auto-packaging workflow is paused in 1.1.8; release/server steps live in ignored private docs.
 
 # 1.1.9 Maintenance Addendum
@@ -199,8 +201,8 @@
 
 # 1.2.0 Maintenance Addendum
 
-- `cryptography` 是 updater 验签的正式依赖，必须通过 `requirements.txt`、`setup_deps.bat` 和打包配置进入发布流程。
-- `start.bat` / `start_app.bat` 仍然只能负责启动，不得加入 `pip install`、更新下载、benchmark、扫描或其他耗时逻辑。
+- `cryptography` 是 updater 验签的正式依赖，必须通过 `requirements.txt`、`tools/launcher/start_helper.py` 和打包配置进入发布流程。
+- 1.2.5 起 `start.bat` 可以触发按需依赖安装；但仍不得加入更新下载、benchmark、扫描或其他启动无关重任务。
 - 正式包应包含 `assets/update_public_key.pem`；开发测试可用 `SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE` 覆盖公钥文件。
 - `update_private_key.pem` 永远不得进入仓库、源码包、安装包或普通项目目录。
 - 文档中的历史版本号可保留上下文；下一次真实 updater 测试流程使用 `1.2.0 -> 1.2.1`。

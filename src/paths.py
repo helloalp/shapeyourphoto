@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 
+_SOURCE_ROOT = Path(__file__).resolve().parent.parent
 _APP_NAME = "ShapeYourPhoto"
 _APP_AUTHOR = "Helloalp"
 
@@ -26,7 +27,7 @@ def resource_path(relative: str | Path) -> Path:
     base = getattr(sys, "_MEIPASS", None)
     if base:
         return Path(base) / relative
-    return Path(__file__).resolve().parent / relative
+    return _SOURCE_ROOT / relative
 
 
 @functools.cache

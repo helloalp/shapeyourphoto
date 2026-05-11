@@ -20,13 +20,14 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # spec 在 PyInstaller 上下文里，__file__ 不可靠；用工作目录推导项目根
 PROJECT_ROOT = Path(os.getcwd()).resolve()
+PACKAGE_DIR = PROJECT_ROOT / "src"
 ASSETS_DIR = PROJECT_ROOT / "assets"
 
 APP_NAME = "ShapeYourPhoto"
 BUNDLE_ID = "com.helloalp.shapeyourphoto"
 
 # 从 app_metadata 读取版本号，单一真源
-sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PACKAGE_DIR))
 from app_metadata import APP_VERSION  # type: ignore
 
 if sys.platform == "darwin":
@@ -75,7 +76,7 @@ excludes = [
 
 a = Analysis(
     [str(PROJECT_ROOT / "app.py")],
-    pathex=[str(PROJECT_ROOT)],
+    pathex=[str(PROJECT_ROOT), str(PACKAGE_DIR)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,

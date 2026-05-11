@@ -1,4 +1,4 @@
-# Product And UI Specs
+﻿# Product And UI Specs
 
 `docs/specs/` 记录未来新增功能必须遵守的产品、视觉和信息呈现规范。它不替代 `docs/technical/`；技术实现、模块边界和数据结构仍写入 technical 文档。
 

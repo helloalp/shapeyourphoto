@@ -1,4 +1,4 @@
-# Performance And Concurrency
+﻿# Performance And Concurrency
 
 ## 线程模型
 
@@ -52,7 +52,7 @@ Console 时间戳由 `AppConsole` 统一格式化，时间模式来自 `app_sett
 
 ## GPU fallback
 
-[gpu_accel.py](/E:/aitools/shapeyourphoto/gpu_accel.py) 当前只检测可选后端并返回状态文案：
+[src/gpu_accel.py](/E:/aitools/shapeyourphoto/src/gpu_accel.py) 当前只检测可选后端并返回状态文案：
 
 - CuPy CUDA
 - OpenCV CUDA

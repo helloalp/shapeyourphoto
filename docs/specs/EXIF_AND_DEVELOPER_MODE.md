@@ -1,4 +1,4 @@
-# EXIF And Developer Mode
+﻿# EXIF And Developer Mode
 
 ## EXIF Editing
 

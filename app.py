@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+
+APP_ROOT = Path(__file__).resolve().parent
+APP_PACKAGE_DIR = APP_ROOT / "src"
+if str(APP_PACKAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_PACKAGE_DIR))
+
 from app_metadata import APP_VERSION
 from desktop_integration import configure_window_icon
 from dnd_support import create_root

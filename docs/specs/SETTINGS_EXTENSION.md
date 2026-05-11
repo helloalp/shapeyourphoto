@@ -1,4 +1,4 @@
-# 设置项与 UI 页面扩展规范
+﻿# 设置项与 UI 页面扩展规范
 
 - 所有设置必须通过 `app_settings.py` 的默认值、schema version、normalize、validate、migrate、load/save 统一读写。
 - 新设置必须同时有 UI 页面或清晰文档入口，不能散落成独立菜单项。

@@ -1,4 +1,12 @@
-# 更新历史
+﻿# 更新历史
+
+## 1.2.5 - 2026-05-12
+
+- 应用身份改为 `helloalp.shapeyourphoto.desktop`，Windows 任务栏 AppUserModelID、版本历史和正式文档不再暴露开发工具或上游 AI 名称。
+- 确认用户数据目录继续使用 `Helloalp/ShapeYourPhoto`，设置、统计、窗口图标和云端更新链路不依赖旧身份串。
+- Windows 源码包统一为双击 `start.bat` 启动：自动检查 Python 和运行依赖，缺少依赖时按需安装，依赖齐全时直接打开主程序。
+- 明确源码包在未安装 Python 的设备上不能直接运行；`start.bat` 会保留提示窗口，普通用户优先使用正式打包发布物。
+- 根目录收敛为启动器、说明和依赖文件，应用代码移入 `src/`，旧启动脚本与 benchmark 工具移入 `tools/`。
 
 ## 1.2.4 - 2026-05-11
 
@@ -53,10 +61,10 @@
 
 ## 1.1.7 - 2026-05-10
 
-- 融合 main 已合入的外部 PR 与 Codex 修复 PR，并重新叠回 `backup-v1.1.7-before-pr` 的本地 v1.1.7 能力；本轮目标是保留两边有效功能，不回退任一侧。
+- 融合 main 已合入的外部 PR 与维护修复，并重新叠回 `backup-v1.1.7-before-pr` 的本地 v1.1.7 能力；本轮目标是保留两边有效功能，不回退任一侧。
 - 保留跨平台打包链路：macOS Apple Silicon `.dmg`、Windows Inno Setup 安装包、`build/` 配置、`assets/app_icon.icns`、GitHub Actions 双 runner 构建与 Release 发布。
 - 保留跨平台拖放：Windows 继续使用原生 `ctypes` 拖放，macOS / Linux 使用 `tkinterdnd2`；根窗口由 `dnd_support.create_root()` 统一选择，路径解析改用 Tcl `splitlist`。
-- 保留 Codex 平台检测修复：`paths.IS_WIN` / `IS_MAC` / `IS_LINUX` 集中管理平台判断，`drag_drop.py` 等模块避免非 Windows import-time 崩溃。
+- 保留平台检测修复：`paths.IS_WIN` / `IS_MAC` / `IS_LINUX` 集中管理平台判断，`drag_drop.py` 等模块避免非 Windows import-time 崩溃。
 - 保留用户数据目录迁移：设置与统计进入系统标准用户数据目录，PyInstaller 资源加载继续使用 `paths.resource_path()`，卸载不会删除用户数据。
 - 保留 v1.1.7 修复取消链路：repair run_id/cancel_event、防旧写回、修复前状态快照、取消后恢复、非覆盖输出清理、覆盖修复备份和正常完成后备份清理。
 - 保留 Console 设置与主题系统：Console 支持 24 小时制、12 小时制、启动后经过时间；外观保留五套主题 token，设置 schema 为 2。

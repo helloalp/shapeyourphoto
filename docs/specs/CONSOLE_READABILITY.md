@@ -1,4 +1,4 @@
-# Console 可读性规范
+﻿# Console 可读性规范
 
 - Console 是只读状态区，不提供命令输入。
 - Console 日志必须通过统一 formatter 写入时间戳，支持 24 小时制、12 小时制和启动后经过时间。
