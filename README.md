@@ -1,4 +1,4 @@
-﻿# ShapeYourPhoto
+﻿﻿# ShapeYourPhoto
 
 当前版本：`1.2.5`
 
@@ -6,7 +6,7 @@ ShapeYourPhoto 是一个本地桌面图片工具，用于导入图片、批量�
 
 ## Windows 用户使用方法
 
-1. 打开 [GitHub Releases](https://github.com/helloalp/shapeyourphoto/releases)。
+1. 打开 [GitHub Releases](https://github.com/helloalp/shapeyourphoto/releases)，找到最新版本，展开最下方的列表，选择source_code.zip下载解压，至第3步。
 2. 普通用户优先下载正式发布包；源码包更适合开发者和高级用户。
 3. 如果下载的是源码包，解压到普通目录，例如：
 
@@ -53,8 +53,6 @@ macOS 打包版本会在后续补充。源码方式运行时同样需要 Python 
 6. 如需复核不适合保留的图片或相似图片，可从主界面的相关入口打开。
 
 ## 更新
-
-ShapeYourPhoto 使用内置固定更新地址检查新版本，更新 manifest 和云端消息都需要签名验证。普通用户不需要填写更新 URL 或消息 URL。
 
 手动检查更新：打开“设置” -> “更新” -> 点击“检查更新”。
 

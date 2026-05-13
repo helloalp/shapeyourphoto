@@ -31,7 +31,7 @@ class CleanupReviewResult:
 class CleanupReviewDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, entries: list[CleanupReviewEntry]) -> None:
         super().__init__(parent)
-        self.title(app_window_title("不适合保留候选"))
+        self.title(app_window_title("不适合保留的图片"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
@@ -44,6 +44,7 @@ class CleanupReviewDialog(tk.Toplevel):
         self._item_lookup: dict[str, int] = {}
         self._thumbs: list[ImageTk.PhotoImage | None] = []
         self._size_notice_var = tk.StringVar(value="")
+        self._detail_var = tk.StringVar(value="选择一张图片后，可在这里查看完整原因。")
 
         outer = ttk.Frame(self, padding=14)
         outer.pack(fill="both", expand=True)
@@ -52,7 +53,8 @@ class CleanupReviewDialog(tk.Toplevel):
 
         ttk.Label(
             outer,
-            text="以下图片在刚刚分析中被判定为“不适合保留”候选。默认不勾选任何图片，请确认后再进入安全删除流程。",
+            text="以下图片可能不适合继续保留。请核对后再选择是否删除。",
+            wraplength=900,
         ).grid(row=0, column=0, sticky="w", pady=(0, 10))
 
         list_shell = ttk.Frame(outer)
@@ -69,56 +71,98 @@ class CleanupReviewDialog(tk.Toplevel):
         )
         self.tree.heading("#0", text="缩略图 / 文件名")
         self.tree.column("#0", width=250, anchor="w")
-        self.tree.heading("pick", text="待处理")
+        self.tree.heading("pick", text="选择")
         self.tree.column("pick", width=70, anchor="center")
-        self.tree.heading("severity", text="严重度")
+        self.tree.heading("severity", text="严重程度")
         self.tree.column("severity", width=72, anchor="center")
         self.tree.heading("confidence", text="置信度")
         self.tree.column("confidence", width=72, anchor="center")
         self.tree.heading("reason", text="主要原因")
         self.tree.column("reason", width=420, anchor="w")
         scroll = ttk.Scrollbar(list_shell, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
+        scroll_x = ttk.Scrollbar(list_shell, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=scroll_x.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
         scroll.grid(row=0, column=1, sticky="ns")
+        scroll_x.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<Button-1>", self._on_tree_click, add="+")
+        self.tree.bind("<<TreeviewSelect>>", lambda _event: self._refresh_detail())
 
         for index, entry in enumerate(entries):
             checked = "待定"
             thumb = self._build_thumbnail(entry.image_path)
+            reason = self._reason_summary(entry)
             self._thumbs.append(thumb)
             item_id = self.tree.insert(
                 "",
                 "end",
                 text=entry.display_name,
                 image=thumb,
-                values=(checked, entry.severity, f"{entry.confidence:.2f}", f"{display_name('issue', entry.reason_code)}：{entry.reason_text}"),
+                values=(
+                    checked,
+                    display_name("severity", entry.severity),
+                    f"{entry.confidence:.2f}",
+                    reason,
+                ),
             )
             self._item_lookup[item_id] = index
 
+        detail = ttk.Label(
+            outer,
+            textvariable=self._detail_var,
+            wraplength=900,
+            justify="left",
+        )
+        detail.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+
         action_row = ttk.Frame(outer)
-        action_row.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        action_row.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         ttk.Button(action_row, text="勾选当前", command=self._select_current).pack(side="left")
         ttk.Button(action_row, text="切换所选", command=self._toggle_selected).pack(side="left", padx=6)
         ttk.Button(action_row, text="全选", command=self._select_all).pack(side="left")
         ttk.Button(action_row, text="取消全选", command=self._unselect_all).pack(side="left", padx=6)
-        self._hint_var = tk.StringVar(value="当前没有勾选候选，可直接跳过。")
+        self._hint_var = tk.StringVar(value="当前没有选择图片，可以直接取消。")
         ttk.Label(action_row, textvariable=self._hint_var).pack(side="right")
 
         button_row = ttk.Frame(outer)
-        button_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        button_row.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         self.delete_button = ttk.Button(
             button_row,
-            text="移入安全清理",
+            text="删除选择的图片",
             command=self._confirm_delete,
             state="disabled",
         )
         self.delete_button.pack(side="left")
         ttk.Label(button_row, textvariable=self._size_notice_var).pack(side="left", padx=(12, 0))
-        ttk.Button(button_row, text="跳过", command=self._skip).pack(side="right")
+        ttk.Button(button_row, text="取消", command=self._skip).pack(side="right")
 
         bind_minimum_size_notice(self, self._size_notice_var, 860, 520)
         center_window(self, 980, 620)
+
+    def _reason_summary(self, entry: CleanupReviewEntry) -> str:
+        label = display_name("cleanup_reason", entry.reason_code)
+        detail = entry.reason_text.strip()
+        if not detail or detail == entry.reason_code or detail == label:
+            return label
+        if entry.reason_code in detail:
+            detail = detail.replace(entry.reason_code, label)
+        if detail.startswith("未知类型"):
+            return label
+        return f"{label}：{detail}"
+
+    def _refresh_detail(self) -> None:
+        index = self._current_index()
+        if index is None:
+            self._detail_var.set("选择一张图片后，可在这里查看完整原因。")
+            return
+        entry = self._entries[index]
+        self._detail_var.set(
+            f"{entry.display_name}\n"
+            f"状态：{'已选' if self._vars[index].get() else '待定'} | "
+            f"严重程度：{display_name('severity', entry.severity)} | "
+            f"置信度：{entry.confidence:.2f}\n"
+            f"主要原因：{self._reason_summary(entry)}"
+        )
 
     def _build_thumbnail(self, path: Path, size: tuple[int, int] = (90, 68)) -> ImageTk.PhotoImage | None:
         try:
@@ -152,10 +196,11 @@ class CleanupReviewDialog(tk.Toplevel):
         selected_count = len([variable for variable in self._vars if variable.get()])
         if selected_count > 0:
             self.delete_button.configure(state="normal")
-            self._hint_var.set(f"已勾选 {selected_count} 张候选，左侧按钮将进入删除确认流程。")
+            self._hint_var.set(f"已选择 {selected_count} 张图片。")
         else:
             self.delete_button.configure(state="disabled")
-            self._hint_var.set("当前没有勾选候选，可直接跳过。")
+            self._hint_var.set("当前没有选择图片，可以直接取消。")
+        self._refresh_detail()
 
     def _on_tree_click(self, event) -> None:
         item_id = self.tree.identify_row(event.y)

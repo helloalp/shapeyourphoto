@@ -23,9 +23,8 @@ from app_settings import (
     validate_settings_payload,
 )
 from cloud_client import fetch_cloud_messages
-from developer_mode import developer_session
 from gpu_accel import detect_gpu_backend
-from ui.language import LANGUAGE_OPTIONS, language_label, normalize_language
+from ui.language import LANGUAGE_OPTIONS, language_label, normalize_language, set_current_language
 from ui.themes import THEME_OPTIONS, normalize_theme_id
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
@@ -43,6 +42,7 @@ class AppSettingsDialog(tk.Toplevel):
         self.minsize(760, 560)
         self.result: AppSettings | None = None
         self._size_notice_var = tk.StringVar(value="")
+        self._initial_language = settings.language
 
         normalized = validate_settings_payload(settings.__dict__)
         self._scan_mode_value_to_label = dict(SCAN_MODE_OPTIONS)
@@ -275,16 +275,11 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(update_tab, text="当前版本", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             update_tab,
-            text=f"{APP_NAME} v{APP_VERSION} · 版本 ID {APP_VERSION_ID}",
+            text=f"{APP_NAME} v{APP_VERSION}\n版本ID {APP_VERSION_ID}",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
         ttk.Button(update_tab, text="检查更新", command=self._check_updates_now).grid(row=2, column=0, sticky="w")
-        ttk.Label(update_tab, text="自动检查更新", font=("Microsoft YaHei UI", 11, "bold")).grid(row=3, column=0, columnspan=2, sticky="w", pady=(22, 0))
-        self.auto_update_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(update_tab, text="启动后自动检查更新", variable=self.auto_update_var, state="disabled").grid(
-            row=4, column=0, columnspan=2, sticky="w", pady=(8, 12)
-        )
-        ttk.Label(update_tab, text="有新版本时会在启动后提示，也可以随时手动检查。", wraplength=680, justify="left").grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(12, 0)
+        ttk.Label(update_tab, text="可以随时手动检查是否有新版本。", wraplength=680, justify="left").grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(14, 0)
         )
 
         message_tab = ttk.Frame(notebook, padding=14)
@@ -314,17 +309,6 @@ class AppSettingsDialog(tk.Toplevel):
         self.announcement_text.grid(row=0, column=0, sticky="nsew")
         announcement_scroll.grid(row=0, column=1, sticky="ns")
         self._set_announcement_text("暂无公告。")
-
-        developer_tab = ttk.Frame(notebook, padding=14)
-        developer_tab.columnconfigure(1, weight=1)
-        notebook.add(developer_tab, text="开发者模式")
-        ttk.Label(developer_tab, text="开发者模式", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        self.developer_status_var = tk.StringVar(value="已解锁" if developer_session.unlocked else "未解锁")
-        ttk.Label(developer_tab, textvariable=self.developer_status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
-        ttk.Label(developer_tab, text="开发者密码：").grid(row=2, column=0, sticky="w")
-        self.developer_password_var = tk.StringVar()
-        ttk.Entry(developer_tab, textvariable=self.developer_password_var, show="*").grid(row=2, column=1, sticky="ew")
-        ttk.Button(developer_tab, text="解锁", command=self._unlock_developer_mode).grid(row=3, column=1, sticky="w", pady=(10, 0))
 
         buttons = ttk.Frame(outer)
         buttons.grid(row=2, column=0, sticky="ew", pady=(14, 0))
@@ -398,27 +382,23 @@ class AppSettingsDialog(tk.Toplevel):
             language=language,
             auto_check_updates=True,
         )
+        if language != self._initial_language:
+            set_current_language(language)
+            messagebox.showinfo("语言设置", "界面语言已更改。部分文案可能需要重启应用后才会完全生效。", parent=self)
         self.destroy()
 
     def _cancel(self) -> None:
         self.result = None
         self.destroy()
 
-    def _unlock_developer_mode(self) -> None:
-        ok, message = developer_session.unlock(self.developer_password_var.get())
-        if ok:
-            self.developer_password_var.set("")
-            self.developer_status_var.set("已解锁")
-            messagebox.showinfo("开发者模式", message, parent=self)
-        else:
-            self.developer_status_var.set("未解锁")
-            messagebox.showwarning("开发者模式", message, parent=self)
-
     def _check_updates_now(self) -> None:
         if self._update_check_callback is None:
             messagebox.showinfo("检查更新", "当前无法从设置窗口发起检查。", parent=self)
             return
-        self._update_check_callback()
+        try:
+            self._update_check_callback(self)
+        except TypeError:
+            self._update_check_callback()
 
     def _log(self, message: str) -> None:
         if self._log_callback is not None:

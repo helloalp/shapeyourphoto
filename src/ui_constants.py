@@ -35,7 +35,7 @@ ANALYSIS_TIMING_LABELS = [
     ("场景判断", ("scene_classify",)),
     ("人脸/人像/质量/问题生成", ("face_detect", "portrait_region_build", "quality_stats", "issue_build")),
     ("人像区域", ("face_detect", "portrait_region_build")),
-    ("cleanup candidate", ("cleanup_candidate",)),
+    ("不适合保留判断", ("cleanup_candidate",)),
 ]
 ANALYSIS_BATCH_TIMING_LABELS = ANALYSIS_TIMING_LABELS + [
     ("相似图检测", ("similar_detection",)),

@@ -71,6 +71,17 @@ class UiFileListMixin:
         order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
         return order.get(severity.lower(), 0)
 
+    def _cleanup_reason_summary(self, candidate: CleanupCandidate) -> str:
+        label = display_name("cleanup_reason", candidate.reason_code)
+        detail = candidate.reason_text.strip()
+        if not detail or detail == candidate.reason_code or detail == label:
+            return label
+        if candidate.reason_code in detail:
+            detail = detail.replace(candidate.reason_code, label)
+        if detail.startswith("未知类型"):
+            return label
+        return f"{label}：{detail}"
+
     def _primary_cleanup_candidates(self) -> dict[Path, CleanupCandidate]:
         primary: dict[Path, CleanupCandidate] = {}
         for path, result in self.results.items():
@@ -123,7 +134,7 @@ class UiFileListMixin:
                 "end",
                 text=path.name,
                 image=thumb,
-                values=(checked, candidate.severity, confidence, candidate.reason_text),
+                values=(checked, display_name("severity", candidate.severity), confidence, self._cleanup_reason_summary(candidate)),
             )
             self.cleanup_item_lookup[item_id] = path
             if path == current_path:
@@ -135,10 +146,10 @@ class UiFileListMixin:
         selected_count = len([path for path, flag in self.cleanup_flags.items() if flag.get()])
         if selected_count > 0:
             self.cleanup_delete_button.configure(state="normal")
-            self.cleanup_hint_var.set(f"已勾选 {selected_count} 张候选，左侧按钮会执行安全清理。")
+            self.cleanup_hint_var.set(f"已选择 {selected_count} 张图片。")
         else:
             self.cleanup_delete_button.configure(state="disabled")
-            self.cleanup_hint_var.set("当前没有勾选候选，可直接跳过。")
+            self.cleanup_hint_var.set("当前没有选择图片。")
 
     def _similar_marker_for_path(self, path: Path) -> str:
         group_ids = [str(group.group_id) for group in self.similar_groups if path in group.paths and len(group.paths) >= 2]
@@ -175,7 +186,7 @@ class UiFileListMixin:
         cleanup_count = len(self._primary_cleanup_candidates())
         similar_count = len([group for group in self.similar_groups if len(group.paths) >= 2])
         self.list_stats_var.set(
-            f"共 {total} 张 | 已分析 {analyzed} | 问题 {issue_count} | 失败 {failed} | 清理候选 {cleanup_count} | 相似组 {similar_count}"
+            f"共 {total} 张 | 已分析 {analyzed} | 问题 {issue_count} | 失败 {failed} | 待清理 {cleanup_count} | 相似组 {similar_count}"
         )
 
     def _refresh_tree_item(self, path: Path) -> bool:
@@ -269,12 +280,12 @@ class UiFileListMixin:
         scene_label = "、".join(
             f"{display_name('scene_type', name)}:{count}" for name, count in list(scene_types.items())[:3]
         ) or "待分析"
-        self.hud_tags_var.set(f"识别结果：问题图 {issue_count} 张 | 清理候选 {cleanup_count} 张 | 场景 {scene_label}")
+        self.hud_tags_var.set(f"识别结果：问题图 {issue_count} 张 | 待清理 {cleanup_count} 张 | 场景 {scene_label}")
         self.hud_methods_var.set("推荐修复：多选状态下请使用“分析选中”或“批量修复勾选”")
         self._set_meta_summary("多选状态下不显示单张 EXIF 摘要。请切回单选查看详细属性。")
         lines = [
             f"当前多选 {len(selected)} 张图片。",
-            f"已分析 {analyzed_count} 张，其中问题图 {issue_count} 张，清理候选 {cleanup_count} 张。",
+            f"已分析 {analyzed_count} 张，其中问题图 {issue_count} 张，待清理 {cleanup_count} 张。",
             "",
             "scene_type 汇总：",
         ]
@@ -435,7 +446,7 @@ class UiFileListMixin:
         if hasattr(self, "meta_edit_button"):
             self.meta_edit_button.configure(state="disabled")
         self._set_meta_summary("当前列表为空，暂无可查看的属性信息。")
-        self._set_summary("当前列表为空。可继续添加目录、拖入图片或手动选择单张图片。")
+        self._set_summary("当前列表为空。可继续添加文件夹、拖入图片或手动选择单张图片。")
 
     def toggle_cleanup_flag(self, _event=None) -> None:
         selection = self.tree.selection()
@@ -556,12 +567,12 @@ class UiFileListMixin:
                     reverse=True,
                 )[0]
                 lines.append("")
-                lines.append("不适合保留候选：")
+                lines.append("不适合保留的图片：")
                 lines.append(
-                    f"- {display_name('issue', primary_cleanup.reason_code)}（{primary_cleanup.reason_code}） | "
-                    f"{primary_cleanup.severity} | {primary_cleanup.confidence:.2f}"
+                    f"- {display_name('cleanup_reason', primary_cleanup.reason_code)} | "
+                    f"{display_name('severity', primary_cleanup.severity)} | {primary_cleanup.confidence:.2f}"
                 )
-                lines.append(f"  原因：{primary_cleanup.reason_text}")
+                lines.append(f"  原因：{self._cleanup_reason_summary(primary_cleanup)}")
             similar_marker = self._similar_marker_for_path(path)
             if similar_marker:
                 lines.append("")
@@ -622,7 +633,7 @@ class UiFileListMixin:
             tags = "、".join(issue_display(issue) for issue in result.issues[:4])
             methods = "、".join(get_method_labels(suggest_methods_for_result(result))) or "暂无明确推荐"
             face_info = f" | raw/valid/reject {result.raw_face_count}/{result.validated_face_count}/{result.rejected_face_count}" if (result.raw_face_count or result.validated_face_count or result.rejected_face_count) else ""
-            cleanup_hint = " | 建议删除候选" if result.cleanup_candidates else ""
+            cleanup_hint = " | 可能不适合保留" if result.cleanup_candidates else ""
             self.hud_tags_var.set(f"识别结果：{tags}{face_info}{cleanup_hint}{similar_hint}")
             if result.denoise_recommended:
                 methods = f"{methods} | 降噪:{result.denoise_profile}"
@@ -633,7 +644,7 @@ class UiFileListMixin:
                     reverse=True,
                 )[0]
                 self.hud_methods_var.set(
-                    f"推荐修复：{methods} | 清理建议：{display_name('issue', primary_cleanup.reason_code)} ({primary_cleanup.severity})"
+                    f"推荐修复：{methods} | 待核对：{display_name('cleanup_reason', primary_cleanup.reason_code)}"
                 )
             else:
                 self.hud_methods_var.set(f"推荐修复：{methods}")
@@ -643,7 +654,7 @@ class UiFileListMixin:
                 if result.portrait_likely and result.portrait_scene_type
                 else ""
             )
-            cleanup_hint = " | 建议删除候选" if result.cleanup_candidates else ""
+            cleanup_hint = " | 可能不适合保留" if result.cleanup_candidates else ""
             self.hud_tags_var.set(f"识别结果：未发现明显问题{portrait_hint}{cleanup_hint}{similar_hint}")
             if result.portrait_rejection_reason:
                 self.hud_methods_var.set(f"推荐修复：未启用人像策略，{result.portrait_rejection_reason}")

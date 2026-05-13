@@ -33,7 +33,7 @@ def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
     outer.rowconfigure(2, weight=1)
 
     ttk.Label(outer, text="统计", font=("Microsoft YaHei UI", 12, "bold")).grid(row=0, column=0, sticky="w")
-    ttk.Label(outer, text="显示累计分析、修复、跳过、回退、cleanup 和相似组等聚合数据。").grid(row=1, column=0, sticky="w", pady=(4, 10))
+    ttk.Label(outer, text="显示累计分析、修复、跳过、回退、不适合保留和相似组等统计。").grid(row=1, column=0, sticky="w", pady=(4, 10))
 
     summary_frame = ttk.Frame(outer)
     summary_frame.grid(row=2, column=0, sticky="nsew")
@@ -53,12 +53,12 @@ def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
         f"累计检出问题图片：{stats.issue_images}",
         f"当前累计检出率：{issue_rate:.2%}",
         f"累计修复尝试：{stats.repair_attempted_images}",
-        f"累计跳过/no-op：{stats.skipped_images}",
+        f"累计跳过或未保存：{stats.skipped_images}",
         f"累计回退：{stats.rollback_images}",
-        f"cleanup candidate 累计：{stats.cleanup_candidate_images}",
+        f"不适合保留累计：{stats.cleanup_candidate_images}",
         f"相似组累计：{stats.similar_group_count}",
-        f"平均分析真实耗时：{stats.average_analysis_wall_ms():.0f} ms/轮",
-        f"平均修复真实耗时：{stats.average_repair_wall_ms():.0f} ms/轮",
+        f"平均分析耗时：{stats.average_analysis_wall_ms():.0f} ms/轮",
+        f"平均修复耗时：{stats.average_repair_wall_ms():.0f} ms/轮",
         f"最近运行时间：{stats.last_run_at or '暂无'}",
         "",
         "按天聚合：",

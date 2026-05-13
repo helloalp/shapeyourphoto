@@ -10,9 +10,9 @@ from window_layout import center_window
 
 def _location_label(location: str) -> str:
     if location == "root_child":
-        return "根目录下目录"
+        return "根文件夹下的文件夹"
     if location == "nested":
-        return "子目录"
+        return "子文件夹"
     return location or "未知"
 
 
@@ -37,7 +37,7 @@ class ScanSummaryDialog(tk.Toplevel):
         for line in self._summary_lines():
             ttk.Label(summary_frame, text=line, anchor="w").pack(fill="x")
 
-        detail_frame = ttk.LabelFrame(outer, text="跳过目录明细", padding=10)
+        detail_frame = ttk.LabelFrame(outer, text="跳过的文件夹", padding=10)
         detail_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         detail_frame.columnconfigure(0, weight=1)
         detail_frame.rowconfigure(0, weight=1)
@@ -47,9 +47,9 @@ class ScanSummaryDialog(tk.Toplevel):
             columns=("root", "prefix", "location", "reason"),
             show=("tree", "headings"),
         )
-        self.tree.heading("#0", text="目录路径")
+        self.tree.heading("#0", text="文件夹路径")
         self.tree.column("#0", width=420, anchor="w")
-        self.tree.heading("root", text="扫描根目录")
+        self.tree.heading("root", text="扫描根文件夹")
         self.tree.column("root", width=200, anchor="w")
         self.tree.heading("prefix", text="命中前缀")
         self.tree.column("prefix", width=110, anchor="center")
@@ -83,15 +83,15 @@ class ScanSummaryDialog(tk.Toplevel):
                 prefix_counts[prefix] = prefix_counts.get(prefix, 0) + count
 
         lines = [
-            f"本次扫描目录数：{len(self._scan_results)}",
+            f"本次扫描文件夹数：{len(self._scan_results)}",
             f"导入图片总数：{imported_total}",
-            f"跳过目录总数：{skipped_total}",
+            f"跳过文件夹总数：{skipped_total}",
         ]
         if prefix_counts:
-            prefix_text = "；".join(f"{prefix}：{count} 个目录" for prefix, count in prefix_counts.items())
+            prefix_text = "；".join(f"{prefix}：{count} 个文件夹" for prefix, count in prefix_counts.items())
             lines.append(f"命中忽略前缀统计：{prefix_text}")
         else:
-            lines.append("命中忽略前缀统计：本次没有跳过目录。")
+            lines.append("命中忽略前缀统计：本次没有跳过文件夹。")
 
         for result in self._scan_results:
             prefix_text = "；".join(
@@ -106,7 +106,7 @@ class ScanSummaryDialog(tk.Toplevel):
     def _populate_tree(self) -> None:
         self.tree.delete(*self.tree.get_children())
         if not self._skipped_entries:
-            self.tree.insert("", "end", text="本次扫描没有命中忽略前缀目录。", values=("", "", "", ""))
+            self.tree.insert("", "end", text="本次扫描没有命中忽略前缀的文件夹。", values=("", "", "", ""))
             return
 
         for entry in self._skipped_entries:
@@ -125,11 +125,11 @@ class ScanSummaryDialog(tk.Toplevel):
     def _copy(self) -> None:
         lines = [*self._summary_lines(), ""]
         if not self._skipped_entries:
-            lines.append("本次扫描没有跳过目录。")
+            lines.append("本次扫描没有跳过文件夹。")
         else:
             for entry in self._skipped_entries:
                 lines.append(
-                    f"{entry.path} | prefix={entry.matched_prefix} | location={_location_label(entry.location)} | reason={entry.reason}"
+                    f"{entry.path} | 命中前缀：{entry.matched_prefix} | 位置：{_location_label(entry.location)} | 原因：{entry.reason}"
                 )
         try:
             self.clipboard_clear()

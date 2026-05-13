@@ -64,9 +64,9 @@ CONSOLE_TIME_MODE_LABELS = {value: label for value, label in CONSOLE_TIME_MODE_O
 
 SCAN_MODE_OPTIONS: list[tuple[str, str]] = [
     (SCAN_MODE_ASK, "每次询问"),
-    (SCAN_MODE_ALL, "扫描全部，包含子目录"),
-    (SCAN_MODE_CURRENT_ONLY, "只扫描当前目录"),
-    (SCAN_MODE_SUBDIRS_ONLY, "只扫描所有子目录"),
+    (SCAN_MODE_ALL, "扫描全部，包含子文件夹"),
+    (SCAN_MODE_CURRENT_ONLY, "只扫描当前文件夹"),
+    (SCAN_MODE_SUBDIRS_ONLY, "只扫描所有子文件夹"),
 ]
 SCAN_MODE_LABELS = {value: label for value, label in SCAN_MODE_OPTIONS}
 
@@ -87,7 +87,7 @@ REPAIR_SUMMARY_FILTER_OPTIONS: list[tuple[str, str]] = [
     (REPAIR_SUMMARY_FILTER_FORCED_UNSAVED, "强制尝试但未保存"),
     (REPAIR_SUMMARY_FILTER_FORCED_SAVED, "强制尝试后保存"),
     (REPAIR_SUMMARY_FILTER_DISCARD_RELATED, "不适合保留相关"),
-    (REPAIR_SUMMARY_FILTER_ROLLBACK_NOOP, "候选回退 / no-op"),
+    (REPAIR_SUMMARY_FILTER_ROLLBACK_NOOP, "回退或未保存"),
 ]
 REPAIR_SUMMARY_FILTER_LABELS = {value: label for value, label in REPAIR_SUMMARY_FILTER_OPTIONS}
 

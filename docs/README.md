@@ -8,7 +8,7 @@
 - 根 [MODULES.md](/E:/aitools/shapeyourphoto/MODULES.md)：快速模块索引，便于先定位文件。
 - `docs/`：当前维护规则、系统总览、模块参考和 UI 工作流，是日常维护的权威说明。
 - `docs/technical/`：专题技术文档，记录分析链路、性能并发、相似图、cleanup、设置扫描等跨模块规则。
-- `docs/specs/`：产品、界面、信息呈现、Console、display mapping、用户数据和设置扩展规范；不替代 technical 文档。
+- `docs/specs/`：产品、界面、用户可见语言、信息呈现、Console、display mapping、用户数据和设置扩展规范；不替代 technical 文档。
 - `docs/updates/`：按版本归档的更新记录。旧版本文档保留历史上下文；如与当前行为冲突，以 1.1.9 文档和代码为准。
 
 ## 建议阅读顺序

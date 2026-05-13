@@ -115,7 +115,7 @@ def _iter_scanned_paths(
             root=root,
             path=path,
             matched_prefix=matched_prefix,
-            reason=f"命中忽略前缀 `{matched_prefix}`，已跳过该目录及其全部子目录。",
+            reason=f"名称符合忽略前缀“{matched_prefix}”，已跳过该文件夹和里面的图片。",
             location=location,
         )
         skipped_details.append(detail)

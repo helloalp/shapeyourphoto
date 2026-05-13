@@ -7,6 +7,21 @@
 - Windows 源码包统一为双击 `start.bat` 启动：自动检查 Python 和运行依赖，缺少依赖时按需安装，依赖齐全时直接打开主程序。
 - 明确源码包在未安装 Python 的设备上不能直接运行；`start.bat` 会保留提示窗口，普通用户优先使用正式打包发布物。
 - 根目录收敛为启动器、说明和依赖文件，应用代码移入 `src/`，旧启动脚本与 benchmark 工具移入 `tools/`。
+- 完成 `src/` 迁移收口检查：旧内层代码目录不再存在，`app.py`、`app.pyw`、`start.bat`、launcher、benchmark、build、updater/cloud 相关入口均指向当前 `src/` 布局。
+- 应用设置 schema 增加 `language` 字段，默认 `zh_CN`，并通过 `src/ui/language.py` 管理当前语言状态。
+- `src/ui/display_names.py` 改为按当前语言返回内部 code/enum 显示名，补齐 `en_US` 显示映射；业务存储和判断仍保留英文内部值。
+- 设置页新增语言偏好保存逻辑；更新页只显示 `Shape Your Photo vX.Y.Z` 和“版本 ID N”，不再向普通用户展示构建 ID、更新 URL、公告 URL 或自动管理说明。
+- 设置页移除开发者模式入口，继续保留底层开发者能力边界，不在普通设置流程暴露实现入口。
+- 不适合保留复核、EXIF 编辑、主文件列表、扫描范围/进度、统计、修复完成摘要和更新/公告失败提示进一步改成面向普通用户的中文文案；详细错误继续写入 Console。
+- 新增 `docs/specs/USER_FACING_LANGUAGE.md`，并补充 Console 可读性和 display mapping 规范；本轮仍不做全局硬编码文案替换。
+- 应用内更新历史改为版本分组和编号列表展示，不再把 Markdown 符号直接显示给普通用户。
+- 不适合保留图片复核窗口新增选中详情区和横向滚动，主要原因、严重程度和状态均使用中文显示。
+- 主窗口右上角新增“置顶”按钮，点击后可让主窗口保持在普通窗口上方，再次点击取消。
+- 更新检查和独立 updater 请求统一使用 ShapeYourPhoto User-Agent；网络或 TLS 超时时显示简短中文失败提示，设置窗口和主界面仍可继续操作。
+- 独立 updater 补齐下载、解压、替换、隔离删除和回滚阶段的取消/超时出口；取消后会尽量恢复并关闭窗口。
+- updater 自身进入 `managed_files` 时改由临时 stager 在当前 updater 退出后完成最后替换，降低旧 updater 自更新中途损坏风险。
+- 新增 `src/updater_bootstrap.py` 与 `src/updater_v2.py`，主程序优先启动新版 bootstrap；1.2.3/1.2.4 直升 1.2.5 的兼容 manifest 可排除 `src/updater.py`，避免旧 updater 替换自身。
+- 新增 `tools/update_smoke/update_resilience_smoke.py`，模拟验证版本比较、UA、网络超时、取消、校验错误、zip-slip、自更新、删除不存在路径、替换失败和回滚场景。
 
 ## 1.2.4 - 2026-05-11
 
@@ -41,7 +56,7 @@
 - “分析全部”按钮改为普通按钮样式，不再加粗突出。
 - 客户端更新 manifest URL 固定为 `https://helloalp.top/shapeyourphoto/updates/manifest.json`，云端消息 URL 固定为 `https://helloalp.top/shapeyourphoto/updates/messages.json`；设置页不再公开显示或允许修改，也不写入普通设置 JSON。
 - 配色方案页面只显示配色名称，不再公开具体颜色 token。
-- 设置页更新页面新增“检查更新”按钮，并显示当前版本名称、version_id 和 build_id。
+- 设置页更新页面新增“检查更新”按钮，并只显示当前版本名称和版本 ID，不再向普通用户展示构建 ID。
 - 设置页文案改为面向普通用户的简短说明，减少开发者实现细节。
 - 主窗口标题改为 `Shape Your Photo | v1.1.9 | by Helloalp`。
 - README 改为普通用户说明：Windows 用户进入 Release 下载并运行 `setup_deps.bat`、`start_app.bat`；macOS 当前说明改为后续补充。
@@ -88,7 +103,7 @@
 - “读取目录”和“导出清理清单”主入口已移除；选择目录、拖入目录和分析前补扫描继续使用统一扫描范围与扫描摘要流程。
 - 目录扫描后新增“正在加载图片”阶段提示，扫描进度弹窗显示发现/导入数量、当前路径和 elapsed time；Console 只输出扫描摘要，跳过明细进入扫描摘要窗口。
 - 二级窗口标题统一为 `ShapeYourPhoto v.x.x.x - 功能名`，覆盖设置、扫描、修复、cleanup、相似图、统计、历史和进度弹窗等主要窗口。
-- 新增 UI display mapping 层，内部英文 code/enum/storage 保持不变，UI 对 issue、scene/portrait/exposure/color、repair method/policy、outcome、worker/GPU/scan/Console 时间模式和 perf stage 做中文化展示，未知值优雅回退。
+- 新增 UI display mapping 层，内部英文 code/enum/storage 保持不变，UI 对 issue、scene/portrait/exposure/color、repair method/policy、outcome、worker/GPU/scan/Console 时间模式和 perf stage 做用户语言展示，未知值优雅回退。
 - 修复完成详情窗口摘要区改成紧凑 chip 信息条，筛选、列表、详情滚动区和底部关闭按钮优先可用。
 - “累计统计”调整为“统计”，统计持久化迁移到被忽略的 `data/usage_stats.dpapi`；Windows 使用用户级 DPAPI 加密，旧 `usage_stats.json` 成功迁移后保留 `.migrated-*` 备份，不直接删除。
 - 右侧“属性 / EXIF”新增安全编辑入口：默认只读，只允许写入标题/描述、作者、版权、关键词/备注，保存前创建备份，禁止修改相机、镜头、拍摄时间、Orientation、ICC 和内部标记。

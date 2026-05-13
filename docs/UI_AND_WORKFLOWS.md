@@ -18,7 +18,7 @@
 - `ui_file_list.py` 承接主列表、cleanup 列表、选择状态、HUD 和属性/诊断展示。
 - `ui_task_console.py` 承接 UI 队列、任务进度、Console 合并刷新和性能摘要。
 - `ui_review_actions.py` 承接 cleanup candidate 与相似组复核入口。
-- `src/ui/` 包承接窗口标题、显示名映射、主题、HiDPI、Splash 和 EXIF 安全编辑等新 UI 基础能力。
+- `src/ui/` 包承接窗口标题、语言状态、显示名映射、主题、HiDPI、Splash 和 EXIF 安全编辑等新 UI 基础能力。
 
 新增 UI 逻辑时先放入对应边界；只有根窗口生命周期和控件装配继续留在 `src/ui_app.py`。
 
@@ -117,7 +117,7 @@
 - 修复完成详情使用可筛选滚动窗口。
 - 普通 `messagebox` 只适合短提示、确认和错误，不适合承载批量长详情。
 - 右侧不恢复旧式大图查看器；主工作流以列表、HUD、指标和诊断说明为核心。
-- UI 展示名通过 display mapping 中文化；内部 code/enum/storage 保持英文。
+- UI 展示名通过 display mapping 转成当前用户语言；内部 code/enum/storage 保持英文。
 - 主界面“读取目录”和“导出清理清单”入口已移除。目录读取由“选择目录”、拖入目录和分析前补扫描触发；清理仍通过 cleanup candidate 安全复核流程执行。
 
 进度窗口规则：

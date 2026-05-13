@@ -65,7 +65,7 @@ class TaskProgressDialog:
         self.header_label.grid(row=0, column=0, sticky="ew")
         self.description_label = ttk.Label(
             outer,
-            text="当前任务会持续刷新真实进度，完成后自动关闭。",
+            text="当前任务会持续刷新进度，完成后自动关闭。",
             style="Sub.TLabel",
         )
         self.description_label.grid(row=1, column=0, sticky="ew", pady=(4, 14))

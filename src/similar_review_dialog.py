@@ -202,12 +202,12 @@ class SimilarGroupListDialog(tk.Toplevel):
             self._bind_mousewheel(more)
 
         marker_count = len([path for path in existing_paths if path in self._cleanup_paths])
-        marker = f" | 含 {marker_count} 张清理候选" if marker_count else ""
+        marker = f" | 含 {marker_count} 张不适合保留图片" if marker_count else ""
         reason = ttk.Label(card, text=f"相似度 {group.similarity:.2f} | {group.reason}{marker}", wraplength=900)
         reason.grid(row=2, column=1, sticky="ew", pady=(8, 0))
         self._bind_mousewheel(reason)
 
-        filenames = "、".join(path.name + (" [清理候选]" if path in self._cleanup_paths else "") for path in existing_paths)
+        filenames = "、".join(path.name + (" [不适合保留]" if path in self._cleanup_paths else "") for path in existing_paths)
         names = ttk.Label(card, text=filenames, wraplength=900)
         names.grid(row=3, column=1, sticky="ew", pady=(6, 0))
         self._bind_mousewheel(names)
@@ -408,7 +408,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
 
     def _analysis_summary(self, path: Path) -> str:
         result = self._results.get(path)
-        cleanup_marker = " | 清理候选" if path in self._cleanup_paths else ""
+        cleanup_marker = " | 可能不适合保留" if path in self._cleanup_paths else ""
         if result is None:
             return f"尚无分析结果{cleanup_marker}"
         issues = "、".join(issue_display(issue) for issue in result.issues[:3]) if result.issues else "无明显问题"

@@ -12,7 +12,16 @@ ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 update
 - `src/integrity_guard.py`：更新/公告关键模块存在性检查，以及可选的签名核心哈希 manifest 验证。
 - `src/ui/cloud_actions.py`：启动检查、手动检查、公告弹窗和 updater 启动的 UI 编排。
 - `src/ui/cloud_dialogs.py`：更新、检查中和云端公告弹窗。
-- `src/updater.py`：独立 GUI updater，负责下载、sha256 校验、安全解压、替换、隔离删除项和失败回滚。
+- `src/updater.py`：兼容入口，继续服务旧版本和旧文档中的启动路径。
+- `src/updater_bootstrap.py`：新版 updater 启动入口，主程序优先启动它；不存在时回退到 `src/updater.py`。
+- `src/updater_v2.py`：新版独立 GUI updater 实现，负责下载、sha256 校验、安全解压、替换、隔离删除项和失败回滚。
+
+## 请求标识与超时
+
+- Manifest、公告和更新包下载请求都使用 ShapeYourPhoto 自有 User-Agent，例如 `ShapeYourPhotoUpdater/1.2.5 (version_id=9; Windows)`。
+- User-Agent 可包含版本号、版本 ID 和平台名，不包含用户名、设备名、路径或其他隐私信息。
+- 网络握手、读取或 TLS 超时不得卡住主界面或设置窗口；普通 UI 显示“暂时无法连接更新服务，请稍后再试。”，具体异常写入 Console。
+- 启动自动检查失败只写 Console，不弹窗打断普通启动。
 
 ## 依赖与公钥
 
@@ -93,6 +102,35 @@ ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 update
 - updater 只写入应用目录下的受管理路径。
 - `deleted_paths` 只做隔离，不直接永久删除。
 - `data/`、`private_docs/`、`test/`、`benchmark_reports/`、`tmp/` 等本地目录不得被更新包覆盖或删除。
+- 下载、解压、替换和隔离删除阶段都必须检查取消状态；取消后应尽量恢复更新前状态并关闭 updater 窗口。
+- 回滚过程有超时出口；回滚失败时显示中文简短提示，详细错误保留在 updater 窗口日志。
+- 如果 `managed_files` 包含 updater 本身，旧 updater 不直接覆盖正在运行的 updater 文件，而是写入临时 stager；stager 等待当前 updater 退出后完成最后替换并重启主程序。
+- stager 只复制 manifest 中已校验更新包内的延迟文件，目标仍必须位于应用目录内。
+- 1.2.5 起，主程序优先启动 `src/updater_bootstrap.py`，再由它进入 `src/updater_v2.py`；如果 bootstrap 不存在，则回退到旧的 `src/updater.py`。
+- 从 1.2.3/1.2.4 升级到 1.2.5 的兼容包不得把 `src/updater.py` 放入 `managed_files`，因为旧 updater 没有自更新保护。
+- 1.2.3/1.2.4 兼容包应新增/替换 `src/updater_bootstrap.py`、`src/updater_v2.py`、`src/ui/cloud_actions.py` 和其他普通应用文件；更新完成重启后，1.2.5 主程序会使用新的 bootstrap/updater_v2。
+- 1.2.3/1.2.4 兼容包不得在 `deleted_paths` 中删除 `src/updater.py`。旧入口可保留为回退入口，后续版本确认 bootstrap 稳定后再考虑清理。
+- 1.2.5 之后发布修复 updater 的版本时，`managed_files` 可以包含 `src/updater_v2.py` 和 `src/updater_bootstrap.py`；若必须替换当前正在运行的 updater 入口，则由新版 stager 收尾。
+
+## 模拟验证
+
+本地鲁棒性验证脚本：
+
+```powershell
+python tools\update_smoke\update_resilience_smoke.py
+```
+
+脚本只创建临时假应用目录和小型 zip，不访问真实服务器。当前覆盖：
+
+- 本地旧版本号到服务器新版本、当前已是最新版本的比较。
+- Manifest/messages 共用的超时友好提示与 ShapeYourPhoto User-Agent。
+- package 下载超时、下载前取消。
+- package size 不匹配、sha256 不匹配、zip-slip 恶意路径。
+- `managed_files` 包含 updater 本身时生成 stager。
+- 1.2.3/1.2.4 兼容 manifest 不替换 `src/updater.py`，只新增新版 bootstrap/updater_v2。
+- `deleted_paths` 包含不存在路径。
+- 文件被占用或替换失败后的回滚成功。
+- 回滚失败能抛出错误而不是无限等待。
 
 ## 版本示例说明
 

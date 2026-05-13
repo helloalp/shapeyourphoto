@@ -20,6 +20,7 @@ from progress_dialog import TaskProgressController
 from settings_dialog import show_app_settings_dialog
 from stats_dialog import show_stats_dialog
 from stats_store import load_stats
+from ui.language import set_current_language
 from ui.themes import get_theme
 from ui.hidpi import configure_fonts
 from ui.cloud_actions import UiCloudActionsMixin
@@ -48,7 +49,7 @@ class PhotoAnalyzerApp(
         self.root.minsize(1380, 880)
 
         self.folder_var = tk.StringVar()
-        self.status_var = tk.StringVar(value="请选择图片目录开始分析。")
+        self.status_var = tk.StringVar(value="请选择图片文件夹开始分析。")
         self.filter_var = tk.StringVar(value="全部")
         self.only_problem_var = tk.BooleanVar(value=True)
         self.debug_open_after_repair_var = tk.BooleanVar(value=False)
@@ -81,6 +82,7 @@ class PhotoAnalyzerApp(
         self._last_repair_phase_update = 0.0
         self._settings_warnings: list[str] = []
         self.settings: AppSettings = load_app_settings(report_warning=self._settings_warnings.append, create_if_missing=True)
+        set_current_language(self.settings.language)
         self.console.set_time_mode(self.settings.console_time_mode)
         self.drop_target: WindowsFileDropTarget | TkinterDnDFileDropTarget | None = None
         self.sort_column = "name"
@@ -105,6 +107,10 @@ class PhotoAnalyzerApp(
         self._console_flush_total_ms = 0.0
         self._console_flush_count = 0
         self._closing = False
+        self._always_on_top = False
+        self._topmost_button: ttk.Button | None = None
+        self._pin_icon_off: tk.PhotoImage | None = None
+        self._pin_icon_on: tk.PhotoImage | None = None
 
         self._configure_style()
         self._build_ui()
@@ -120,6 +126,8 @@ class PhotoAnalyzerApp(
         self._install_drag_drop()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.bind_all("<Alt-F4>", lambda _event: self._on_close(), add="+")
+        self.root.bind("<Map>", lambda _event: self._apply_topmost_state(), add="+")
+        self.root.bind("<FocusIn>", lambda _event: self._apply_topmost_state(), add="+")
         self.root.after_idle(self._apply_initial_layout)
         self.root.after(1600, self._run_startup_cloud_checks)
         for warning in self._settings_warnings:
@@ -152,13 +160,58 @@ class PhotoAnalyzerApp(
         style.map("Treeview", background=[("selected", theme.selection)], foreground=[("selected", theme.text)])
         style.configure("Accent.TButton", font=("Microsoft YaHei UI", base_size, "bold"), padding=(10 + theme.spacing, 7 + theme.spacing))
         style.configure("Soft.TButton", font=("Microsoft YaHei UI", base_size), padding=(10 + theme.spacing, 7 + theme.spacing))
+        style.configure("Topmost.TButton", font=("Microsoft YaHei UI", max(9, base_size - 2)), padding=(8, 4))
+        style.configure("TopmostOn.TButton", font=("Microsoft YaHei UI", max(9, base_size - 2), "bold"), padding=(8, 4))
         style.configure("TLabelframe", background=theme.panel, bordercolor=theme.selection)
         style.configure("TLabelframe.Label", background=theme.panel, foreground=theme.text, font=("Microsoft YaHei UI", base_size, "bold"))
+        self._pin_icon_off = self._make_topmost_icon(False)
+        self._pin_icon_on = self._make_topmost_icon(True)
+        self._refresh_topmost_button()
+
+    def _make_topmost_icon(self, selected: bool) -> tk.PhotoImage:
+        size = 24
+        image = tk.PhotoImage(width=size, height=size)
+        bg = getattr(self._theme, "panel_alt", "#f8fbf8")
+        color = getattr(self._theme, "primary", "#286b4a") if selected else getattr(self._theme, "muted_text", "#6d7b72")
+        image.put(bg, to=(0, 0, size, size))
+        for x in range(8, 16):
+            image.put(color, to=(x, 4, x + 1, 7))
+        for y in range(7, 12):
+            image.put(color, to=(6, y, 18, y + 1))
+        for offset in range(0, 8):
+            x = 12 + offset // 2
+            y = 12 + offset
+            image.put(color, to=(x, y, x + 1, y + 1))
+        for x in range(9, 16):
+            image.put(color, to=(x, 18, x + 1, 20))
+        return image
+
+    def _refresh_topmost_button(self) -> None:
+        if self._topmost_button is None:
+            return
+        self._topmost_button.configure(
+            image=self._pin_icon_on if self._always_on_top else self._pin_icon_off,
+            text="已置顶" if self._always_on_top else "置顶",
+            style="TopmostOn.TButton" if self._always_on_top else "Topmost.TButton",
+        )
+
+    def _apply_topmost_state(self) -> None:
+        try:
+            self.root.attributes("-topmost", bool(self._always_on_top))
+            if self._always_on_top:
+                self.root.lift()
+        except Exception as exc:
+            self._log_console(f"topmost apply failed: {exc}")
+
+    def toggle_topmost(self) -> None:
+        self._always_on_top = not self._always_on_top
+        self._apply_topmost_state()
+        self._refresh_topmost_button()
 
     def _build_ui(self) -> None:
         menu_bar = tk.Menu(self.root)
         review_menu = tk.Menu(menu_bar, tearoff=False)
-        review_menu.add_command(label="打开不适合保留候选", command=self.open_cleanup_review_window)
+        review_menu.add_command(label="打开不适合保留的图片", command=self.open_cleanup_review_window)
         review_menu.add_command(label="打开相似图片组", command=self.open_similar_group_window)
         review_menu.add_command(label="最近扫描摘要", command=self.show_last_scan_summary)
         menu_bar.add_cascade(label="查看", menu=review_menu)
@@ -177,9 +230,23 @@ class PhotoAnalyzerApp(
 
         header = ttk.Frame(top_shell, style="TopCard.TFrame")
         header.pack(fill="x")
-        ttk.Label(header, text=f"{APP_NAME} v{APP_VERSION}", style="Header.TLabel").pack(anchor="w")
+        header.columnconfigure(0, weight=1)
+        title_area = ttk.Frame(header, style="TopCard.TFrame")
+        title_area.grid(row=0, column=0, sticky="ew")
+        ttk.Label(title_area, text=f"{APP_NAME} v{APP_VERSION}", style="Header.TLabel").pack(anchor="w")
         subtitle = "逐张实时分析、缩略图预览、条图诊断、自动修复与批量清理。"
-        ttk.Label(header, text=subtitle, style="Sub.TLabel").pack(anchor="w", pady=(4, 12))
+        ttk.Label(title_area, text=subtitle, style="Sub.TLabel").pack(anchor="w", pady=(4, 12))
+        self._topmost_button = ttk.Button(
+            header,
+            text="置顶",
+            image=self._pin_icon_off,
+            compound="top",
+            command=self.toggle_topmost,
+            style="Topmost.TButton",
+            width=6,
+        )
+        self._topmost_button.grid(row=0, column=1, sticky="ne", padx=(12, 0))
+        self._refresh_topmost_button()
 
         controls = ttk.Frame(top_shell, style="Panel.TFrame", padding=14)
         controls.pack(fill="x")
@@ -188,7 +255,7 @@ class PhotoAnalyzerApp(
         path_entry = ttk.Entry(controls, textvariable=self.folder_var, font=("Consolas", 11))
         path_entry.grid(row=0, column=0, columnspan=6, sticky="ew", padx=(0, 12), pady=(0, 8))
 
-        choose_folder_button = ttk.Button(controls, text="选择目录", command=self.choose_folder)
+        choose_folder_button = ttk.Button(controls, text="选择文件夹", command=self.choose_folder)
         choose_image_button = ttk.Button(controls, text="选择图片", command=self.choose_image)
         analyze_all_button = ttk.Button(controls, text="分析全部", command=self.analyze_all)
         analyze_selected_button = ttk.Button(controls, text="分析选中", command=self.analyze_selected)
@@ -245,7 +312,7 @@ class PhotoAnalyzerApp(
             state="disabled",
         )
         self.scan_summary_button.pack(side="right", padx=(8, 0))
-        ttk.Label(toolbar, text="支持目录/图片拖入，分栏边界可拖动调整。", style="Sub.TLabel").pack(side="right")
+        ttk.Label(toolbar, text="支持文件夹/图片拖入，分栏边界可拖动调整。", style="Sub.TLabel").pack(side="right")
         self.control_widgets.extend([filter_box, auto_check, debug_open_check])
 
         progress_panel = ttk.LabelFrame(top_shell, text="任务进度", padding=14)
@@ -262,7 +329,7 @@ class PhotoAnalyzerApp(
 
         list_header = ttk.Frame(left, style="Panel.TFrame")
         list_header.pack(fill="x", pady=(0, 8))
-        ttk.Label(list_header, text="缩略图结果列表", style="PanelTitle.TLabel").pack(side="left")
+        ttk.Label(list_header, text="文件列表", style="PanelTitle.TLabel").pack(side="left")
         self.list_stats_var = tk.StringVar(value="未导入图片")
         ttk.Label(list_header, textvariable=self.list_stats_var, style="Sub.TLabel").pack(side="right")
         tree_frame = ttk.Frame(left, style="Panel.TFrame")
@@ -313,13 +380,13 @@ class PhotoAnalyzerApp(
         ttk.Button(action_bar, text="刷新列表", command=self.refresh_tree).pack(side="left")
         ttk.Label(action_bar, text="单击处理状态可切换，右键可移出列表。").pack(side="right")
 
-        cleanup_frame = ttk.LabelFrame(left, text="不适合保留候选", padding=10)
+        cleanup_frame = ttk.LabelFrame(left, text="不适合保留的图片", padding=10)
         cleanup_frame.pack(fill="both", expand=False, pady=(12, 0))
         cleanup_frame.columnconfigure(0, weight=1)
         cleanup_frame.rowconfigure(1, weight=1)
         ttk.Label(
             cleanup_frame,
-            text="分析完成后会在这里汇总高风险清理候选。默认全部不勾选，需要用户确认后才会执行安全清理。",
+            text="分析完成后会在这里汇总可能不适合继续保留的图片。请核对后再选择是否删除。",
             style="Sub.TLabel",
         ).grid(row=0, column=0, sticky="w", pady=(0, 8))
 
@@ -337,7 +404,7 @@ class PhotoAnalyzerApp(
         )
         self.cleanup_tree.heading("#0", text="缩略图 / 文件名")
         self.cleanup_tree.column("#0", width=260, anchor="w")
-        self.cleanup_tree.heading("pick", text="待处理")
+        self.cleanup_tree.heading("pick", text="状态")
         self.cleanup_tree.column("pick", width=72, anchor="center")
         self.cleanup_tree.heading("severity", text="严重度")
         self.cleanup_tree.column("severity", width=72, anchor="center")
@@ -356,7 +423,7 @@ class PhotoAnalyzerApp(
         cleanup_action_bar.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         self.cleanup_delete_button = ttk.Button(
             cleanup_action_bar,
-            text="移入安全清理",
+            text="删除选择的图片",
             command=self.cleanup_selected_candidates,
             state="disabled",
         )
@@ -365,7 +432,7 @@ class PhotoAnalyzerApp(
         ttk.Button(cleanup_action_bar, text="切换所选", command=self.toggle_selected_cleanup_candidates).pack(side="left", padx=6)
         ttk.Button(cleanup_action_bar, text="全选", command=self.select_all_cleanup_candidates).pack(side="left")
         ttk.Button(cleanup_action_bar, text="取消全选", command=self.unselect_all_cleanup_candidates).pack(side="left", padx=6)
-        self.cleanup_hint_var = tk.StringVar(value="当前没有勾选候选，可直接跳过。")
+        self.cleanup_hint_var = tk.StringVar(value="当前没有选择图片。")
         ttk.Label(cleanup_action_bar, textvariable=self.cleanup_hint_var, style="Sub.TLabel").pack(side="right")
 
         ttk.Label(right, text="预览、指标、诊断与信息", style="PanelTitle.TLabel").pack(anchor="w", pady=(0, 8))
@@ -526,6 +593,7 @@ class PhotoAnalyzerApp(
             self._log_console(f"settings save failed: {exc}")
             return
         self.settings = settings
+        set_current_language(self.settings.language)
         self.console.set_time_mode(self.settings.console_time_mode)
         self._configure_style()
         self.status_var.set("应用设置已保存，新的扫描和修复详情窗口会立即使用最新配置。")
@@ -536,5 +604,5 @@ class PhotoAnalyzerApp(
             f"repair_summary_filter={self.settings.repair_summary_default_filter} | "
             f"analysis_concurrency={self.settings.analysis_concurrency_mode}:{self.settings.analysis_custom_workers or 'auto'} | "
             f"gpu={self.settings.gpu_acceleration_mode} | "
-            f"console_time={self.settings.console_time_mode} | theme={self.settings.theme_id}"
+            f"console_time={self.settings.console_time_mode} | theme={self.settings.theme_id} | language={self.settings.language}"
         )

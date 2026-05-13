@@ -140,6 +140,34 @@ def supports_metadata_edit(path: Path, *, developer_unlocked: bool | None = None
     return True, "开发者模式可编辑更多 EXIF 字段。" if (developer_unlocked if developer_unlocked is not None else developer_session.unlocked) else ""
 
 
+def _confirm_save_metadata(parent: tk.Widget) -> bool:
+    dialog = tk.Toplevel(parent)
+    dialog.title(app_window_title("确认保存"))
+    dialog.transient(parent.winfo_toplevel())
+    dialog.grab_set()
+    dialog.resizable(False, False)
+    result = tk.BooleanVar(value=False)
+
+    outer = ttk.Frame(dialog, padding=18)
+    outer.pack(fill="both", expand=True)
+    ttk.Label(outer, text="确认保存这些修改吗？", wraplength=320).pack(anchor="w")
+
+    actions = ttk.Frame(outer)
+    actions.pack(fill="x", pady=(16, 0))
+    actions.columnconfigure(0, weight=1)
+
+    def _finish(value: bool) -> None:
+        result.set(value)
+        dialog.destroy()
+
+    ttk.Button(actions, text="取消", command=lambda: _finish(False)).grid(row=0, column=1, padx=(8, 0))
+    ttk.Button(actions, text="保存修改", command=lambda: _finish(True)).grid(row=0, column=2)
+    dialog.protocol("WM_DELETE_WINDOW", lambda: _finish(False))
+    center_window(dialog, 380, 150)
+    dialog.wait_window()
+    return bool(result.get())
+
+
 class MetadataEditDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, path: Path, *, developer_unlocked: bool = False) -> None:
         super().__init__(parent)
@@ -160,10 +188,10 @@ class MetadataEditDialog(tk.Toplevel):
         outer.rowconfigure(2, weight=1)
 
         ttk.Label(outer, text=path.name, style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
-        mode_text = "开发者高级 EXIF 已解锁" if developer_unlocked else "普通安全 EXIF 编辑"
+        mode_text = "高级 EXIF 已解锁" if developer_unlocked else "EXIF 信息编辑"
         ttk.Label(
             outer,
-            text=f"{mode_text}。ShapeYourPhoto 标记属于软件完整性/溯源字段，不允许通过 UI 编辑。",
+            text=mode_text,
             wraplength=660,
         ).grid(row=1, column=0, sticky="w", pady=(4, 12))
 
@@ -193,7 +221,7 @@ class MetadataEditDialog(tk.Toplevel):
         actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(16, 0))
         actions.columnconfigure(0, weight=1)
         ttk.Button(actions, text="取消", command=self._cancel).grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(actions, text="保存", command=self._save).grid(row=0, column=2)
+        ttk.Button(actions, text="保存修改", command=self._save).grid(row=0, column=2)
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         center_window(self, 780, 620)
 
@@ -241,11 +269,7 @@ class MetadataEditDialog(tk.Toplevel):
         return clean
 
     def _save(self) -> None:
-        if not messagebox.askyesno(
-            "确认保存",
-            "保存前会创建同目录 .metadata-bak 备份。写入失败会尽量恢复原图。确认保存吗？",
-            parent=self,
-        ):
+        if not _confirm_save_metadata(self):
             return
         backup = self.path.with_name(f"{self.path.stem}.metadata-bak{self.path.suffix}")
         try:

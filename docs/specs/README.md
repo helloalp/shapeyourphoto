@@ -7,6 +7,7 @@
 - [图形设计与视觉风格规范](VISUAL_STYLE.md)
 - [弹窗与框体大小规范](WINDOW_SIZING.md)
 - [信息可视化与 HUD/条图规范](HUD_AND_CHARTS.md)
+- [用户可见语言规范](USER_FACING_LANGUAGE.md)
 - [Console 可读性规范](CONSOLE_READABILITY.md)
 - [内部命名与 UI 显示名规范](DISPLAY_NAMES.md)
 - [用户数据目录与加密存储规范](USER_DATA_AND_ENCRYPTION.md)

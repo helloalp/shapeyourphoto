@@ -28,7 +28,7 @@
 
 ### [src/ui/](/E:/aitools/shapeyourphoto/src/ui)
 
-UI 基础设施包，包含窗口标题、display mapping、主题、HiDPI、Splash、EXIF 编辑、更新和公告弹窗。新增共享 UI 能力优先进入这里。
+UI 基础设施包，包含窗口标题、语言状态、display mapping、主题、HiDPI、Splash、EXIF 编辑、更新和公告弹窗。新增共享 UI 能力优先进入这里。
 
 ### [src/analysis/](/E:/aitools/shapeyourphoto/src/analysis)
 
@@ -60,7 +60,7 @@ UI 基础设施包，包含窗口标题、display mapping、主题、HiDPI、Spl
 
 ### [src/updater.py](/E:/aitools/shapeyourphoto/src/updater.py)
 
-独立 GUI updater，负责下载、sha256 校验、安全解压、替换、隔离删除项和失败回滚。更新 manifest 的 `managed_files` 应使用当前布局下的相对路径，例如 `src/ui/cloud_actions.py`。
+兼容 updater 入口，保留旧版本和旧文档中的启动路径。新版主程序优先启动 [src/updater_bootstrap.py](/E:/aitools/shapeyourphoto/src/updater_bootstrap.py)，实际实现位于 [src/updater_v2.py](/E:/aitools/shapeyourphoto/src/updater_v2.py)。更新 manifest 的 `managed_files` 应使用当前布局下的相对路径，例如 `src/ui/cloud_actions.py`；从 1.2.3/1.2.4 直升 1.2.5 的兼容包不要替换 `src/updater.py`。
 
 ## 工具与构建
 

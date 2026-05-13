@@ -8,7 +8,7 @@ from ui.window_titles import app_window_title
 from window_layout import center_window
 
 
-def _activate_modal(dialog: tk.Toplevel, parent: tk.Widget) -> None:
+def _activate_modal(dialog: tk.Toplevel, parent: tk.Widget, *, grab: bool = True) -> None:
     dialog.update_idletasks()
     dialog.deiconify()
     dialog.lift(parent.winfo_toplevel())
@@ -29,7 +29,8 @@ def _activate_modal(dialog: tk.Toplevel, parent: tk.Widget) -> None:
         dialog.wait_visibility()
     except tk.TclError:
         pass
-    dialog.grab_set()
+    if grab:
+        dialog.grab_set()
     dialog.focus_force()
 
 
@@ -107,7 +108,7 @@ class CheckingUpdateDialog(tk.Toplevel):
         self.title(app_window_title("检查更新"))
         self.transient(parent.winfo_toplevel())
         self.resizable(False, False)
-        self.protocol("WM_DELETE_WINDOW", lambda: None)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
         outer = ttk.Frame(self, padding=18)
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text="正在检查更新...", font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
@@ -115,7 +116,7 @@ class CheckingUpdateDialog(tk.Toplevel):
         bar.pack(fill="x", pady=(14, 0))
         bar.start(12)
         center_window(self, 360, 150)
-        _activate_modal(self, parent)
+        _activate_modal(self, parent, grab=False)
 
 
 class CloudMessageDialog(tk.Toplevel):

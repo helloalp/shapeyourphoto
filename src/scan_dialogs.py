@@ -12,7 +12,7 @@ from window_layout import bind_minimum_size_notice, center_window
 class ScanModeDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, folder: Path, ignored_prefixes: list[str]) -> None:
         super().__init__(parent)
-        self.title(app_window_title("选择目录扫描范围"))
+        self.title(app_window_title("选择文件夹扫描范围"))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(False, True)
@@ -47,24 +47,24 @@ class ScanModeDialog(tk.Toplevel):
 
         ttk.Label(
             content,
-            text="当前目录包含子目录，请选择扫描范围。",
+            text="当前文件夹包含子文件夹，请选择扫描范围。",
             font=("Microsoft YaHei UI", 11, "bold"),
         ).pack(anchor="w")
         ttk.Label(
             content,
             text=(
-                f"目录：{folder}\n"
+                f"文件夹：{folder}\n"
                 f"忽略前缀：{', '.join(self._ignored_prefixes)}\n"
-                "命中这些前缀的目录及其子目录会被整目录跳过。"
+                "名称符合这些前缀的文件夹会被跳过，里面的图片也不会扫描。"
             ),
             wraplength=560,
             justify="left",
         ).pack(anchor="w", pady=(8, 14))
 
         options = [
-            (SCAN_MODE_ALL, "扫描全部，包含子目录", "扫描当前目录图片和所有允许进入的子目录图片。"),
-            (SCAN_MODE_CURRENT_ONLY, "只扫描当前目录", "只读取当前目录根部图片，不进入任何子目录。"),
-            (SCAN_MODE_SUBDIRS_ONLY, "只扫描所有子目录", "只读取子目录中的图片，不扫描当前目录根部图片。"),
+            (SCAN_MODE_ALL, "扫描全部，包含子文件夹", "扫描当前文件夹和所有允许进入的子文件夹。"),
+            (SCAN_MODE_CURRENT_ONLY, "只扫描当前文件夹", "只读取当前文件夹里的图片。"),
+            (SCAN_MODE_SUBDIRS_ONLY, "只扫描子文件夹", "只读取子文件夹中的图片。"),
         ]
         for mode, label, description in options:
             ttk.Button(content, text=label, command=lambda value=mode: self._choose(value)).pack(fill="x", pady=4)

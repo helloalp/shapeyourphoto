@@ -7,6 +7,7 @@ from tkinter import messagebox
 from cleanup_review_dialog import CleanupReviewEntry, show_cleanup_review_dialog
 from file_actions import safe_cleanup_paths
 from models import SimilarImageGroup
+from ui.display_names import display_name
 from similar_review_dialog import show_similar_group_decision_dialog, show_similar_group_list_dialog
 
 
@@ -91,7 +92,7 @@ class UiReviewActionsMixin:
         self._prune_missing_paths()
         primary_candidates = self._primary_cleanup_candidates()
         if not primary_candidates:
-            messagebox.showinfo("提示", "当前没有可重新查看的不适合保留候选。")
+            messagebox.showinfo("提示", "当前没有可重新查看的不适合保留图片。")
             return
         ordered_paths = [path for path in self._sorted_paths() if path in primary_candidates]
         entries = [
@@ -125,10 +126,10 @@ class UiReviewActionsMixin:
             self.refresh_tree()
             return True
         result = self.results.get(path)
-        cleanup_marker = "；该图同时是不适合保留候选" if result and result.cleanup_candidates else ""
+        cleanup_marker = "；该图同时可能不适合继续保留" if result and result.cleanup_candidates else ""
         confirm = messagebox.askyesno(
             "确认删除相似图片",
-            "将优先尝试移入系统回收站；若系统不支持，则移入项目内安全隔离目录 `_cleanup_candidates`。\n\n"
+            "将优先尝试移入系统回收站；若当前环境无法使用回收站，会移入本机隔离位置。\n\n"
             f"相似组 {group.group_id}：{path.name}{cleanup_marker}\n\n是否继续？",
         )
         if not confirm:
@@ -166,12 +167,14 @@ class UiReviewActionsMixin:
         preview_lines = []
         for path in chosen[:5]:
             candidate = primary_candidates[path]
-            preview_lines.append(f"- {path.name} | {candidate.reason_code} | {candidate.severity}")
+            reason = display_name("cleanup_reason", candidate.reason_code)
+            severity = display_name("severity", candidate.severity)
+            preview_lines.append(f"- {path.name} | {reason} | {severity}")
         if len(chosen) > 5:
             preview_lines.append(f"... 另外 {len(chosen) - 5} 张")
         confirm = messagebox.askyesno(
-            "确认安全清理",
-            "将优先尝试移入系统回收站；若系统不支持，则移入项目内安全隔离目录 `_cleanup_candidates`。\n\n"
+            "确认删除",
+            "将优先尝试移入系统回收站；若当前环境无法使用回收站，会移入本机隔离位置。\n\n"
             f"本次共 {len(chosen)} 张：\n" + "\n".join(preview_lines) + "\n\n是否继续？",
         )
         if not confirm:
@@ -181,7 +184,7 @@ class UiReviewActionsMixin:
             operation = safe_cleanup_paths(chosen, self._resolve_base_folder())
         except Exception as exc:
             self._log_console(f"cleanup candidates failed: {exc}")
-            messagebox.showerror("无法删除", f"安全清理失败：\n{exc}")
+            messagebox.showerror("无法删除", f"删除失败：\n{exc}")
             return
         for path in chosen:
             self._remove_path_from_list(path, refresh=False)
@@ -195,14 +198,14 @@ class UiReviewActionsMixin:
         elif operation.mode == "mixed":
             detail = f"已处理 {operation.moved} 张图片：{operation.destination_label}"
         else:
-            detail = f"系统回收站不可用，已将 {operation.moved} 张图片移入安全隔离目录：{operation.destination_label}"
+            detail = f"已将 {operation.moved} 张图片移入本机隔离位置：{operation.destination_label}"
         self.status_var.set(detail)
         messagebox.showinfo("完成", detail)
 
     def cleanup_selected(self) -> None:
         if self._primary_cleanup_candidates():
             if not any(flag.get() for flag in self.cleanup_flags.values()):
-                messagebox.showinfo("提示", "请先在“不适合保留候选”框体中勾选需要清理的图片。")
+                messagebox.showinfo("提示", "请先在“不适合保留的图片”区域中选择需要删除的图片。")
                 self._update_cleanup_controls()
                 return
             self.cleanup_selected_candidates()
@@ -214,8 +217,8 @@ class UiReviewActionsMixin:
             return
 
         confirm = messagebox.askyesno(
-            "确认安全清理",
-            "将优先尝试移入系统回收站；若系统不支持，则移入项目内安全隔离目录 `_cleanup_candidates`。\n\n"
+            "确认删除",
+            "将优先尝试移入系统回收站；若当前环境无法使用回收站，会移入本机隔离位置。\n\n"
             f"本次共 {len(chosen)} 张，是否继续？",
         )
         if not confirm:
@@ -225,7 +228,7 @@ class UiReviewActionsMixin:
             operation = safe_cleanup_paths(chosen, self._resolve_base_folder())
         except Exception as exc:
             self._log_console(f"cleanup failed: {exc}")
-            messagebox.showerror("无法删除", f"安全清理失败：\n{exc}")
+            messagebox.showerror("无法删除", f"删除失败：\n{exc}")
             return
         for path in chosen:
             self._remove_path_from_list(path, refresh=False)
@@ -233,5 +236,5 @@ class UiReviewActionsMixin:
         self.image_paths = [path for path in self.image_paths if path.exists()]
         self.refresh_tree()
         self._log_console(f"cleanup moved: mode={operation.mode} moved={operation.moved} -> {operation.destination_label}")
-        self.status_var.set(f"已安全清理 {operation.moved} 张图片：{operation.destination_label}")
-        messagebox.showinfo("完成", f"已安全清理 {operation.moved} 张图片：\n{operation.destination_label}")
+        self.status_var.set(f"已处理 {operation.moved} 张图片：{operation.destination_label}")
+        messagebox.showinfo("完成", f"已处理 {operation.moved} 张图片：\n{operation.destination_label}")

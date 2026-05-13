@@ -639,11 +639,11 @@ class UiRepairActionsMixin:
             f"已修复 {len(repaired)} 张",
             f"已跳过 {len(skipped)} 张",
             f"失败 {len(failed)} 张",
-            f"total_wall_time：{self._format_ms(batch_timings.get('total_wall_time', 0.0))}",
-            f"worker_cumulative_time：{self._format_ms(batch_timings.get('worker_cumulative_time', 0.0))}（并发 worker 累计耗时，不是用户等待时间）",
-            f"average_wall_time_per_image：{self._format_ms(batch_timings.get('average_wall_time_per_image', 0.0))}",
-            f"average_worker_time_per_image：{self._format_ms(batch_timings.get('average_worker_time_per_image', 0.0))}",
-            f"候选回退 / no-op {rollback_noop_count} 张",
+            f"总耗时：{self._format_ms(batch_timings.get('total_wall_time', 0.0))}",
+            f"并发累计耗时：{self._format_ms(batch_timings.get('worker_cumulative_time', 0.0))}",
+            f"平均等待耗时/张：{self._format_ms(batch_timings.get('average_wall_time_per_image', 0.0))}",
+            f"平均处理耗时/张：{self._format_ms(batch_timings.get('average_worker_time_per_image', 0.0))}",
+            f"回退或未保存 {rollback_noop_count} 张",
             f"强制尝试后保存 {outcome_counts['forced_saved']} 张",
             f"强制尝试但未保存 {outcome_counts['forced_rollback'] + outcome_counts['forced_skip_unsuitable']} 张",
         ]
@@ -660,7 +660,7 @@ class UiRepairActionsMixin:
         if selection.overwrite_original:
             lines.append("输出方式：覆盖原文件")
         else:
-            lines.append(f"输出目录：{Path(self._resolve_base_folder()).resolve() / selection.output_folder_name}")
+            lines.append(f"输出文件夹：{Path(self._resolve_base_folder()).resolve() / selection.output_folder_name}")
             lines.append(f"文件后缀：{selection.filename_suffix or '(无后缀)'}")
         if outcome_counts["normal_saved"]:
             lines.append(f"正常修复：{outcome_counts['normal_saved']} 张")
@@ -676,7 +676,7 @@ class UiRepairActionsMixin:
             "forced_saved": "强制尝试修复后保存",
             "forced_rollback": "强制尝试修复但回退",
             "forced_skip_unsuitable": "因仍不适合而跳过",
-            "discard_candidate_skipped": "默认跳过不值得保留图片",
+            "discard_candidate_skipped": "默认跳过不适合保留图片",
             "normal_skipped": "常规跳过",
         }
         show_repair_completion_dialog(
@@ -703,11 +703,18 @@ class UiRepairActionsMixin:
     def _ops_text(self, record: RepairRecord) -> str:
         parts: list[str] = []
         if record.method_ids:
-            parts.append("操作=" + "、".join(display_name("repair_method", method_id) for method_id in record.method_ids))
+            parts.append("操作：" + "、".join(display_name("repair_method", method_id) for method_id in record.method_ids))
         if record.op_strengths:
             strength_text = "、".join(f"{display_name('repair_method', name)}:{value:.2f}" for name, value in record.op_strengths.items())
             parts.append(f"力度={strength_text}")
         return " | ".join(parts) if parts else "没有执行修复操作"
+
+    def _user_repair_text(self, text: str) -> str:
+        return (
+            text.replace("no-op", "未生成新的修复版本")
+            .replace("cleanup candidates", "不适合保留图片")
+            .replace("cleanup candidate", "不适合保留图片")
+        )
 
     def _repair_entry_filter_tags(self, record: RepairRecord, *, saved_output: bool) -> set[str]:
         tags = {REPAIR_SUMMARY_FILTER_REPAIRED if saved_output else REPAIR_SUMMARY_FILTER_SKIPPED}
@@ -733,18 +740,18 @@ class UiRepairActionsMixin:
         if include_output:
             lines.append(f"输出文件：{record.output_path}")
         if record.skipped_reason:
-            lines.append(f"跳过原因：{record.skipped_reason}")
+            lines.append(f"跳过原因：{self._user_repair_text(record.skipped_reason)}")
         if record.applied_strength is not None:
             lines.append(f"实际力度：{record.applied_strength:.2f}")
         denoise_strength = record.op_strengths.get("reduce_noise")
         if denoise_strength is not None:
             lines.append(f"降噪力度：{denoise_strength:.2f}")
         for note in record.policy_notes:
-            lines.append(f"策略说明：{note}")
+            lines.append(f"策略说明：{self._user_repair_text(note)}")
         for warning in record.warnings:
             lines.append(f"警告：{warning}")
         for note in record.perf_notes:
-            lines.append(f"性能：{note}")
+            lines.append(f"性能：{self._user_repair_text(note)}")
         return lines
 
     def _build_repair_completion_entries(
@@ -773,7 +780,7 @@ class UiRepairActionsMixin:
             )
         for record in skipped:
             status = outcome_labels.get(record.outcome_category, record.outcome_category)
-            reason = record.skipped_reason or "当前方案未生成修复输出。"
+            reason = self._user_repair_text(record.skipped_reason or "当前方案未生成修复输出。")
             entries.append(
                 RepairCompletionEntry(
                     file_name=record.source_path.name,
@@ -790,8 +797,8 @@ class UiRepairActionsMixin:
                 RepairCompletionEntry(
                     file_name=path.name,
                     status="失败",
-                    primary_reason=message,
-                    ops_or_skip=message,
+                    primary_reason=self._user_repair_text(message),
+                    ops_or_skip=self._user_repair_text(message),
                     forced=False,
                     filter_tags={REPAIR_SUMMARY_FILTER_FAILED},
                     detail_lines=[f"文件：{path}", f"错误：{message}"],

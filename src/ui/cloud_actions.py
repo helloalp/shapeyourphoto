@@ -34,8 +34,9 @@ class UiCloudActionsMixin:
         else:
             self._check_cloud_messages_async()
 
-    def check_updates_now(self) -> None:
-        progress = CheckingUpdateDialog(self.root)
+    def check_updates_now(self, parent=None) -> None:
+        owner = parent or self.root
+        progress = CheckingUpdateDialog(owner)
 
         def _finish(callback) -> None:
             def _wrapped() -> None:
@@ -51,10 +52,16 @@ class UiCloudActionsMixin:
         def _worker() -> None:
             result = fetch_update_manifest("")
             if not result.ok or result.payload is None:
-                _finish(lambda: messagebox.showwarning("检查更新失败", result.error or "无法读取更新信息。", parent=self.root))
+                _finish(
+                    lambda message=result.user_message or "暂时无法连接更新服务，请稍后再试。": messagebox.showwarning(
+                        "检查更新失败",
+                        message,
+                        parent=owner,
+                    )
+                )
                 self._log_console(f"manual update check failed: {result.error}")
                 return
-            _finish(lambda: self._handle_update_manifest(result.payload, manual=True))
+            _finish(lambda: self._handle_update_manifest(result.payload, manual=True, parent=owner))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -76,16 +83,17 @@ class UiCloudActionsMixin:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _handle_update_manifest(self, manifest: dict, *, manual: bool) -> str:
+    def _handle_update_manifest(self, manifest: dict, *, manual: bool, parent=None) -> str:
+        owner = parent or self.root
         if compare_builds(manifest) <= 0:
             if manual:
-                messagebox.showinfo("检查更新", "当前已经是最新版本。", parent=self.root)
+                messagebox.showinfo("检查更新", "当前已经是最新版本。", parent=owner)
             return "current"
         remote_id = int(manifest.get("version_id") or manifest.get("build_id") or 0)
         if not manual and should_suppress_update_prompt(remote_id):
             self._log_console(f"update available but prompt suppressed for version_id={remote_id}")
             return "suppressed"
-        result = show_update_available_dialog(self.root, manifest, manual=manual)
+        result = show_update_available_dialog(owner, manifest, manual=manual)
         if result == "decline":
             if not manual:
                 set_temporary_decline(remote_id)
@@ -102,9 +110,12 @@ class UiCloudActionsMixin:
         pending.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         app_dir = Path(__file__).resolve().parents[2]
         restart_cmd = [sys.executable, str(app_dir / "app.py")]
+        updater_entry = app_dir / "src" / "updater_bootstrap.py"
+        if not updater_entry.exists():
+            updater_entry = app_dir / "src" / "updater.py"
         cmd = [
             sys.executable,
-            str(app_dir / "src" / "updater.py"),
+            str(updater_entry),
             "--manifest-cache",
             str(pending),
             "--app-dir",
@@ -117,7 +128,8 @@ class UiCloudActionsMixin:
         try:
             subprocess.Popen(cmd, cwd=str(app_dir), close_fds=True)
         except Exception as exc:
-            messagebox.showerror("启动更新器失败", f"无法启动独立更新器：\n{exc}", parent=self.root)
+            messagebox.showerror("启动更新器失败", "暂时无法启动更新器，请稍后再试。", parent=self.root)
+            self._log_console(f"updater launch failed: {exc}")
             return
         self._log_console("updater launched; closing main application")
         self._begin_close_sequence()

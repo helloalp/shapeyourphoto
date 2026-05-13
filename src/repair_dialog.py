@@ -76,7 +76,7 @@ class RepairDialog(tk.Toplevel):
         ttk.Label(
             content,
             text=(
-                "自动模式会按每张图片的检测结果生成独立 repair plan；"
+                "自动模式会按每张图片的检测结果生成独立修复方案；"
                 "手动模式会沿用你勾选的方法，但仍会按单图风险自动限幅，避免副作用。"
             ),
             wraplength=660,
@@ -110,7 +110,7 @@ class RepairDialog(tk.Toplevel):
         ttk.Label(
             guard_frame,
             text=(
-                "仅表示允许尝试修复 cleanup candidate / discard candidate，"
+                "仅表示允许尝试修复不适合保留的图片，"
                 "不代表无条件保存。修复后仍会执行单图评分、安全检查和回退判断，"
                 "不合适时会继续跳过输出。"
             ),
@@ -120,7 +120,7 @@ class RepairDialog(tk.Toplevel):
 
         folder_row = ttk.Frame(content)
         folder_row.pack(fill="x", pady=(0, 8))
-        ttk.Label(folder_row, text="输出目录名：").pack(side="left")
+        ttk.Label(folder_row, text="输出文件夹名：").pack(side="left")
         ttk.Entry(folder_row, textvariable=self.output_folder_var, width=22).pack(side="left")
         ttk.Label(folder_row, text="例如：_repaired").pack(side="left", padx=(8, 0))
 

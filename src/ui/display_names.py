@@ -2,16 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from app_settings import (
-    ANALYSIS_CONCURRENCY_LABELS,
-    CONSOLE_TIME_MODE_LABELS,
-    GPU_ACCELERATION_LABELS,
-    SCAN_MODE_LABELS,
-)
 from repair_planner import REPAIR_METHOD_MAP
+from ui.language import DEFAULT_LANGUAGE, get_current_language, normalize_language
 
 
-ISSUE_CODE_LABELS = {
+ISSUE_CODE_LABELS_ZH = {
     "overexposed": "过曝 / 高光过亮",
     "underexposed": "欠曝 / 暗部不足",
     "low_contrast": "对比度偏低",
@@ -27,14 +22,37 @@ ISSUE_CODE_LABELS = {
     "color_cast": "色偏",
 }
 
-CLEANUP_REASON_LABELS = {
+ISSUE_CODE_LABELS_EN = {
+    "overexposed": "Overexposed / highlights too bright",
+    "underexposed": "Underexposed / shadows too dark",
+    "low_contrast": "Low contrast",
+    "flat_tone": "Flat tone",
+    "muted_colors": "Muted colors",
+    "over_saturated": "Oversaturated colors",
+    "out_of_focus": "Not sharp enough",
+    "portrait_out_of_focus": "Portrait subject out of focus",
+    "global_out_of_focus": "Whole image severely blurred",
+    "severe_overexposed": "Severely overexposed",
+    "severe_underexposed": "Severely underexposed",
+    "high_noise": "High noise",
+    "color_cast": "Color cast",
+}
+
+CLEANUP_REASON_LABELS_ZH = {
     "portrait_out_of_focus": "人像主体严重虚焦",
     "global_out_of_focus": "整张图片严重模糊",
     "severe_overexposed": "严重过度曝光",
     "severe_underexposed": "严重曝光不足",
 }
 
-SEVERITY_LABELS = {
+CLEANUP_REASON_LABELS_EN = {
+    "portrait_out_of_focus": "Portrait subject is severely out of focus",
+    "global_out_of_focus": "Whole image is severely blurred",
+    "severe_overexposed": "Severely overexposed",
+    "severe_underexposed": "Severely underexposed",
+}
+
+SEVERITY_LABELS_ZH = {
     "low": "一般",
     "medium": "较严重",
     "high": "严重",
@@ -43,7 +61,16 @@ SEVERITY_LABELS = {
     "severe": "严重",
 }
 
-STATUS_LABELS = {
+SEVERITY_LABELS_EN = {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "critical": "Critical",
+    "warning": "Warning",
+    "severe": "Severe",
+}
+
+STATUS_LABELS_ZH = {
     "pending": "待定",
     "selected": "已选",
     "current": "当前",
@@ -52,11 +79,20 @@ STATUS_LABELS = {
     "skipped": "已跳过",
 }
 
-SCENE_TYPE_LABELS = {
+STATUS_LABELS_EN = {
+    "pending": "Pending",
+    "selected": "Selected",
+    "current": "Current",
+    "done": "Done",
+    "failed": "Failed",
+    "skipped": "Skipped",
+}
+
+SCENE_TYPE_LABELS_ZH = {
     "generic_scene": "普通场景",
     "portrait_scene": "人像场景",
     "artwork_scene": "画作/海报人脸场景",
-    "people_context_scene": "人物背影/侧背场景",
+    "people_context_scene": "人物背景/侧背场景",
     "silhouette_scene": "剪影场景",
     "high_contrast_window_scene": "高反差窗景",
     "low_key_scene": "低调氛围场景",
@@ -65,7 +101,20 @@ SCENE_TYPE_LABELS = {
     "natural_vivid_scene": "自然高饱和场景",
 }
 
-PORTRAIT_TYPE_LABELS = {
+SCENE_TYPE_LABELS_EN = {
+    "generic_scene": "General scene",
+    "portrait_scene": "Portrait scene",
+    "artwork_scene": "Artwork/poster face scene",
+    "people_context_scene": "People context scene",
+    "silhouette_scene": "Silhouette scene",
+    "high_contrast_window_scene": "High-contrast window scene",
+    "low_key_scene": "Low-key scene",
+    "architecture_scene": "Architecture/structure scene",
+    "architecture_vivid_scene": "Vivid architecture scene",
+    "natural_vivid_scene": "Naturally vivid scene",
+}
+
+PORTRAIT_TYPE_LABELS_ZH = {
     "non_portrait": "非人像",
     "real_multi_portrait": "多人真实人像",
     "real_frontal_portrait": "正面真实人像",
@@ -75,7 +124,17 @@ PORTRAIT_TYPE_LABELS = {
     "back_view_person_context": "背身人物",
 }
 
-EXPOSURE_TYPE_LABELS = {
+PORTRAIT_TYPE_LABELS_EN = {
+    "non_portrait": "Non-portrait",
+    "real_multi_portrait": "Real multi-person portrait",
+    "real_frontal_portrait": "Real frontal portrait",
+    "real_near_frontal_portrait": "Real near-frontal portrait",
+    "artwork_face_context": "Artwork/poster face",
+    "side_back_view_person": "Side/back-view person",
+    "back_view_person_context": "Back-view person",
+}
+
+EXPOSURE_TYPE_LABELS_ZH = {
     "normal": "曝光正常",
     "underexposed": "欠曝",
     "overexposed_recoverable": "过曝但可尝试恢复",
@@ -85,7 +144,17 @@ EXPOSURE_TYPE_LABELS = {
     "low_key_scene": "低调曝光",
 }
 
-COLOR_TYPE_LABELS = {
+EXPOSURE_TYPE_LABELS_EN = {
+    "normal": "Normal exposure",
+    "underexposed": "Underexposed",
+    "overexposed_recoverable": "Overexposed but recoverable",
+    "overexposed_unrecoverable": "Overexposed with unrecoverable highlights",
+    "silhouette_scene": "Silhouette exposure",
+    "high_contrast_window_scene": "High-contrast window exposure",
+    "low_key_scene": "Low-key exposure",
+}
+
+COLOR_TYPE_LABELS_ZH = {
     "balanced": "色彩平衡",
     "muted_problem": "色彩偏淡",
     "restrained_natural": "自然克制色彩",
@@ -93,7 +162,15 @@ COLOR_TYPE_LABELS = {
     "natural_vivid": "自然高饱和",
 }
 
-PORTRAIT_SCENE_LABELS = {
+COLOR_TYPE_LABELS_EN = {
+    "balanced": "Balanced color",
+    "muted_problem": "Muted color",
+    "restrained_natural": "Restrained natural color",
+    "oversaturated_problem": "Oversaturated color",
+    "natural_vivid": "Naturally vivid color",
+}
+
+PORTRAIT_SCENE_LABELS_ZH = {
     "non_portrait": "非人像",
     "normal_portrait": "普通人像",
     "multi_person_portrait": "多人像",
@@ -102,7 +179,16 @@ PORTRAIT_SCENE_LABELS = {
     "dark_background_portrait": "暗背景人像",
 }
 
-REPAIR_POLICY_LABELS = {
+PORTRAIT_SCENE_LABELS_EN = {
+    "non_portrait": "Non-portrait",
+    "normal_portrait": "Normal portrait",
+    "multi_person_portrait": "Multi-person portrait",
+    "backlit_portrait": "Backlit portrait",
+    "high_key_portrait": "High-key background portrait",
+    "dark_background_portrait": "Dark background portrait",
+}
+
+REPAIR_POLICY_LABELS_ZH = {
     "standard": "标准修复",
     "gentle_subject_lift_protect_background": "轻提主体并保护背景",
     "gentle_subject_lift": "轻提主体",
@@ -113,7 +199,18 @@ REPAIR_POLICY_LABELS = {
     "local_portrait_enhance_only": "仅做人像局部增强",
 }
 
-OUTCOME_LABELS = {
+REPAIR_POLICY_LABELS_EN = {
+    "standard": "Standard repair",
+    "gentle_subject_lift_protect_background": "Gentle subject lift with background protection",
+    "gentle_subject_lift": "Gentle subject lift",
+    "protect_face_and_high_key_background": "Protect face and high-key background",
+    "protect_face_highlights": "Protect facial highlights",
+    "local_subject_preserve_dark_background": "Local subject enhancement with dark background preserved",
+    "local_subject_enhance_protect_high_key_background": "Local subject enhancement with high-key background protection",
+    "local_portrait_enhance_only": "Local portrait enhancement only",
+}
+
+OUTCOME_LABELS_ZH = {
     "normal_saved": "正常修复并保存",
     "forced_saved": "强制尝试后保存",
     "forced_rollback": "强制尝试后回退",
@@ -126,7 +223,67 @@ OUTCOME_LABELS = {
     "noop": "未保存新图片",
 }
 
-PERF_STAGE_LABELS = {
+OUTCOME_LABELS_EN = {
+    "normal_saved": "Repaired and saved",
+    "forced_saved": "Saved after forced attempt",
+    "forced_rollback": "Rolled back after forced attempt",
+    "forced_skip_unsuitable": "Still skipped after forced attempt",
+    "discard_candidate_skipped": "Unsuitable image skipped",
+    "normal_skipped": "No new image saved",
+    "failed": "Failed",
+    "skipped": "Skipped",
+    "rollback": "Rolled back",
+    "noop": "No new image saved",
+}
+
+SCAN_MODE_LABELS_ZH = {
+    "ask": "每次询问",
+    "all": "扫描全部，包含子文件夹",
+    "current_only": "只扫描当前文件夹",
+    "subdirs_only": "只扫描子文件夹",
+}
+
+SCAN_MODE_LABELS_EN = {
+    "ask": "Ask each time",
+    "all": "Scan all, including subfolders",
+    "current_only": "Scan current folder only",
+    "subdirs_only": "Scan subfolders only",
+}
+
+WORKER_LABELS_ZH = {
+    "auto": "自动",
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "custom": "自定义同时处理数量",
+}
+
+WORKER_LABELS_EN = {
+    "auto": "Auto",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "custom": "Custom worker count",
+}
+
+GPU_LABELS_ZH = {"off": "关闭", "auto": "自动", "on": "开启"}
+GPU_LABELS_EN = {"off": "Off", "auto": "Auto", "on": "On"}
+
+CONSOLE_TIME_MODE_LABELS_ZH = {
+    "24h": "24 小时制 [20:28:14]",
+    "12h": "12 小时制 [08:28:14 PM]",
+    "24h_tz": "24 小时制 + 时区 [20:28:14 UTC+09:00]",
+    "elapsed": "启动后经过时间 [T+00:20:28]",
+}
+
+CONSOLE_TIME_MODE_LABELS_EN = {
+    "24h": "24-hour time [20:28:14]",
+    "12h": "12-hour time [08:28:14 PM]",
+    "24h_tz": "24-hour time + timezone [20:28:14 UTC+09:00]",
+    "elapsed": "Elapsed since launch [T+00:20:28]",
+}
+
+PERF_STAGE_LABELS_ZH = {
     "image_read": "读取图片",
     "image_open": "打开图片",
     "exif_transpose": "应用 EXIF 方向",
@@ -146,8 +303,8 @@ PERF_STAGE_LABELS = {
     "issue_build": "问题与建议生成",
     "cleanup_candidate": "不适合保留判断",
     "similar_detection": "相似图检测",
-    "ui_refresh": "UI 刷新",
-    "UI_update": "UI 刷新",
+    "ui_refresh": "界面刷新",
+    "UI_update": "界面刷新",
     "console_flush": "Console 刷新",
     "planner": "生成修复方案",
     "candidate_generation": "生成修复方案",
@@ -158,32 +315,121 @@ PERF_STAGE_LABELS = {
     "metadata_preserve": "保留元数据",
 }
 
+PERF_STAGE_LABELS_EN = {
+    "image_read": "Read image",
+    "image_open": "Open image",
+    "exif_transpose": "Apply EXIF orientation",
+    "image_convert": "Convert color mode",
+    "resize": "Build working size",
+    "working_resize": "Build working size",
+    "array_convert": "Convert pixel array",
+    "basic_stats": "Basic statistics",
+    "exposure": "Exposure analysis",
+    "color": "Color analysis",
+    "sharpness": "Sharpness analysis",
+    "noise": "Noise analysis",
+    "scene_classify": "Scene classification",
+    "face_detect": "Face candidate detection",
+    "portrait_region_build": "Build portrait region",
+    "quality_stats": "Quality statistics",
+    "issue_build": "Build issues and suggestions",
+    "cleanup_candidate": "Unsuitable image check",
+    "similar_detection": "Similar image detection",
+    "ui_refresh": "UI refresh",
+    "UI_update": "UI refresh",
+    "console_flush": "Console refresh",
+    "planner": "Build repair plan",
+    "candidate_generation": "Build repair plan",
+    "candidate_scoring": "Choose repair candidate",
+    "mask_build": "Build local mask",
+    "mask_feather": "Feather mask",
+    "save_output": "Save output",
+    "metadata_preserve": "Preserve metadata",
+}
 
-def display_name(kind: str, value: object, *, unknown_prefix: str = "未知类型") -> str:
+REPAIR_METHOD_LABELS_EN = {
+    "auto_tone": "Auto tone correction",
+    "recover_highlights": "Recover highlights",
+    "lift_shadows": "Lift shadows",
+    "boost_contrast": "Boost contrast",
+    "boost_vibrance": "Boost natural saturation",
+    "reduce_saturation": "Reduce saturation",
+    "boost_clarity": "Boost clarity",
+    "reduce_noise": "Adaptive noise reduction",
+    "cool_down": "Cool down / reduce warm cast",
+    "warm_up": "Warm up / reduce cool cast",
+    "add_magenta": "Add magenta / reduce green cast",
+    "add_green": "Add green / reduce magenta cast",
+    "portrait_local_face_enhance": "Local face enhancement",
+    "portrait_subject_midcontrast": "Portrait midtone contrast",
+    "portrait_dark_clothing_detail": "Dark clothing detail enhancement",
+    "protect_high_key_background": "Protect high-key background",
+}
+
+_TABLES = {
+    DEFAULT_LANGUAGE: {
+        "issue": ISSUE_CODE_LABELS_ZH,
+        "cleanup_reason": CLEANUP_REASON_LABELS_ZH,
+        "severity": SEVERITY_LABELS_ZH,
+        "status": STATUS_LABELS_ZH,
+        "scene_type": SCENE_TYPE_LABELS_ZH,
+        "portrait_type": PORTRAIT_TYPE_LABELS_ZH,
+        "portrait_scene_type": PORTRAIT_SCENE_LABELS_ZH,
+        "exposure_type": EXPOSURE_TYPE_LABELS_ZH,
+        "color_type": COLOR_TYPE_LABELS_ZH,
+        "repair_policy": REPAIR_POLICY_LABELS_ZH,
+        "outcome": OUTCOME_LABELS_ZH,
+        "scan_mode": SCAN_MODE_LABELS_ZH,
+        "worker": WORKER_LABELS_ZH,
+        "gpu": GPU_LABELS_ZH,
+        "console_time_mode": CONSOLE_TIME_MODE_LABELS_ZH,
+        "perf_stage": PERF_STAGE_LABELS_ZH,
+    },
+    "en_US": {
+        "issue": ISSUE_CODE_LABELS_EN,
+        "cleanup_reason": CLEANUP_REASON_LABELS_EN,
+        "severity": SEVERITY_LABELS_EN,
+        "status": STATUS_LABELS_EN,
+        "scene_type": SCENE_TYPE_LABELS_EN,
+        "portrait_type": PORTRAIT_TYPE_LABELS_EN,
+        "portrait_scene_type": PORTRAIT_SCENE_LABELS_EN,
+        "exposure_type": EXPOSURE_TYPE_LABELS_EN,
+        "color_type": COLOR_TYPE_LABELS_EN,
+        "repair_policy": REPAIR_POLICY_LABELS_EN,
+        "outcome": OUTCOME_LABELS_EN,
+        "scan_mode": SCAN_MODE_LABELS_EN,
+        "worker": WORKER_LABELS_EN,
+        "gpu": GPU_LABELS_EN,
+        "console_time_mode": CONSOLE_TIME_MODE_LABELS_EN,
+        "perf_stage": PERF_STAGE_LABELS_EN,
+    },
+}
+
+_UNKNOWN_PREFIX = {
+    DEFAULT_LANGUAGE: "未知类型",
+    "en_US": "Unknown type",
+}
+
+
+def _language_tables() -> dict[str, dict[str, str]]:
+    return _TABLES.get(normalize_language(get_current_language()), _TABLES[DEFAULT_LANGUAGE])
+
+
+def _table(kind: str) -> dict[str, str]:
+    return _language_tables().get(kind, {})
+
+
+def display_name(kind: str, value: object, *, unknown_prefix: str | None = None) -> str:
     raw = "" if value is None else str(value)
-    tables = {
-        "issue": ISSUE_CODE_LABELS,
-        "cleanup_reason": CLEANUP_REASON_LABELS,
-        "severity": SEVERITY_LABELS,
-        "status": STATUS_LABELS,
-        "scene_type": SCENE_TYPE_LABELS,
-        "portrait_type": PORTRAIT_TYPE_LABELS,
-        "portrait_scene_type": PORTRAIT_SCENE_LABELS,
-        "exposure_type": EXPOSURE_TYPE_LABELS,
-        "color_type": COLOR_TYPE_LABELS,
-        "repair_policy": REPAIR_POLICY_LABELS,
-        "outcome": OUTCOME_LABELS,
-        "scan_mode": SCAN_MODE_LABELS,
-        "worker": ANALYSIS_CONCURRENCY_LABELS,
-        "gpu": GPU_ACCELERATION_LABELS,
-        "console_time_mode": CONSOLE_TIME_MODE_LABELS,
-        "perf_stage": PERF_STAGE_LABELS,
-    }
+    lang = normalize_language(get_current_language())
+    prefix = unknown_prefix or _UNKNOWN_PREFIX.get(lang, _UNKNOWN_PREFIX[DEFAULT_LANGUAGE])
     if kind == "repair_method":
+        if lang == "en_US" and raw in REPAIR_METHOD_LABELS_EN:
+            return REPAIR_METHOD_LABELS_EN[raw]
         method = REPAIR_METHOD_MAP.get(raw)
-        return method.label if method is not None else _unknown(unknown_prefix, raw)
-    table = tables.get(kind, {})
-    return table.get(raw, _unknown(unknown_prefix, raw))
+        return method.label if method is not None else _unknown(prefix, raw)
+    table = _table(kind)
+    return table.get(raw, _unknown(prefix, raw))
 
 
 def display_names(kind: str, values: Iterable[object]) -> list[str]:
@@ -193,10 +439,11 @@ def display_names(kind: str, values: Iterable[object]) -> list[str]:
 def issue_display(issue) -> str:
     code = getattr(issue, "code", "")
     label = getattr(issue, "label", "")
-    mapped = display_name("issue", code)
-    if mapped.startswith("未知类型") and label:
-        return str(label)
-    return mapped
+    raw = "" if code is None else str(code)
+    table = _table("issue")
+    if raw in table:
+        return table[raw]
+    return str(label) if label else _unknown(_UNKNOWN_PREFIX[DEFAULT_LANGUAGE], raw)
 
 
 def _unknown(prefix: str, raw: str) -> str:

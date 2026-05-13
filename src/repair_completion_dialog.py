@@ -200,7 +200,7 @@ class RepairCompletionDialog(tk.Toplevel):
         else:
             for entry in visible:
                 lines.append(
-                    f"{entry.file_name} | {entry.status} | {entry.primary_reason} | {entry.ops_or_skip} | forced={'是' if entry.forced else '否'}"
+                    f"{entry.file_name} | {entry.status} | {entry.primary_reason} | {entry.ops_or_skip} | 强制尝试：{'是' if entry.forced else '否'}"
                 )
                 for detail in entry.detail_lines:
                     lines.append(f"  {detail}")

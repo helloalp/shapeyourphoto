@@ -300,7 +300,7 @@ class UiTaskConsoleMixin:
         self._log_console(
             f"本轮修复总耗时：{self._format_ms(wall_ms)} | "
             f"平均真实等待折算 {self._format_ms(avg_wall_ms)}/张 | "
-            f"保存 {saved}，跳过 {skipped}，失败 {failed}，取消 {canceled}，回退/no-op {rollback_noop}"
+            f"保存 {saved}，跳过 {skipped}，失败 {failed}，取消 {canceled}，回退或未保存 {rollback_noop}"
         )
         self._log_console(
             f"repair audit: total_wall_time={self._format_ms(wall_ms)} | "

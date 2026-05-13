@@ -14,7 +14,7 @@ from scan_summary_dialog import show_scan_summary_dialog
 
 class UiScanActionsMixin:
     def choose_folder(self) -> None:
-        chosen = filedialog.askdirectory(title="选择图片目录")
+        chosen = filedialog.askdirectory(title="选择图片文件夹")
         if chosen:
             self._log_console(f"selected folder: {chosen}")
             self.folder_var.set(chosen)
@@ -89,13 +89,13 @@ class UiScanActionsMixin:
         folder = self.folder_var.get().strip()
         if not folder:
             self._auto_analyze_after_scan = False
-            messagebox.showwarning("提示", "请先选择图片目录。")
+            messagebox.showwarning("提示", "请先选择图片文件夹。")
             return
 
         root = Path(folder)
         if not root.exists():
             self._auto_analyze_after_scan = False
-            messagebox.showerror("错误", "目录不存在，请重新选择。")
+            messagebox.showerror("错误", "文件夹不存在，请重新选择。")
             return
 
         scan_mode = self._resolve_scan_plan(root)
@@ -144,11 +144,11 @@ class UiScanActionsMixin:
         self._last_scan_update = 0.0
         self._begin_task(
             1,
-            "正在扫描目录 0/0",
-            f"正在扫描目录：{requests[0][0]}",
+            "正在扫描文件夹 0/0",
+            f"正在扫描文件夹：{requests[0][0]}",
             show_dialog=True,
-            dialog_title="目录扫描中",
-            dialog_header="正在扫描目录 / 加载图片",
+            dialog_title="文件夹扫描中",
+            dialog_header="正在扫描文件夹 / 加载图片",
         )
         for root, mode in requests:
             self._log_console(
@@ -194,7 +194,7 @@ class UiScanActionsMixin:
         prefix_text = "；".join(f"{prefix}：{count} 个" for prefix, count in prefix_counts.items()) if prefix_counts else "无"
         return (
             f"[{summary.root.name}] 扫描模式：{self._scan_mode_label(summary.mode)} | "
-            f"跳过目录 {summary.skipped_directory_count} 个 | "
+            f"跳过文件夹 {summary.skipped_directory_count} 个 | "
             f"导入图片 {summary.imported_count} 张 | "
             f"命中前缀：{prefix_text}"
         )
@@ -207,7 +207,7 @@ class UiScanActionsMixin:
             self._log_console(
                 f"scan skipped summary: root={summary.root} skipped={summary.skipped_directory_count} prefixes={prefix_text}"
             )
-            self._log_console(f"跳过目录明细已收进“最近扫描摘要”，共 {summary.skipped_directory_count} 个。")
+            self._log_console(f"跳过的文件夹明细已收进“最近扫描摘要”，共 {summary.skipped_directory_count} 个。")
         else:
             self._log_console(f"scan skipped summary: root={summary.root} skipped=0")
 
@@ -220,11 +220,11 @@ class UiScanActionsMixin:
         self.progress_controller.update(
             done=done,
             total=max(1, total),
-            title=f"正在扫描目录 {done}/{total}",
+            title=f"正在扫描文件夹 {done}/{total}",
             detail=f"已发现 {found} 张图片，当前：{current_label}",
-            status=f"扫描目录 {done}/{total}，已发现 {found} 张图片",
-            dialog_title="目录扫描中",
-            dialog_header="正在扫描目录 / 加载图片",
+            status=f"扫描文件夹 {done}/{total}，已发现 {found} 张图片",
+            dialog_title="文件夹扫描中",
+            dialog_header="正在扫描文件夹 / 加载图片",
         )
 
     def _scan_finished(self, paths: list[Path], scan_results: list[ScanResult]) -> None:
@@ -235,8 +235,8 @@ class UiScanActionsMixin:
             title="正在加载图片",
             detail=f"扫描完成，正在导入 {total_paths} 张图片到结果列表。",
             status=f"正在加载图片，已导入 0/{total_paths}",
-            dialog_title="目录扫描中",
-            dialog_header="正在扫描目录 / 加载图片",
+            dialog_title="文件夹扫描中",
+            dialog_header="正在扫描文件夹 / 加载图片",
         )
         self.root.after(20, lambda p=paths, r=scan_results: self._finish_scan_loading(p, r))
 
@@ -254,8 +254,8 @@ class UiScanActionsMixin:
         self._log_console(f"scan finished: new={len(paths)} total={len(self.image_paths)}")
         detail = f"当前列表共 {len(self.image_paths)} 张图片，本次新读取 {len(paths)} 张。"
         if self._last_scan_summary:
-            detail = f"{detail}\n{self._last_scan_summary}\n可点击“查看最近扫描摘要”查看跳过目录明细。"
-        self._finish_task("目录扫描和加载完成", detail)
+            detail = f"{detail}\n{self._last_scan_summary}\n可点击“查看最近扫描摘要”查看跳过的文件夹明细。"
+        self._finish_task("文件夹扫描和加载完成", detail)
         self.refresh_tree()
         if self.image_paths:
             self._select_path(self.image_paths[0])
@@ -268,5 +268,5 @@ class UiScanActionsMixin:
     def _scan_failed(self, error: str) -> None:
         self._auto_analyze_after_scan = False
         self._log_console(f"scan failed: {error}")
-        self._finish_task("目录读取失败", error)
-        messagebox.showerror("读取失败", f"扫描目录时发生错误：\n{error}")
+        self._finish_task("文件夹读取失败", error)
+        messagebox.showerror("读取失败", f"扫描文件夹时发生错误：\n{error}")
