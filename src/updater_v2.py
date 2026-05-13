@@ -52,6 +52,7 @@ class UpdateContext:
     backups: list[tuple[Path, Path]] = field(default_factory=list)
     quarantine_root: Path | None = None
     deferred_replacements: list[tuple[Path, Path]] = field(default_factory=list)
+    deferred_deletions: list[Path] = field(default_factory=list)
     stager_path: Path | None = None
 
     def emit(self, message: str) -> None:
@@ -120,8 +121,14 @@ def _safe_zip_extract(zip_path: Path, target_dir: Path, ctx: UpdateContext) -> N
     ctx.emit("更新包已解压并通过路径检查")
 
 
-def _managed_paths(manifest: dict) -> list[Path]:
-    raw = manifest.get("managed_files") or manifest.get("files") or []
+def _manifest_paths(manifest: dict, *keys: str) -> list[Path]:
+    raw = None
+    for key in keys:
+        if manifest.get(key):
+            raw = manifest.get(key)
+            break
+    if raw is None:
+        raw = []
     if isinstance(raw, dict):
         raw = raw.keys()
     paths: list[Path] = []
@@ -132,14 +139,44 @@ def _managed_paths(manifest: dict) -> list[Path]:
     return paths
 
 
+def _managed_paths(manifest: dict) -> list[Path]:
+    return _manifest_paths(manifest, "managed_files", "files")
+
+
 def _deleted_paths(manifest: dict) -> list[Path]:
-    raw = manifest.get("deleted_paths") or manifest.get("delete") or []
-    paths: list[Path] = []
+    return _manifest_paths(manifest, "deleted_paths", "delete", "cleanup_paths")
+
+
+def _deferred_deleted_paths(manifest: dict) -> list[Path]:
+    return _manifest_paths(manifest, "deferred_deleted_paths", "delete_after_restart")
+
+
+def _move_specs(manifest: dict) -> list[tuple[Path, Path]]:
+    raw = manifest.get("moved_paths") or manifest.get("move_paths") or []
+    if isinstance(raw, dict):
+        raw = [{"from": source, "to": target} for source, target in raw.items()]
+    specs: list[tuple[Path, Path]] = []
     for item in raw:
-        path = Path(str(item).replace("\\", "/"))
-        if path.parts and path.parts[0] not in PROTECTED_TOP_LEVEL and ".." not in path.parts:
-            paths.append(path)
-    return paths
+        source = target = None
+        if isinstance(item, dict):
+            source = item.get("from") or item.get("source")
+            target = item.get("to") or item.get("target")
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            source, target = item
+        if not source or not target:
+            continue
+        source_path = Path(str(source).replace("\\", "/"))
+        target_path = Path(str(target).replace("\\", "/"))
+        if (
+            source_path.parts
+            and target_path.parts
+            and source_path.parts[0] not in PROTECTED_TOP_LEVEL
+            and target_path.parts[0] not in PROTECTED_TOP_LEVEL
+            and ".." not in source_path.parts
+            and ".." not in target_path.parts
+        ):
+            specs.append((source_path, target_path))
+    return specs
 
 
 def _backup_path(ctx: UpdateContext, relative: Path, backup_root: Path) -> None:
@@ -180,6 +217,11 @@ def _is_deferred_replacement(relative: Path) -> bool:
     return normalized in {"src/updater.py", "updater.py"} or normalized.endswith("/updater.exe")
 
 
+def _is_deferred_deletion(relative: Path) -> bool:
+    normalized = relative.as_posix().casefold()
+    return normalized in {"src/updater.py", "updater.py"} or normalized.endswith("/updater.exe")
+
+
 def _replace_files(ctx: UpdateContext, extracted_root: Path, backup_root: Path) -> None:
     managed = _managed_paths(ctx.manifest)
     if not managed:
@@ -204,14 +246,34 @@ def _replace_files(ctx: UpdateContext, extracted_root: Path, backup_root: Path) 
         ctx.emit(f"已更新：{relative}")
 
 
+def _apply_moves(ctx: UpdateContext, backup_root: Path) -> None:
+    for source_relative, target_relative in _move_specs(ctx.manifest):
+        if ctx.cancel_requested.is_set():
+            raise RuntimeError("update cancelled")
+        source = ctx.app_dir / source_relative
+        target = ctx.app_dir / target_relative
+        if not source.exists():
+            continue
+        if target.exists():
+            ctx.emit(f"move skipped because target exists: {source_relative} -> {target_relative}")
+            continue
+        if not path_within(ctx.app_dir, source) or not path_within(ctx.app_dir, target):
+            raise RuntimeError(f"move path escapes app dir: {source_relative} -> {target_relative}")
+        _backup_path(ctx, source_relative, backup_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+        ctx.emit(f"moved legacy path: {source_relative} -> {target_relative}")
+
+
 def _quarantine_deleted(ctx: UpdateContext) -> None:
     deleted = _deleted_paths(ctx.manifest)
+    deferred = _deferred_deleted_paths(ctx.manifest)
     if not deleted:
-        return
+        deleted = []
     root = ctx.app_dir / "data" / "update_quarantine" / time.strftime("%Y%m%d-%H%M%S")
     root.mkdir(parents=True, exist_ok=True)
     ctx.quarantine_root = root
-    for relative in deleted:
+    for relative in [*deleted, *deferred]:
         if ctx.cancel_requested.is_set():
             raise RuntimeError("用户已取消更新")
         target = ctx.app_dir / relative
@@ -222,24 +284,45 @@ def _quarantine_deleted(ctx: UpdateContext) -> None:
         if target.parts and relative.parts[0] in PROTECTED_TOP_LEVEL:
             ctx.emit(f"受保护路径已保留：{relative}")
             continue
+        if relative in deferred or _is_deferred_deletion(relative):
+            ctx.deferred_deletions.append(relative)
+            ctx.emit(f"deferred cleanup prepared: {relative}")
+            continue
         destination = root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(target), str(destination))
         ctx.emit(f"已移出旧文件：{relative}")
 
 
+def _post_update_required_files(ctx: UpdateContext) -> None:
+    required = _manifest_paths(ctx.manifest, "post_update_required_files", "required_files")
+    pending = {relative.as_posix() for relative, _source in ctx.deferred_replacements}
+    missing = []
+    for relative in required:
+        target = ctx.app_dir / relative
+        if not target.exists() and relative.as_posix() not in pending:
+            missing.append(relative.as_posix())
+    if missing:
+        raise RuntimeError("post-update required files are missing: " + ", ".join(missing))
+
+
 def _write_stager(ctx: UpdateContext, tmp_dir: Path) -> Path | None:
-    if not ctx.deferred_replacements:
+    if not ctx.deferred_replacements and not ctx.deferred_deletions:
         return None
     stager = tmp_dir / "apply_deferred_update.py"
     payload = {
         "app_dir": str(ctx.app_dir),
         "pid": os.getpid(),
         "restart_cmd": ctx.restart_cmd,
+        "quarantine_root": str(
+            ctx.quarantine_root
+            or (ctx.app_dir / "data" / "update_quarantine" / time.strftime("%Y%m%d-%H%M%S"))
+        ),
         "files": [
             {"relative": relative.as_posix(), "source": str(source)}
             for relative, source in ctx.deferred_replacements
         ],
+        "delete_paths": [relative.as_posix() for relative in ctx.deferred_deletions],
     }
     stager.write_text(
         "\n".join(
@@ -265,12 +348,27 @@ def _write_stager(ctx: UpdateContext, tmp_dir: Path) -> Path | None:
                 "            break",
                 "        time.sleep(0.25)",
                 "app_dir = payload['app_dir']",
+                "app_root = os.path.abspath(app_dir)",
                 "for item in payload['files']:",
-                "    target = os.path.abspath(os.path.join(app_dir, item['relative']))",
-                "    if not target.startswith(os.path.abspath(app_dir) + os.sep):",
+                "    target = os.path.abspath(os.path.join(app_root, item['relative']))",
+                "    if target != app_root and not target.startswith(app_root + os.sep):",
                 "        raise SystemExit(f'bad target: {target}')",
                 "    os.makedirs(os.path.dirname(target), exist_ok=True)",
                 "    shutil.copy2(item['source'], target)",
+                "quarantine_root = os.path.abspath(payload['quarantine_root'])",
+                "if not quarantine_root.startswith(app_root + os.sep):",
+                "    raise SystemExit(f'bad quarantine root: {quarantine_root}')",
+                "for relative in payload.get('delete_paths', []):",
+                "    target = os.path.abspath(os.path.join(app_root, relative))",
+                "    if target == app_root or not target.startswith(app_root + os.sep):",
+                "        raise SystemExit(f'bad delete target: {target}')",
+                "    if not os.path.exists(target):",
+                "        continue",
+                "    destination = os.path.abspath(os.path.join(quarantine_root, relative))",
+                "    os.makedirs(os.path.dirname(destination), exist_ok=True)",
+                "    if os.path.exists(destination):",
+                "        destination = destination + '.' + str(int(time.time()))",
+                "    shutil.move(target, destination)",
                 "subprocess.Popen(payload['restart_cmd'], cwd=app_dir, close_fds=True)",
             ]
         ),
@@ -310,11 +408,13 @@ def run_update(ctx: UpdateContext) -> None:
         if ctx.cancel_requested.is_set():
             raise RuntimeError("用户已取消更新")
         _replace_files(ctx, extract_dir, backup_root)
+        _apply_moves(ctx, backup_root)
         _quarantine_deleted(ctx)
+        _post_update_required_files(ctx)
         ctx.stager_path = _write_stager(ctx, tmp_dir)
         success = True
     finally:
-        if success and not ctx.deferred_replacements:
+        if success and not ctx.deferred_replacements and not ctx.deferred_deletions:
             try:
                 shutil.rmtree(tmp_dir)
             except Exception as exc:

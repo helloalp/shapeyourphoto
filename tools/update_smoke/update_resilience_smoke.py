@@ -159,12 +159,16 @@ def _case_deferred_updater(tmp: Path) -> None:
 def _case_legacy_123_124_manifest_bridge(tmp: Path) -> None:
     app_dir = tmp / "legacy_bridge_app"
     (app_dir / "src").mkdir(parents=True)
-    (app_dir / "src" / "updater.py").write_text("legacy updater", encoding="utf-8")
+    (app_dir / "updater.py").write_text("legacy root updater", encoding="utf-8")
+    (app_dir / "cloud_client.py").write_text("legacy root cloud client", encoding="utf-8")
+    (app_dir / "analysis").mkdir()
+    (app_dir / "analysis" / "__init__.py").write_text("", encoding="utf-8")
     package = tmp / "legacy_bridge.zip"
     _make_zip(
         package,
         {
             "src/ui/cloud_actions.py": "new cloud actions launch updater_bootstrap",
+            "src/updater.py": "new updater wrapper",
             "src/updater_bootstrap.py": "new bootstrap",
             "src/updater_v2.py": "new updater implementation",
             "src/app_metadata.py": "version 1.2.5",
@@ -172,18 +176,50 @@ def _case_legacy_123_124_manifest_bridge(tmp: Path) -> None:
     )
     managed_files = [
         "src/ui/cloud_actions.py",
+        "src/updater.py",
         "src/updater_bootstrap.py",
         "src/updater_v2.py",
         "src/app_metadata.py",
     ]
-    assert "src/updater.py" not in managed_files
-    manifest = _manifest(package, managed_files=managed_files)
+    manifest = _manifest(
+        package,
+        managed_files=managed_files,
+        deleted_paths=["cloud_client.py", "analysis"],
+        post_update_required_files=["src/updater.py", "src/updater_bootstrap.py", "src/updater_v2.py"],
+    )
     ctx = _ctx(app_dir, manifest)
     updater.run_update(ctx)
-    assert (app_dir / "src" / "updater.py").read_text(encoding="utf-8") == "legacy updater"
     assert (app_dir / "src" / "updater_bootstrap.py").exists()
     assert (app_dir / "src" / "updater_v2.py").exists()
-    assert ctx.stager_path is None
+    assert not (app_dir / "cloud_client.py").exists()
+    assert not (app_dir / "analysis").exists()
+    assert (app_dir / "updater.py").exists()
+    assert not (app_dir / "src" / "updater.py").exists()
+    assert ctx.stager_path is not None and ctx.stager_path.exists()
+    assert "src/updater.py" in ctx.stager_path.read_text(encoding="utf-8")
+
+
+def _case_v2_deferred_delete_and_move(tmp: Path) -> None:
+    app_dir = tmp / "v2_cleanup_app"
+    app_dir.mkdir()
+    (app_dir / "updater.py").write_text("legacy root updater", encoding="utf-8")
+    (app_dir / "old_config.txt").write_text("settings", encoding="utf-8")
+    package = tmp / "v2_cleanup.zip"
+    _make_zip(package, {"app.txt": "new app"})
+    manifest = _manifest(
+        package,
+        managed_files=["app.txt"],
+        moved_paths=[{"from": "old_config.txt", "to": "src/old_config.txt"}],
+        deleted_paths=["updater.py"],
+    )
+    ctx = _ctx(app_dir, manifest)
+    updater.run_update(ctx)
+    assert (app_dir / "app.txt").read_text(encoding="utf-8") == "new app"
+    assert (app_dir / "src" / "old_config.txt").read_text(encoding="utf-8") == "settings"
+    assert (app_dir / "updater.py").exists()
+    assert ctx.stager_path is not None and ctx.stager_path.exists()
+    stager_text = ctx.stager_path.read_text(encoding="utf-8")
+    assert "updater.py" in stager_text
 
 
 def _case_replace_failure_and_rollback(tmp: Path) -> None:
@@ -238,6 +274,7 @@ def main() -> None:
         _case_download_timeout,
         _case_deferred_updater,
         _case_legacy_123_124_manifest_bridge,
+        _case_v2_deferred_delete_and_move,
         _case_replace_failure_and_rollback,
         _case_rollback_failure,
     ]

@@ -107,10 +107,11 @@ ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 update
 - 如果 `managed_files` 包含 updater 本身，旧 updater 不直接覆盖正在运行的 updater 文件，而是写入临时 stager；stager 等待当前 updater 退出后完成最后替换并重启主程序。
 - stager 只复制 manifest 中已校验更新包内的延迟文件，目标仍必须位于应用目录内。
 - 1.2.5 起，主程序优先启动 `src/updater_bootstrap.py`，再由它进入 `src/updater_v2.py`；如果 bootstrap 不存在，则回退到旧的 `src/updater.py`。
-- 从 1.2.3/1.2.4 升级到 1.2.5 的兼容包不得把 `src/updater.py` 放入 `managed_files`，因为旧 updater 没有自更新保护。
-- 1.2.3/1.2.4 兼容包应新增/替换 `src/updater_bootstrap.py`、`src/updater_v2.py`、`src/ui/cloud_actions.py` 和其他普通应用文件；更新完成重启后，1.2.5 主程序会使用新的 bootstrap/updater_v2。
-- 1.2.3/1.2.4 兼容包不得在 `deleted_paths` 中删除 `src/updater.py`。旧入口可保留为回退入口，后续版本确认 bootstrap 稳定后再考虑清理。
-- 1.2.5 之后发布修复 updater 的版本时，`managed_files` 可以包含 `src/updater_v2.py` 和 `src/updater_bootstrap.py`；若必须替换当前正在运行的 updater 入口，则由新版 stager 收尾。
+- 从 1.2.3/1.2.4 升级到 1.2.5 的兼容包必须包含 `src/updater.py`、`src/updater_bootstrap.py`、`src/updater_v2.py`、`src/ui/cloud_actions.py` 和其他普通应用文件；更新完成重启后，1.2.5 主程序会使用新的 bootstrap/updater_v2。
+- 第一次 1.2.3/1.2.4 桥接更新不得在 `deleted_paths` 中删除旧根目录 `updater.py`，因为它可能是正在运行的旧 updater 入口。
+- 第一次桥接更新可以在 `deleted_paths` 中隔离旧根目录业务模块和旧 `analysis/`、`ui/` 目录，避免新旧布局混装。
+- 1.2.5 之后发布修复 updater 或清理旧入口的版本时，`managed_files` 可以包含 `src/updater.py`、`src/updater_v2.py` 和 `src/updater_bootstrap.py`；若必须替换或删除当前正在运行的 updater 入口，则由新版 stager 收尾。
+- 新版 updater 支持 `moved_paths` / `move_paths` 做目录迁移，支持 `post_update_required_files` / `required_files` 做更新后文件存在性检查，支持 `deferred_deleted_paths` / `delete_after_restart` 在 updater 退出后隔离删除旧入口。
 
 ## 模拟验证
 
@@ -127,7 +128,7 @@ python tools\update_smoke\update_resilience_smoke.py
 - package 下载超时、下载前取消。
 - package size 不匹配、sha256 不匹配、zip-slip 恶意路径。
 - `managed_files` 包含 updater 本身时生成 stager。
-- 1.2.3/1.2.4 兼容 manifest 不替换 `src/updater.py`，只新增新版 bootstrap/updater_v2。
+- 1.2.3/1.2.4 兼容 manifest 包含 `src/updater.py`、新版 bootstrap/updater_v2，并清理旧根目录业务模块。
 - `deleted_paths` 包含不存在路径。
 - 文件被占用或替换失败后的回滚成功。
 - 回滚失败能抛出错误而不是无限等待。

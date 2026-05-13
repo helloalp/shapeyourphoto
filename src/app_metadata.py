@@ -30,7 +30,7 @@ CHANGELOG: list[dict[str, object]] = [
             "更新检查和独立 updater 请求统一使用 ShapeYourPhoto User-Agent；网络或 TLS 超时时显示简短中文失败提示，设置窗口和主界面仍可继续操作。",
             "独立 updater 补齐下载、解压、替换、隔离删除和回滚阶段的取消/超时出口；取消后会尽量恢复并关闭窗口。",
             "updater 自身进入 managed_files 时改由临时 stager 在当前 updater 退出后完成最后替换，降低旧 updater 自更新中途损坏风险。",
-            "新增 src/updater_bootstrap.py 与 src/updater_v2.py，主程序优先启动新版 bootstrap；1.2.3/1.2.4 直升 1.2.5 的兼容 manifest 可排除 src/updater.py，避免旧 updater 替换自身。",
+            "新增 src/updater_bootstrap.py 与 src/updater_v2.py，主程序优先启动新版 bootstrap；1.2.3/1.2.4 直升 1.2.5 的兼容 manifest 应包含 src/updater.py，并避免第一次桥接时删除旧根目录 updater.py。",
             "新增 tools/update_smoke/update_resilience_smoke.py，模拟验证版本比较、UA、网络超时、取消、校验错误、zip-slip、自更新、删除不存在路径、替换失败和回滚场景。",
         ],
     },
