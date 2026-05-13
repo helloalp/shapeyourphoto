@@ -398,11 +398,24 @@ def run_update(ctx: UpdateContext) -> None:
         _read_url_to_file(package_url, package_path, ctx)
         if ctx.cancel_requested.is_set():
             raise RuntimeError("用户已取消更新")
-        if expected_size and package_path.stat().st_size != expected_size:
-            raise RuntimeError("更新包大小校验失败")
         actual_hash = sha256_file(package_path)
+        actual_size = package_path.stat().st_size
+        if expected_size and actual_size != expected_size:
+            if actual_hash.lower() == expected_hash:
+                ctx.emit(
+                    f"更新包大小与 manifest 不一致，但 sha256 校验通过，继续更新："
+                    f"expected={expected_size}, actual={actual_size}"
+                )
+            else:
+                raise RuntimeError(
+                    "更新包大小校验失败："
+                    f"expected={expected_size}, actual={actual_size}, url={package_url}"
+                )
         if actual_hash.lower() != expected_hash:
-            raise RuntimeError("更新包校验失败")
+            raise RuntimeError(
+                "更新包 sha256 校验失败："
+                f"expected={expected_hash}, actual={actual_hash}, size={actual_size}, url={package_url}"
+            )
         ctx.emit("更新包校验通过")
         _safe_zip_extract(package_path, extract_dir, ctx)
         if ctx.cancel_requested.is_set():
@@ -487,6 +500,7 @@ class UpdaterWindow(tk.Tk):
                 self.ctx.emit("已恢复到更新前状态")
             except Exception as rollback_exc:
                 self.ctx.emit(f"恢复失败：{rollback_exc}")
+                self.after(0, self._enable_close)
                 self.after(
                     0,
                     lambda: messagebox.showerror(
@@ -506,7 +520,10 @@ class UpdaterWindow(tk.Tk):
         self.destroy()
 
     def _finish_failed(self, exc: Exception) -> None:
+        self._enable_close()
         messagebox.showerror("更新失败", f"已中止并尽量回滚：\n{exc}", parent=self)
+
+    def _enable_close(self) -> None:
         self.button.configure(text="关闭", state="normal", command=self.destroy)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 

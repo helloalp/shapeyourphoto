@@ -98,6 +98,8 @@ ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 update
 
 - 主程序只在 manifest 验签通过后，将 manifest 写入用户数据目录并启动 `src/updater.py`。
 - updater 下载 package 后校验大小和 sha256。
+- `package_size` 和 `sha256` 必须来自同一个最终 zip。覆盖服务器 zip 后必须重新生成 manifest 并重新签名；否则旧 updater 会直接报 `package size mismatch` 并中止。
+- 新版 updater 遇到 `package_size` 不一致但 sha256 一致时会记录警告并继续；如果 sha256 也不一致，则显示 expected/actual/url 细节并允许关闭 updater 窗口。
 - zip 解压会拒绝 zip-slip 路径。
 - updater 只写入应用目录下的受管理路径。
 - `deleted_paths` 只做隔离，不直接永久删除。
@@ -126,7 +128,7 @@ python tools\update_smoke\update_resilience_smoke.py
 - 本地旧版本号到服务器新版本、当前已是最新版本的比较。
 - Manifest/messages 共用的超时友好提示与 ShapeYourPhoto User-Agent。
 - package 下载超时、下载前取消。
-- package size 不匹配、sha256 不匹配、zip-slip 恶意路径。
+- package size 不匹配但 sha256 正确、package size 与 sha256 同时不匹配、单独 sha256 不匹配、zip-slip 恶意路径。
 - `managed_files` 包含 updater 本身时生成 stager。
 - 1.2.3/1.2.4 兼容 manifest 包含 `src/updater.py`、新版 bootstrap/updater_v2，并清理旧根目录业务模块。
 - `deleted_paths` 包含不存在路径。

@@ -49,18 +49,28 @@ def _case_version_and_ua(tmp: Path) -> None:
     assert friendly_cloud_error("<urlopen error _ssl.c:1063: The handshake operation timed out>") == "暂时无法连接更新服务，请稍后再试。"
 
 
-def _case_package_size_mismatch(tmp: Path) -> None:
-    app_dir = tmp / "size_app"
+def _case_package_size_mismatch_sha_ok(tmp: Path) -> None:
+    app_dir = tmp / "size_sha_ok_app"
     app_dir.mkdir()
-    package = tmp / "size.zip"
+    package = tmp / "size_sha_ok.zip"
     _make_zip(package, {"app.txt": "new"})
     manifest = _manifest(package, package_size=package.stat().st_size + 1)
+    updater.run_update(_ctx(app_dir, manifest))
+    assert (app_dir / "app.txt").read_text(encoding="utf-8") == "new"
+
+
+def _case_package_size_and_sha_mismatch(tmp: Path) -> None:
+    app_dir = tmp / "size_sha_bad_app"
+    app_dir.mkdir()
+    package = tmp / "size_sha_bad.zip"
+    _make_zip(package, {"app.txt": "new"})
+    manifest = _manifest(package, package_size=package.stat().st_size + 1, sha256="0" * 64)
     try:
         updater.run_update(_ctx(app_dir, manifest))
     except RuntimeError as exc:
         assert "大小校验失败" in str(exc)
     else:
-        raise AssertionError("package size mismatch should fail")
+        raise AssertionError("package size mismatch with bad sha should fail")
 
 
 def _case_sha_mismatch(tmp: Path) -> None:
@@ -266,7 +276,8 @@ def _case_rollback_failure(tmp: Path) -> None:
 def main() -> None:
     cases = [
         _case_version_and_ua,
-        _case_package_size_mismatch,
+        _case_package_size_mismatch_sha_ok,
+        _case_package_size_and_sha_mismatch,
         _case_sha_mismatch,
         _case_zip_slip,
         _case_deleted_missing_and_success,
