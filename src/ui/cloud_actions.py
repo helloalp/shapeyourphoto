@@ -12,7 +12,12 @@ from cloud_client import compare_builds, fetch_cloud_messages, fetch_update_mani
 from cloud_state import has_seen_message, remember_message, set_temporary_decline, should_suppress_update_prompt
 from integrity_guard import check_cloud_update_modules
 from paths import user_data_dir
-from ui.cloud_dialogs import CheckingUpdateDialog, show_cloud_message_dialog, show_update_available_dialog
+from ui.cloud_dialogs import (
+    CheckingUpdateDialog,
+    show_cloud_message_dialog,
+    show_update_available_dialog,
+    update_manifest_external_download_only,
+)
 
 
 class UiCloudActionsMixin:
@@ -101,6 +106,9 @@ class UiCloudActionsMixin:
                 set_temporary_decline(remote_id)
             return result
         if result == "update":
+            if update_manifest_external_download_only(manifest):
+                self._log_console("update manifest requires external download; updater launch skipped")
+                return "external"
             self._launch_updater(manifest)
             return result
         return result

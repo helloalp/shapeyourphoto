@@ -104,14 +104,15 @@ ShapeYourPhoto 从 1.1.8 开始加入签名更新、云端公告和独立 update
 - updater 只写入应用目录下的受管理路径。
 - `deleted_paths` 只做隔离，不直接永久删除。
 - `data/`、`private_docs/`、`test/`、`benchmark_reports/`、`tmp/` 等本地目录不得被更新包覆盖或删除。
-- 下载、解压、替换和隔离删除阶段都必须检查取消状态；取消后应尽量恢复更新前状态并关闭 updater 窗口。
+- updater 窗口的取消按钮和关闭叉号都应立即关闭 updater，不再显示“下一个安全点退出”之类的等待提示。下载阶段会尽量停止；如果正在执行文件替换，用户应以重新启动后状态和隔离目录为准。
+- 新版 updater 的 package 下载使用较长读取超时和多次重试；如果仍显示 `The read operation timed out`，优先检查服务器限速、中间层断连、包体过大或网络链路。
 - 回滚过程有超时出口；回滚失败时显示中文简短提示，详细错误保留在 updater 窗口日志。
-- 如果 `managed_files` 包含 updater 本身，旧 updater 不直接覆盖正在运行的 updater 文件，而是写入临时 stager；stager 等待当前 updater 退出后完成最后替换并重启主程序。
+- 如果 `managed_files` 包含 updater 本身，新版 updater 不直接覆盖正在运行的 updater 文件，而是写入临时 stager；stager 等待当前 updater 退出后完成最后替换并重启主程序。
 - stager 只复制 manifest 中已校验更新包内的延迟文件，目标仍必须位于应用目录内。
 - 1.2.5 起，主程序优先启动 `src/updater_bootstrap.py`，再由它进入 `src/updater_v2.py`；如果 bootstrap 不存在，则回退到旧的 `src/updater.py`。
-- 从 1.2.3/1.2.4 升级到 1.2.5 的兼容包必须包含 `src/updater.py`、`src/updater_bootstrap.py`、`src/updater_v2.py`、`src/ui/cloud_actions.py` 和其他普通应用文件；更新完成重启后，1.2.5 主程序会使用新的 bootstrap/updater_v2。
-- 第一次 1.2.3/1.2.4 桥接更新不得在 `deleted_paths` 中删除旧根目录 `updater.py`，因为它可能是正在运行的旧 updater 入口。
-- 第一次桥接更新可以在 `deleted_paths` 中隔离旧根目录业务模块和旧 `analysis/`、`ui/` 目录，避免新旧布局混装。
+- 1.2.3/1.2.4 不再通过内置 updater 直升 1.2.5；本次采用签名 manifest 的 `release_notes` 提示用户手动下载完整 1.2.5。
+- 新版客户端支持 `external_download_only` / `disable_in_app_update` / `manual_download_only` manifest 字段。命中后只显示更新说明，不启动内置 updater。
+- 新版客户端预留 update manifest 目标范围判断：服务端可在单个 manifest 上添加 `target_min_version_id` / `target_max_version_id`，或在 `updates` 列表中放多个候选 manifest。客户端只选择适用于当前 `APP_VERSION_ID` / `APP_BUILD_ID` 的候选更新。
 - 1.2.5 之后发布修复 updater 或清理旧入口的版本时，`managed_files` 可以包含 `src/updater.py`、`src/updater_v2.py` 和 `src/updater_bootstrap.py`；若必须替换或删除当前正在运行的 updater 入口，则由新版 stager 收尾。
 - 新版 updater 支持 `moved_paths` / `move_paths` 做目录迁移，支持 `post_update_required_files` / `required_files` 做更新后文件存在性检查，支持 `deferred_deleted_paths` / `delete_after_restart` 在 updater 退出后隔离删除旧入口。
 
@@ -126,11 +127,12 @@ python tools\update_smoke\update_resilience_smoke.py
 脚本只创建临时假应用目录和小型 zip，不访问真实服务器。当前覆盖：
 
 - 本地旧版本号到服务器新版本、当前已是最新版本的比较。
+- update manifest 目标版本范围筛选和 `updates` 多候选选择。
 - Manifest/messages 共用的超时友好提示与 ShapeYourPhoto User-Agent。
 - package 下载超时、下载前取消。
 - package size 不匹配但 sha256 正确、package size 与 sha256 同时不匹配、单独 sha256 不匹配、zip-slip 恶意路径。
 - `managed_files` 包含 updater 本身时生成 stager。
-- 1.2.3/1.2.4 兼容 manifest 包含 `src/updater.py`、新版 bootstrap/updater_v2，并清理旧根目录业务模块。
+- 手动下载提示 manifest 可阻止新版客户端启动内置 updater。
 - `deleted_paths` 包含不存在路径。
 - 文件被占用或替换失败后的回滚成功。
 - 回滚失败能抛出错误而不是无限等待。

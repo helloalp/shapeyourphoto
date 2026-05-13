@@ -23,7 +23,9 @@ from app_metadata import APP_VERSION, APP_VERSION_ID
 from cloud_security import path_within, sha256_file
 
 
-DOWNLOAD_TIMEOUT = 5
+DOWNLOAD_TIMEOUT = 30
+DOWNLOAD_RETRIES = 3
+DOWNLOAD_CHUNK_SIZE = 64 * 1024
 ROLLBACK_TIMEOUT_SECONDS = 30
 USER_AGENT = f"ShapeYourPhotoUpdater/{APP_VERSION} (version_id={APP_VERSION_ID}; {platform.system() or 'Unknown'})"
 
@@ -40,6 +42,14 @@ PROTECTED_TOP_LEVEL = {
     "_repair_cancel_backups",
     "_update_removed_files",
 }
+
+
+def _manifest_external_download_only(manifest: dict) -> bool:
+    return bool(
+        manifest.get("external_download_only")
+        or manifest.get("disable_in_app_update")
+        or manifest.get("manual_download_only")
+    )
 
 
 @dataclass
@@ -67,28 +77,47 @@ def _read_url_to_file(url: str, target: Path, ctx: UpdateContext) -> None:
             raise RuntimeError("用户已取消更新")
         with source.open("rb") as src, target.open("wb") as dst:
             while True:
-                chunk = src.read(1024 * 256)
+                chunk = src.read(DOWNLOAD_CHUNK_SIZE)
                 if not chunk:
                     break
                 dst.write(chunk)
                 if ctx.cancel_requested.is_set():
                     raise RuntimeError("用户已取消更新")
         return
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT) as response, target.open("wb") as handle:
-        total = int(response.headers.get("Content-Length") or 0)
-        copied = 0
-        while True:
-            chunk = response.read(1024 * 256)
-            if not chunk:
-                break
-            handle.write(chunk)
-            copied += len(chunk)
-            if total:
-                ctx.emit(f"已下载 {copied}/{total} 字节")
+    last_error: Exception | None = None
+    for attempt in range(1, DOWNLOAD_RETRIES + 1):
+        if ctx.cancel_requested.is_set():
+            raise RuntimeError("用户已取消更新")
+        if attempt > 1:
+            ctx.emit(f"下载重试 {attempt}/{DOWNLOAD_RETRIES}")
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT) as response, target.open("wb") as handle:
+                total = int(response.headers.get("Content-Length") or 0)
+                copied = 0
+                while True:
+                    chunk = response.read(DOWNLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    copied += len(chunk)
+                    if total:
+                        ctx.emit(f"已下载 {copied}/{total} 字节")
+                    if ctx.cancel_requested.is_set():
+                        raise RuntimeError("用户已取消更新")
+            return
+        except Exception as exc:
+            last_error = exc
+            try:
+                target.unlink(missing_ok=True)
+            except Exception:
+                pass
             if ctx.cancel_requested.is_set():
-                ctx.emit("已收到取消请求，正在回到可安全退出的状态")
                 raise RuntimeError("用户已取消更新")
+            if attempt < DOWNLOAD_RETRIES:
+                ctx.emit(f"下载中断，准备重试：{exc}")
+                time.sleep(0.5 * attempt)
+    raise RuntimeError(f"下载更新包失败：{last_error}")
 
 
 def _safe_zip_extract(zip_path: Path, target_dir: Path, ctx: UpdateContext) -> None:
@@ -446,7 +475,7 @@ class UpdaterWindow(tk.Tk):
         self.title("ShapeYourPhoto Updater")
         self.geometry("720x460")
         self.minsize(620, 380)
-        self.protocol("WM_DELETE_WINDOW", self._confirm_cancel)
+        self.protocol("WM_DELETE_WINDOW", self._cancel_and_close)
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
@@ -457,7 +486,7 @@ class UpdaterWindow(tk.Tk):
         self.text.configure(yscrollcommand=scroll.set)
         self.text.grid(row=1, column=0, sticky="nsew", pady=(12, 10))
         scroll.grid(row=1, column=1, sticky="ns", pady=(12, 10))
-        self.button = ttk.Button(outer, text="取消更新", command=self._confirm_cancel)
+        self.button = ttk.Button(outer, text="取消并关闭", command=self._cancel_and_close)
         self.button.grid(row=2, column=0, sticky="e")
         self.after(100, self._drain_log)
         threading.Thread(target=self._worker, daemon=True).start()
@@ -472,11 +501,10 @@ class UpdaterWindow(tk.Tk):
             self.text.see("end")
         self.after(100, self._drain_log)
 
-    def _confirm_cancel(self) -> None:
-        if messagebox.askyesno("确定取消吗？", "确定取消更新吗？确认前更新进程会继续执行。", parent=self):
-            self.ctx.cancel_requested.set()
-            self.button.configure(state="disabled")
-            self.ctx.emit("正在取消更新，请稍候")
+    def _cancel_and_close(self) -> None:
+        self.ctx.cancel_requested.set()
+        self.ctx.emit("用户取消更新，关闭 updater")
+        self.destroy()
 
     def _worker(self) -> None:
         try:
@@ -540,6 +568,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     manifest = json.loads(Path(args.manifest_cache).read_text(encoding="utf-8"))
+    if _manifest_external_download_only(manifest):
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo(
+            "请手动下载新版",
+            "此版本不通过内置更新器安装。\n\n请前往官网或 GitHub 下载完整发布包。",
+            parent=root,
+        )
+        root.destroy()
+        return
     restart_cmd = json.loads(args.restart_cmd)
     ctx = UpdateContext(manifest=manifest, app_dir=Path(args.app_dir).resolve(), restart_cmd=restart_cmd)
     app = UpdaterWindow(ctx)

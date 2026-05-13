@@ -13,7 +13,14 @@ sys.path.insert(0, str(SRC))
 
 import updater  # noqa: E402
 from app_metadata import APP_VERSION_ID  # noqa: E402
-from cloud_client import USER_AGENT as CLOUD_USER_AGENT, compare_builds, friendly_cloud_error  # noqa: E402
+from cloud_client import (  # noqa: E402
+    USER_AGENT as CLOUD_USER_AGENT,
+    compare_builds,
+    current_build_id,
+    friendly_cloud_error,
+    select_applicable_update_manifest,
+    update_manifest_applies_to_this_client,
+)
 
 
 def _make_zip(path: Path, files: dict[str, str]) -> None:
@@ -47,6 +54,37 @@ def _case_version_and_ua(tmp: Path) -> None:
     assert CLOUD_USER_AGENT.startswith("ShapeYourPhotoUpdater/")
     assert updater.USER_AGENT.startswith("ShapeYourPhotoUpdater/")
     assert friendly_cloud_error("<urlopen error _ssl.c:1063: The handshake operation timed out>") == "暂时无法连接更新服务，请稍后再试。"
+
+
+def _case_update_manifest_target_ranges(tmp: Path) -> None:
+    local_id = current_build_id()
+    assert update_manifest_applies_to_this_client({"target_min_version_id": local_id, "target_max_version_id": local_id})
+    assert not update_manifest_applies_to_this_client({"target_min_version_id": local_id + 1})
+    assert not update_manifest_applies_to_this_client({"target_max_version_id": local_id - 1})
+    selected = select_applicable_update_manifest(
+        {
+            "updates": [
+                {
+                    "version_id": local_id + 1,
+                    "build_id": local_id + 1,
+                    "target_min_version_id": local_id - 2,
+                    "target_max_version_id": local_id - 1,
+                    "external_download_only": True,
+                },
+                {
+                    "version_id": local_id + 2,
+                    "build_id": local_id + 2,
+                    "target_min_version_id": local_id,
+                    "target_max_version_id": local_id,
+                },
+            ]
+        }
+    )
+    assert selected["version_id"] == local_id + 2
+    skipped = select_applicable_update_manifest(
+        {"updates": [{"version_id": local_id + 1, "target_min_version_id": local_id + 1}]}
+    )
+    assert skipped.get("_no_applicable_update") is True
 
 
 def _case_package_size_mismatch_sha_ok(tmp: Path) -> None:
@@ -144,7 +182,7 @@ def _case_download_timeout(tmp: Path) -> None:
     try:
         try:
             updater.run_update(_ctx(app_dir, manifest))
-        except urllib.error.URLError as exc:
+        except RuntimeError as exc:
             assert "timed out" in str(exc)
         else:
             raise AssertionError("download timeout should fail")
@@ -166,47 +204,11 @@ def _case_deferred_updater(tmp: Path) -> None:
     assert ctx.stager_path is not None and ctx.stager_path.exists()
 
 
-def _case_legacy_123_124_manifest_bridge(tmp: Path) -> None:
-    app_dir = tmp / "legacy_bridge_app"
-    (app_dir / "src").mkdir(parents=True)
-    (app_dir / "updater.py").write_text("legacy root updater", encoding="utf-8")
-    (app_dir / "cloud_client.py").write_text("legacy root cloud client", encoding="utf-8")
-    (app_dir / "analysis").mkdir()
-    (app_dir / "analysis" / "__init__.py").write_text("", encoding="utf-8")
-    package = tmp / "legacy_bridge.zip"
-    _make_zip(
-        package,
-        {
-            "src/ui/cloud_actions.py": "new cloud actions launch updater_bootstrap",
-            "src/updater.py": "new updater wrapper",
-            "src/updater_bootstrap.py": "new bootstrap",
-            "src/updater_v2.py": "new updater implementation",
-            "src/app_metadata.py": "version 1.2.5",
-        },
-    )
-    managed_files = [
-        "src/ui/cloud_actions.py",
-        "src/updater.py",
-        "src/updater_bootstrap.py",
-        "src/updater_v2.py",
-        "src/app_metadata.py",
-    ]
-    manifest = _manifest(
-        package,
-        managed_files=managed_files,
-        deleted_paths=["cloud_client.py", "analysis"],
-        post_update_required_files=["src/updater.py", "src/updater_bootstrap.py", "src/updater_v2.py"],
-    )
-    ctx = _ctx(app_dir, manifest)
-    updater.run_update(ctx)
-    assert (app_dir / "src" / "updater_bootstrap.py").exists()
-    assert (app_dir / "src" / "updater_v2.py").exists()
-    assert not (app_dir / "cloud_client.py").exists()
-    assert not (app_dir / "analysis").exists()
-    assert (app_dir / "updater.py").exists()
-    assert not (app_dir / "src" / "updater.py").exists()
-    assert ctx.stager_path is not None and ctx.stager_path.exists()
-    assert "src/updater.py" in ctx.stager_path.read_text(encoding="utf-8")
+def _case_external_download_manifest(tmp: Path) -> None:
+    assert updater._manifest_external_download_only({"external_download_only": True})
+    assert updater._manifest_external_download_only({"disable_in_app_update": True})
+    assert updater._manifest_external_download_only({"manual_download_only": True})
+    assert not updater._manifest_external_download_only({"external_download_only": False})
 
 
 def _case_v2_deferred_delete_and_move(tmp: Path) -> None:
@@ -276,6 +278,7 @@ def _case_rollback_failure(tmp: Path) -> None:
 def main() -> None:
     cases = [
         _case_version_and_ua,
+        _case_update_manifest_target_ranges,
         _case_package_size_mismatch_sha_ok,
         _case_package_size_and_sha_mismatch,
         _case_sha_mismatch,
@@ -284,7 +287,7 @@ def main() -> None:
         _case_cancel_before_download,
         _case_download_timeout,
         _case_deferred_updater,
-        _case_legacy_123_124_manifest_bridge,
+        _case_external_download_manifest,
         _case_v2_deferred_delete_and_move,
         _case_replace_failure_and_rollback,
         _case_rollback_failure,

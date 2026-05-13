@@ -18,10 +18,11 @@
 - 不适合保留图片复核窗口新增选中详情区和横向滚动，主要原因、严重程度和状态均使用中文显示。
 - 主窗口右上角新增“置顶”按钮，点击后可让主窗口保持在普通窗口上方，再次点击取消。
 - 更新检查和独立 updater 请求统一使用 ShapeYourPhoto User-Agent；网络或 TLS 超时时显示简短中文失败提示，设置窗口和主界面仍可继续操作。
-- 独立 updater 补齐下载、解压、替换、隔离删除和回滚阶段的取消/超时出口；取消后会尽量恢复并关闭窗口。
+- 独立 updater 的取消按钮和关闭叉号改为立即关闭 updater，不再显示“下一个安全点退出”之类的等待提示；下载阶段增加更长读取超时和多次重试。
 - 独立 updater 在包大小或 sha256 校验失败时输出 expected/actual/url 细节，并先切换为可关闭状态再显示失败提示；`package_size` 不一致但 sha256 正确时会继续更新。
-- updater 自身进入 `managed_files` 时改由临时 stager 在当前 updater 退出后完成最后替换，降低旧 updater 自更新中途损坏风险。
-- 新增 `src/updater_bootstrap.py` 与 `src/updater_v2.py`，主程序优先启动新版 bootstrap；1.2.3/1.2.4 直升 1.2.5 的兼容 manifest 应包含 `src/updater.py`，并避免第一次桥接时删除旧根目录 `updater.py`。
+- updater 自身进入 `managed_files` 时改由临时 stager 在当前 updater 退出后完成最后替换，降低自更新中途损坏风险。
+- 新增 `src/updater_bootstrap.py` 与 `src/updater_v2.py`，主程序优先启动新版 bootstrap；新版客户端支持 `external_download_only` / `disable_in_app_update` 类型 manifest，只展示说明并阻止内置 updater 启动。
+- 更新 manifest 预留目标版本范围筛选，支持 `target_min_version_id` / `target_max_version_id` 和未来的 `updates` 多候选列表，避免特定旧版本的手动下载提示误伤较新客户端。
 - 新增 `tools/update_smoke/update_resilience_smoke.py`，模拟验证版本比较、UA、网络超时、取消、校验错误、zip-slip、自更新、删除不存在路径、替换失败和回滚场景。
 
 ## 1.2.4 - 2026-05-11

@@ -35,6 +35,15 @@ def _activate_modal(dialog: tk.Toplevel, parent: tk.Widget, *, grab: bool = True
 
 
 UPDATE_RECOMMENDATION = "建议更新以获得更多算法、更强性能与更佳体验。"
+EXTERNAL_DOWNLOAD_RECOMMENDATION = "此版本需要前往官网或 GitHub 下载完整发布包。"
+
+
+def update_manifest_external_download_only(manifest: dict[str, Any]) -> bool:
+    return bool(
+        manifest.get("external_download_only")
+        or manifest.get("disable_in_app_update")
+        or manifest.get("manual_download_only")
+    )
 
 
 def _notes_text(manifest: dict[str, Any]) -> str:
@@ -77,7 +86,9 @@ class UpdateAvailableDialog(tk.Toplevel):
         notes.insert("1.0", _notes_text(manifest))
         notes.config(state="disabled")
 
-        ttk.Label(outer, text=UPDATE_RECOMMENDATION, font=("Microsoft YaHei UI", 10, "bold")).grid(row=2, column=0, sticky="w")
+        external_download_only = update_manifest_external_download_only(manifest)
+        recommendation = EXTERNAL_DOWNLOAD_RECOMMENDATION if external_download_only else UPDATE_RECOMMENDATION
+        ttk.Label(outer, text=recommendation, font=("Microsoft YaHei UI", 10, "bold")).grid(row=2, column=0, sticky="w")
 
         actions = ttk.Frame(outer)
         actions.grid(row=3, column=0, sticky="ew", pady=(16, 0))
@@ -86,8 +97,11 @@ class UpdateAvailableDialog(tk.Toplevel):
         if manual:
             left_text = "暂时不更新"
         ttk.Button(actions, text=left_text, command=lambda: self._finish("decline")).grid(row=0, column=0, sticky="w")
-        ttk.Button(actions, text="稍后更新", command=lambda: self._finish("later")).grid(row=0, column=1)
-        ttk.Button(actions, text="更新", command=lambda: self._finish("update")).grid(row=0, column=2, sticky="e")
+        ttk.Button(actions, text="稍后提醒", command=lambda: self._finish("later")).grid(row=0, column=1)
+        if external_download_only:
+            ttk.Button(actions, text="我知道了", command=lambda: self._finish("decline")).grid(row=0, column=2, sticky="e")
+        else:
+            ttk.Button(actions, text="更新", command=lambda: self._finish("update")).grid(row=0, column=2, sticky="e")
         center_window(self, 700, 520)
         _activate_modal(self, parent)
 

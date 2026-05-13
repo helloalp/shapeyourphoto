@@ -60,7 +60,7 @@ UI 基础设施包，包含窗口标题、语言状态、display mapping、主�
 
 ### [src/updater.py](/E:/aitools/shapeyourphoto/src/updater.py)
 
-兼容 updater 入口，保留旧版本和旧文档中的启动路径。新版主程序优先启动 [src/updater_bootstrap.py](/E:/aitools/shapeyourphoto/src/updater_bootstrap.py)，实际实现位于 [src/updater_v2.py](/E:/aitools/shapeyourphoto/src/updater_v2.py)。更新 manifest 的 `managed_files` 应使用当前布局下的相对路径，例如 `src/ui/cloud_actions.py`；从 1.2.3/1.2.4 直升 1.2.5 的兼容包不要替换 `src/updater.py`。
+兼容 updater 入口，保留旧版本和旧文档中的启动路径。新版主程序优先启动 [src/updater_bootstrap.py](/E:/aitools/shapeyourphoto/src/updater_bootstrap.py)，实际实现位于 [src/updater_v2.py](/E:/aitools/shapeyourphoto/src/updater_v2.py)。更新 manifest 的 `managed_files` 应使用当前布局下的相对路径，例如 `src/ui/cloud_actions.py`；1.2.3/1.2.4 不再通过内置 updater 直升 1.2.5，相关止血发布使用手动下载提示 manifest。
 
 ## 工具与构建
 
