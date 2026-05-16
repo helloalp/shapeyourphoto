@@ -293,6 +293,18 @@ def _classify_scene(
         scene_type = "architecture_vivid_scene"
     elif architecture_scene:
         scene_type = "architecture_scene"
+    elif blue_ratio >= 0.18 and green_ratio >= 0.08 and edge_density_value <= 0.16:
+        scene_type = "water_sky_landscape_scene"
+        tags.extend(["landscape", "protect_sky_water"])
+        notes.append("检测到天空/水面/绿植共存的风景场景，色彩和高光修复会更保守。")
+    elif green_ratio >= 0.20:
+        scene_type = "foliage_scene"
+        tags.append("protect_foliage")
+        notes.append("检测到绿植占比较高的场景，避免把绿植过度提饱和或压暗。")
+    elif contrast <= 0.105 and dyn_range <= 0.34 and 0.28 <= brightness <= 0.78 and neutral_ratio >= 0.18:
+        scene_type = "hazy_scene"
+        tags.append("haze_or_flat_atmosphere")
+        notes.append("检测到灰雾或低通透度场景，适合轻量去灰和中间调层次增强。")
     elif natural_vivid_scene:
         scene_type = "natural_vivid_scene"
 
@@ -374,6 +386,17 @@ def _build_exposure_issues(
             suggestion = "建议避免强行 recover highlights；保持自然空气感通常比把天空或白墙压灰更稳妥。"
             diagnostic_notes.append("检测到不可恢复高光，已标记为避免强压。")
         issues.append(issue("overexposed", "过曝", over_score, detail, suggestion))
+    elif 0.010 <= clipped_highlights < 0.030 and highlight_ratio >= 0.055 and highlight_texture >= 0.006:
+        local_score = min(0.62, 0.34 + clipped_highlights * 7.0 + max(0.0, highlight_ratio - 0.055) * 1.2)
+        issues.append(
+            issue(
+                "local_overexposure",
+                "局部高光偏亮",
+                local_score,
+                f"局部亮部占比 {highlight_ratio:.1%}，高光裁切约 {clipped_highlights:.1%}，仍保留部分纹理。",
+                "建议只做局部高光回收，避免把天空、水面或白墙整体压灰。",
+            )
+        )
 
     low_key_relief = (
         max(0.0, dyn_range - 0.75) * 3.0
@@ -446,6 +469,17 @@ def _build_exposure_issues(
                 detail,
                 suggestion,
                 meta={"severity": f"{under_score:.3f}"},
+            )
+        )
+    elif exposure_type == "normal" and shadow_ratio >= 0.22 and crushed_shadows >= 0.035 and brightness >= 0.30:
+        local_under_score = min(0.64, 0.32 + (shadow_ratio - 0.22) * 1.4 + crushed_shadows * 3.2)
+        issues.append(
+            issue(
+                "local_underexposure",
+                "局部暗部偏沉",
+                local_under_score,
+                f"暗部占比 {shadow_ratio:.1%}，局部压黑约 {crushed_shadows:.1%}，但整体亮度并非明显欠曝。",
+                "建议只提升局部暗部层次，避免把画面氛围整体抬灰。",
             )
         )
     elif exposure_type == "high_contrast_window_scene":
@@ -843,6 +877,18 @@ def analyze_image(path: str | Path, progress_callback: Callable[[int, int, str],
                 "建议轻微提升中间调对比和局部层次，避免把高光压脏或把阴影抬灰。",
             )
         )
+    if contrast <= 0.115 and dyn_range <= 0.36 and mean_saturation <= 0.24 and scene_type in {"hazy_scene", "water_sky_landscape_scene", "generic_scene"}:
+        haze_score = min(0.72, 0.34 + (0.115 - contrast) * 2.8 + (0.36 - dyn_range) * 0.9 + max(0.0, 0.24 - mean_saturation) * 0.55)
+        if haze_score >= 0.38:
+            issues.append(
+                issue(
+                    "haze_flat",
+                    "画面灰雾感",
+                    haze_score,
+                    f"对比度 {contrast:.3f}、动态范围 {dyn_range:.3f}、平均饱和度 {mean_saturation:.3f} 均偏低，画面通透度不足。",
+                    "建议轻量增强中间调对比和自然饱和度，避免把天空或水面处理得过硬。",
+                )
+            )
 
     color_issues, color_type = _build_color_issues(
         mean_saturation=mean_saturation,

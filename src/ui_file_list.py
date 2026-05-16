@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import tkinter as tk
+import threading
+import time
 from pathlib import Path
 from tkinter import messagebox
 
@@ -13,6 +15,7 @@ from models import AnalysisResult, CleanupCandidate, SimilarImageGroup
 from repair_planner import get_method_labels, suggest_methods_for_result
 from result_sorting import sort_paths
 from ui.display_names import display_name, issue_display
+from ui.language import tr
 from ui.metadata_editor import show_metadata_edit_dialog, supports_metadata_edit
 
 
@@ -152,7 +155,7 @@ class UiFileListMixin:
             self.cleanup_hint_var.set(f"已选择 {selected_count} 张图片。")
         else:
             self.cleanup_delete_button.configure(state="disabled")
-            self.cleanup_hint_var.set("当前没有选择图片。")
+            self.cleanup_hint_var.set(tr("cleanup.no_selection"))
 
     def _similar_marker_for_path(self, path: Path) -> str:
         group_ids = [str(group.group_id) for group in self.similar_groups if path in group.paths and len(group.paths) >= 2]
@@ -206,33 +209,43 @@ class UiFileListMixin:
 
     def refresh_tree(self) -> None:
         self._prune_missing_paths()
-        current_path = self._current_path()
+        selected_paths = [path for path in self._selected_tree_paths() if path in self.image_paths]
+        current_path = selected_paths[0] if selected_paths else self._current_path()
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.item_lookup.clear()
         self.path_item_lookup.clear()
 
+        restored_items: list[str] = []
         for path in self._sorted_paths():
             thumb = self.thumb_cache.get_tree_thumbnail(path)
             item_id = self.tree.insert("", "end", text=path.name, image=thumb, values=self._tree_row_values(path))
             self.item_lookup[item_id] = path
             self.path_item_lookup[path] = item_id
-            if path == current_path:
-                self.tree.selection_set(item_id)
+            if path in selected_paths:
+                restored_items.append(item_id)
+        if restored_items:
+            self.tree.selection_set(restored_items)
+            self.tree.see(restored_items[0])
+        elif current_path is not None and current_path in self.path_item_lookup:
+            item_id = self.path_item_lookup[current_path]
+            self.tree.selection_set(item_id)
+            self.tree.see(item_id)
         self._refresh_cleanup_tree()
         self._update_list_stats()
 
     def _matches_filter(self, result: AnalysisResult | None, error: str | None) -> bool:
         chosen = self.filter_var.get()
-        if chosen == "全部":
+        token = self._selected_filter_token() if hasattr(self, "_selected_filter_token") else chosen
+        if token in {"all", "全部"}:
             return True
         if error:
             return False
-        if chosen == "仅问题图":
+        if token in {"problem", "仅问题图"}:
             return bool(result and result.issues)
         if not result:
             return False
-        return any(issue.label == chosen or issue_display(issue) == chosen for issue in result.issues)
+        return any(getattr(issue, "code", "") == token or issue.label == chosen or issue_display(issue) == chosen for issue in result.issues)
 
     def _current_path(self) -> Path | None:
         selection = self.tree.selection()
@@ -324,14 +337,24 @@ class UiFileListMixin:
         if not item_id:
             return
         if column == "#1":
-            self.tree.selection_set(item_id)
+            selected_items = set(self.tree.selection())
+            if item_id not in selected_items:
+                selected_items.add(item_id)
+            selected_paths = [self.item_lookup[item] for item in selected_items if item in self.item_lookup]
             path = self.item_lookup.get(item_id)
             if path is None:
                 return
             self.selected_flags.setdefault(path, tk.BooleanVar(value=False))
             self.selected_flags[path].set(not self.selected_flags[path].get())
             self.refresh_tree()
-            self._select_path(path)
+            restored = [self.path_item_lookup[item_path] for item_path in selected_paths if item_path in self.path_item_lookup]
+            if not restored and path in self.path_item_lookup:
+                restored = [self.path_item_lookup[path]]
+            if restored:
+                self.tree.selection_set(restored)
+                self.tree.see(restored[0])
+            if len(restored) <= 1:
+                self._select_path(path)
 
     def on_cleanup_tree_select(self, _event=None) -> None:
         path = self._current_cleanup_path()
@@ -486,8 +509,10 @@ class UiFileListMixin:
         self.chart.update_result(None)
         self._current_preview_path = None
         self._large_preview_image = None
+        self._large_preview_render_key = None
+        self._cancel_large_preview_load()
         if hasattr(self, "large_preview_label"):
-            self.large_preview_label.configure(image="", text="选择图片后，这里会显示更大的预览图。")
+            self.large_preview_label.configure(image="", text=tr("preview.empty"))
         self.hud_name_var.set("未选择图片")
         self.hud_risk_var.set("风险值 --")
         self.hud_tags_var.set("识别结果：等待分析")
@@ -549,10 +574,11 @@ class UiFileListMixin:
         result = self.results.get(path)
         error = self.errors.get(path)
         self._current_preview_path = path
+        self._large_preview_render_key = None
+        self._cancel_large_preview_load()
 
         try:
-            with Image.open(path) as img:
-                image = ImageOps.exif_transpose(img).convert("RGB")
+            original_size = self._read_preview_original_size(path)
         except Exception as exc:
             self.chart.update_result(None)
             self._set_summary(f"无法加载预览：{exc}")
@@ -560,11 +586,14 @@ class UiFileListMixin:
             self._update_hud(path, None, None, str(exc))
             self._large_preview_image = None
             if hasattr(self, "large_preview_label"):
-                self.large_preview_label.configure(image="", text="无法加载预览图。")
+                self.large_preview_label.configure(image="", text=tr("preview.load_failed"))
             return
         self.chart.update_result(result)
-        self._update_large_preview_image(image)
-        self._update_hud(path, image, result, error)
+        self._large_preview_image = None
+        if hasattr(self, "large_preview_label"):
+            self.large_preview_label.configure(image="", text=tr("preview.loading"))
+        self._schedule_large_preview_load(delay_ms=15)
+        self._update_hud(path, None, result, error, image_size=original_size)
         meta_summary = summarize_image_metadata(path)
         if hasattr(self, "meta_edit_button"):
             editable, reason = supports_metadata_edit(path, developer_unlocked=developer_session.unlocked)
@@ -579,7 +608,7 @@ class UiFileListMixin:
         lines = [
             f"文件：{path.name}",
             f"路径：{path}",
-            f"尺寸：{image.width} x {image.height}",
+            f"尺寸：{original_size[0]} x {original_size[1]}",
         ]
         if error:
             lines.append("")
@@ -663,12 +692,21 @@ class UiFileListMixin:
         self.meta_text.insert("1.0", text)
         self.meta_text.config(state="disabled")
 
-    def _update_hud(self, path: Path, image: Image.Image | None, result: AnalysisResult | None, error: str | None) -> None:
-        if image is None:
+    def _update_hud(
+        self,
+        path: Path,
+        image: Image.Image | None,
+        result: AnalysisResult | None,
+        error: str | None,
+        *,
+        image_size: tuple[int, int] | None = None,
+    ) -> None:
+        if image is None and image_size is None:
             self.hud_name_var.set(path.name)
         else:
             try:
-                self.hud_name_var.set(f"{path.name}  |  {image.width} x {image.height}")
+                width, height = image_size or (image.width, image.height)
+                self.hud_name_var.set(f"{path.name}  |  {width} x {height}")
             except Exception:
                 self.hud_name_var.set(path.name)
         if error:
@@ -725,22 +763,182 @@ class UiFileListMixin:
         path = getattr(self, "_current_preview_path", None)
         if path is None or not Path(path).exists() or not hasattr(self, "large_preview_label"):
             return
+        target_size = self._large_preview_target_size()
+        render_key = self._preview_render_key(Path(path), target_size)
+        if render_key is not None and render_key == getattr(self, "_large_preview_render_key", None):
+            return
+        self._schedule_large_preview_load(delay_ms=80)
+
+    def _cancel_large_preview_load(self) -> None:
+        self._large_preview_run_id = getattr(self, "_large_preview_run_id", 0) + 1
+        self._large_preview_pending_key = None
+        after_id = getattr(self, "_large_preview_after_id", None)
+        if after_id is not None and hasattr(self, "root"):
+            try:
+                self.root.after_cancel(after_id)
+            except Exception:
+                pass
+        self._large_preview_after_id = None
+
+    def _schedule_large_preview_load(self, *, delay_ms: int) -> None:
+        path = getattr(self, "_current_preview_path", None)
+        if path is None or not Path(path).exists() or not hasattr(self, "large_preview_label"):
+            return
+        target_size = self._large_preview_target_size()
+        render_key = self._preview_render_key(Path(path), target_size)
+        if render_key is None or render_key == getattr(self, "_large_preview_render_key", None):
+            return
+        if render_key == getattr(self, "_large_preview_pending_key", None):
+            return
+        after_id = getattr(self, "_large_preview_after_id", None)
+        if after_id is not None:
+            try:
+                self.root.after_cancel(after_id)
+            except Exception:
+                pass
+        self._large_preview_pending_key = render_key
+        self._large_preview_run_id = getattr(self, "_large_preview_run_id", 0) + 1
+        run_id = self._large_preview_run_id
+        self._large_preview_after_id = self.root.after(
+            max(1, int(delay_ms)),
+            lambda p=Path(path), size=target_size, key=render_key, rid=run_id: self._start_large_preview_load(p, size, key, rid),
+        )
+
+    def _start_large_preview_load(
+        self,
+        path: Path,
+        target_size: tuple[int, int],
+        render_key: tuple[str, int, int, int],
+        run_id: int,
+    ) -> None:
+        self._large_preview_after_id = None
+        if run_id != getattr(self, "_large_preview_run_id", 0) or path != getattr(self, "_current_preview_path", None):
+            return
+
+        def worker() -> None:
+            started_at = time.perf_counter()
+            try:
+                image, _original_size = self._load_preview_image(path, target_size)
+                error: Exception | None = None
+            except Exception as exc:
+                image = None
+                error = exc
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            self._dispatch_ui(
+                lambda img=image, err=error, p=path, size=target_size, key=render_key, rid=run_id, ms=elapsed_ms: self._finish_large_preview_load(
+                    p,
+                    size,
+                    key,
+                    rid,
+                    img,
+                    err,
+                    ms,
+                )
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_large_preview_load(
+        self,
+        path: Path,
+        target_size: tuple[int, int],
+        render_key: tuple[str, int, int, int],
+        run_id: int,
+        image: Image.Image | None,
+        error: Exception | None,
+        elapsed_ms: float,
+    ) -> None:
+        if not hasattr(self, "large_preview_label") or not self.large_preview_label.winfo_exists():
+            return
+        if run_id != getattr(self, "_large_preview_run_id", 0) or path != getattr(self, "_current_preview_path", None):
+            return
+        self._large_preview_pending_key = None
+        if image is None or error is not None:
+            self._large_preview_image = None
+            self.large_preview_label.configure(image="", text=tr("preview.load_failed"))
+            return
+        self._update_large_preview_image(image, target_size=target_size, render_key=render_key)
+        if elapsed_ms >= 250.0:
+            self._log_console(f"preview decode: {path.name} | {elapsed_ms:.1f} ms | target={target_size[0]}x{target_size[1]}")
+
+    def _read_preview_original_size(self, path: Path) -> tuple[int, int]:
         try:
             with Image.open(path) as img:
-                image = ImageOps.exif_transpose(img).convert("RGB")
+                return self._oriented_image_size(img)
         except Exception:
-            return
-        self._update_large_preview_image(image)
+            raise
 
-    def _update_large_preview_image(self, image: Image.Image) -> None:
+    def _update_large_preview_image(
+        self,
+        image: Image.Image,
+        *,
+        target_size: tuple[int, int] | None = None,
+        render_key: tuple[str, int, int, int] | None = None,
+    ) -> None:
         if not hasattr(self, "large_preview_label"):
             return
-        width = max(320, self.large_preview_label.winfo_width() - 24)
-        height = max(240, self.large_preview_label.winfo_height() - 24)
+        width, height = target_size or self._large_preview_target_size()
         preview = image.copy()
         preview.thumbnail((width, height), Image.Resampling.LANCZOS)
         self._large_preview_image = ImageTk.PhotoImage(preview)
+        if render_key is None:
+            path = getattr(self, "_current_preview_path", None)
+            render_key = self._preview_render_key(Path(path), (width, height)) if path is not None else None
+        self._large_preview_render_key = render_key
         self.large_preview_label.configure(image=self._large_preview_image, text="")
+
+    def _preview_render_key(self, path: Path, target_size: tuple[int, int]) -> tuple[str, int, int, int] | None:
+        try:
+            stat = path.stat()
+            stamp = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))
+        except Exception:
+            return None
+        return (str(path), max(1, int(target_size[0])), max(1, int(target_size[1])), int(stamp))
+
+    def _load_preview_image(self, path: Path, target_size: tuple[int, int]) -> tuple[Image.Image, tuple[int, int]]:
+        with Image.open(path) as img:
+            original_size = self._oriented_image_size(img)
+            decode_target = (max(1, int(target_size[0] * 1.5)), max(1, int(target_size[1] * 1.5)))
+            try:
+                img.draft("RGB", decode_target)
+            except Exception:
+                pass
+            image = ImageOps.exif_transpose(img).convert("RGB")
+        return image, original_size
+
+    def _oriented_image_size(self, image: Image.Image) -> tuple[int, int]:
+        width, height = image.size
+        try:
+            orientation = int(image.getexif().get(274, 1))
+        except Exception:
+            orientation = 1
+        if orientation in {5, 6, 7, 8}:
+            return height, width
+        return width, height
+
+    def _large_preview_target_size(self) -> tuple[int, int]:
+        label_width = self.large_preview_label.winfo_width()
+        label_height = self.large_preview_label.winfo_height()
+        width = label_width - 24
+        height = label_height - 24
+        if width >= 420 and height >= 300:
+            return width, height
+
+        parent = self.large_preview_label.master
+        parent_width = parent.winfo_width() if parent is not None else 0
+        parent_height = parent.winfo_height() if parent is not None else 0
+        if parent_width >= 420 and parent_height >= 300:
+            return parent_width - 28, parent_height - 28
+
+        right_book = getattr(self, "right_info_book", None)
+        book_width = right_book.winfo_width() if right_book is not None else 0
+        book_height = right_book.winfo_height() if right_book is not None else 0
+        if book_width >= 420 and book_height >= 300:
+            return book_width - 44, book_height - 58
+
+        root_width = self.root.winfo_width() if hasattr(self, "root") else 0
+        root_height = self.root.winfo_height() if hasattr(self, "root") else 0
+        return max(480, int(root_width * 0.30)), max(360, int(root_height * 0.44))
 
     def edit_current_metadata(self) -> None:
         path = self._current_path()

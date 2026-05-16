@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from importlib.util import find_spec
 
@@ -33,8 +34,11 @@ def detect_gpu_backend(*, force_refresh: bool = False, timeout_seconds: float = 
         if _CACHED_BACKEND is not None and not force_refresh:
             return _CACHED_BACKEND
 
-    hardware_name, driver_version = _detect_gpu_hardware(timeout_seconds=min(1.2, timeout_seconds))
-    backend_status, backend_reasons, timed_out = _detect_runtime_backend(timeout_seconds=max(0.8, timeout_seconds))
+    total_budget = max(0.8, float(timeout_seconds or 0.0))
+    deadline = time.monotonic() + total_budget
+    hardware_name, driver_version = _detect_gpu_hardware(timeout_seconds=min(0.8, total_budget))
+    remaining_budget = max(0.0, deadline - time.monotonic())
+    backend_status, backend_reasons, timed_out = _detect_runtime_backend(timeout_seconds=remaining_budget)
     hardware_detected = bool(hardware_name)
 
     if backend_status is not None:
@@ -204,8 +208,14 @@ def _detect_runtime_backend(*, timeout_seconds: float) -> tuple[GPUBackendStatus
     checks = (_detect_cupy, _detect_opencv_cuda, _detect_torch_cuda)
     reasons: list[str] = []
     timed_out = False
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
     for check in checks:
-        status, did_timeout = check(timeout_seconds=timeout_seconds)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            timed_out = True
+            reasons.append("GPU 后端检测总耗时已达到上限")
+            break
+        status, did_timeout = check(timeout_seconds=min(remaining, 1.0))
         timed_out = timed_out or did_timeout
         if status.available:
             return status, reasons, timed_out

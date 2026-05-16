@@ -27,7 +27,7 @@
 ## 维护规则
 
 - 新增跨模块能力时，优先补专题文档，而不是只改根 README。
-- 旧版本行为可在更新文档中保留；专题文档描述当前 1.2.5 维护口径。
+- 旧版本行为可在更新文档中保留；专题文档描述当前 1.2.6 维护口径。
 - 如果专题文档和旧 `docs/updates/` 冲突，以当前专题文档和代码为准。
 - benchmark 自动报告写入被忽略的 `benchmark_reports/`，本地 manifest 使用 `test/manifest.json`，二者都不应提交；可提交的模板是 `test/manifest.example.json`。
 
@@ -52,3 +52,9 @@ New technical topics:
 - `cloud_security.py` 验签改为 canonical JSON（sort_keys=True）后再做 Ed25519 签名，与服务端签名脚本保持一致。
 - `paths.py` 新增 `user_data_dir()` 跨平台用户数据目录和 `migrate_legacy_file()` 自动迁移。
 - 1.2.3/1.2.4 不再通过内置 updater 直升 1.2.5；相关发布使用 `external_download_only` manifest 字段提示手动下载。
+
+# 1.2.6 技术文档补充说明
+
+- 设置页保存后保持打开，主程序通过回调立即保存并应用配置。
+- GPU 探测区分硬件与 Python/CUDA 运行后端；可选 GPU 后端依赖不进入默认 `requirements.txt`，仅记录在 `requirements-gpu.txt`。
+- 右侧大预览从原图生成，并在 Notebook/布局尺寸稳定后自动重绘，避免首次显示使用过小尺寸；超高清图片按目标显示区域降采样解码，避免重复完整解码。

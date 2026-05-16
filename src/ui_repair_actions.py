@@ -25,7 +25,7 @@ from repair_completion_dialog import RepairCompletionEntry, show_repair_completi
 from repair_dialog import show_repair_dialog
 from repair_engine import repair_image_file
 from repair_planner import get_method_labels, get_repair_methods, suggest_methods_for_results
-from stats_store import record_repair, record_repair_batch, save_stats
+from stats_store import record_canceled_task, record_repair, record_repair_batch, save_stats
 from ui.display_names import display_name
 
 
@@ -142,6 +142,7 @@ class UiRepairActionsMixin:
         analysis_workers = analysis_worker_plan.actual_workers if analysis_worker_plan is not None else 0
         repair_workers = self._repair_workers(len(targets))
         base_folder = self._resolve_base_folder()
+        self._repair_cancel_base_folder = base_folder
         self._repair_run_id += 1
         run_id = self._repair_run_id
         cancel_event = threading.Event()
@@ -217,7 +218,7 @@ class UiRepairActionsMixin:
                         step += 1
                         self._dispatch_repair_progress(run_id, step, total_steps, path.name, "修复前分析")
                 finally:
-                    pool.shutdown(wait=True, cancel_futures=True)
+                    pool.shutdown(wait=not cancel_event.is_set(), cancel_futures=True)
 
             if cancel_event.is_set():
                 batch_timings = self._repair_batch_timings(batch_started_at, repaired + skipped)
@@ -256,6 +257,7 @@ class UiRepairActionsMixin:
                             selection,
                             base_folder,
                             repair_progress,
+                            cancel_event,
                         )
                     ] = path
 
@@ -266,6 +268,8 @@ class UiRepairActionsMixin:
                     try:
                         record = future.result()
                     except Exception as exc:
+                        if cancel_event.is_set():
+                            continue
                         failed.append((path, str(exc)))
                         failed_paths.add(path)
                         self._log_console(f"repair failed: {path.name} | {exc}")
@@ -303,7 +307,7 @@ class UiRepairActionsMixin:
                     step += 1
                     self._dispatch_repair_progress(run_id, step, total_steps, path.name, "修复中")
             finally:
-                pool.shutdown(wait=True, cancel_futures=True)
+                pool.shutdown(wait=not cancel_event.is_set(), cancel_futures=True)
 
             if cancel_event.is_set():
                 cleanup_records = self._collect_completed_repair_records(repair_futures, repaired + skipped)
@@ -433,6 +437,8 @@ class UiRepairActionsMixin:
             f"repair cancel requested: run={self._repair_run_id} | elapsed={self._format_ms(elapsed_ms)} | "
             f"targets={len(self._repair_cancel_targets)}"
         )
+        self.stats = record_canceled_task(self.stats, task_type="repair")
+        save_stats(self.stats)
         detail = "正在取消本轮修复；已完成但尚未确认的输出会清理，覆盖原文件会从回滚备份恢复。"
         self.progress_controller.update(
             done=self.progress_controller.state.done,
@@ -457,7 +463,7 @@ class UiRepairActionsMixin:
                 self.errors.pop(path, None)
 
     def _quarantine_canceled_output(self, path: Path) -> Path:
-        quarantine_root = Path(self._resolve_base_folder()) / "_repair_canceled_outputs"
+        quarantine_root = Path(getattr(self, "_repair_cancel_base_folder", self._resolve_base_folder())) / "_repair_canceled_outputs"
         quarantine_root.mkdir(parents=True, exist_ok=True)
         destination = quarantine_root / path.name
         index = 1
@@ -509,8 +515,40 @@ class UiRepairActionsMixin:
         selection: RepairSelection,
     ) -> None:
         self._restore_repair_pre_state()
-        cleaned, cleanup_messages = self._cleanup_canceled_repair_outputs(records)
         total = len(self._repair_cancel_targets)
+        detail = "正在收尾本轮取消；界面会保持响应，完成后自动恢复按钮。"
+        self.progress_controller.update(
+            done=self.progress_controller.state.done,
+            total=self.progress_controller.state.total,
+            title="正在取消修复",
+            detail=detail,
+            status=detail,
+            dialog_title="修复图片中",
+            dialog_header="正在取消修复",
+        )
+        self._log_console(
+            f"repair cancel cleanup started: run={run_id} | completed_before_cancel={len(records)} | failed_before_cancel={len(failed)}"
+        )
+
+        def cleanup_worker() -> None:
+            cleaned, cleanup_messages = self._cleanup_canceled_repair_outputs(records)
+            self._dispatch_ui(
+                lambda c=cleaned, msgs=cleanup_messages, rid=run_id, recs=records, failed_items=failed, timings=batch_timings, total_count=total:
+                self._repair_cancel_cleanup_finished(rid, recs, failed_items, timings, total_count, c, msgs)
+            )
+
+        threading.Thread(target=cleanup_worker, daemon=True).start()
+
+    def _repair_cancel_cleanup_finished(
+        self,
+        run_id: int,
+        records: list[RepairRecord],
+        failed: list[tuple[Path, str]],
+        batch_timings: dict[str, float],
+        total: int,
+        cleaned: int,
+        cleanup_messages: list[str],
+    ) -> None:
         self._log_console(
             f"repair cancel confirmed: run={run_id} | total_wall_time={self._format_ms(batch_timings.get('total_wall_time', 0.0))} | "
             f"completed_before_cancel={len(records)} | failed_before_cancel={len(failed)} | cleaned_outputs={cleaned}"

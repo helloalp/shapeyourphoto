@@ -12,7 +12,7 @@ from app_settings import ANALYSIS_CONCURRENCY_AUTO, AnalysisWorkerPlan, GPU_ACCE
 from gpu_accel import GPUBackendStatus, gpu_console_label, resolve_gpu_status
 from models import AnalysisResult, SimilarImageGroup
 from similar_detector import detect_similar_groups
-from stats_store import record_analysis, record_analysis_batch, save_stats
+from stats_store import record_analysis_batch, record_analysis_result, save_stats
 from ui_constants import ANALYSIS_PROGRESS_STEPS, AnalysisCanceled
 
 
@@ -307,8 +307,8 @@ class UiAnalysisActionsMixin:
                     self._log_console(f"portrait-aware skipped: {path.name} | {result.portrait_rejection_reason}")
                 for cleanup_candidate in result.cleanup_candidates:
                     self._log_console(
-                        f"cleanup candidate: {path.name} | {cleanup_candidate.reason_code} | "
-                        f"{cleanup_candidate.severity} | conf={cleanup_candidate.confidence:.2f}"
+                        f"不适合保留提示：{path.name} | {cleanup_candidate.reason_code} | "
+                        f"{cleanup_candidate.severity} | 可信度={cleanup_candidate.confidence:.2f}"
                     )
                 for note in result.perf_notes:
                     self._log_console(f"analysis perf: {path.name} | {note}")
@@ -317,10 +317,10 @@ class UiAnalysisActionsMixin:
                     self.selected_flags[path].set(True)
                 if path in self.cleanup_flags and path not in self._primary_cleanup_candidates():
                     self.cleanup_flags.pop(path, None)
-                self.stats = record_analysis(
+                self.stats = record_analysis_result(
                     self.stats,
                     image_bytes=path.stat().st_size if path.exists() else 0,
-                    has_issue=bool(result.issues),
+                    issue_codes=[issue.code for issue in result.issues],
                     cleanup_candidate_count=len(result.cleanup_candidates),
                 )
                 save_stats(self.stats)

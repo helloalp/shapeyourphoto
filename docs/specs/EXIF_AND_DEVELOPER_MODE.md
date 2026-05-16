@@ -1,6 +1,6 @@
 # EXIF 编辑与开发者模式
 
-> 本文档英文部分保留为历史记录；中文摘要为 1.2.5 当前维护口径。
+> 本文档英文部分保留为历史记录；中文摘要为 1.2.6 当前维护口径。
 
 ## EXIF 编辑
 
@@ -72,3 +72,7 @@ Unlock state is held only in memory:
 - Not written into `app_settings.json`.
 
 Developer mode only expands local UI capabilities. It is not DRM, not a remote administration mechanism and not a guarantee against a user modifying open-source code.
+
+## 1.2.6 Continued Upgrade
+
+Normal text editing now includes additional safe text fields such as image unique ID and user comment, while developer/exiftool mode adds more XMP/IPTC text fields. The protection rule normalizes common ShapeYourPhoto variants, including case changes, spaces, hyphens, underscores and separators. File names are not part of this protection check; a file named with ShapeYourPhoto can still have unrelated safe metadata edited.

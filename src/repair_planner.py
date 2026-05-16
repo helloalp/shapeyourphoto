@@ -20,6 +20,9 @@ REPAIR_METHODS = [
     RepairMethod("portrait_subject_midcontrast", "人像主体中间调增强", "对人物主体做轻微局部中间调对比增强，保持整体自然。"),
     RepairMethod("portrait_dark_clothing_detail", "深色服装细节增强", "轻微提升深色衣物纹理感，避免把黑色抬成灰色。"),
     RepairMethod("protect_high_key_background", "保护高调背景", "保护白墙、浅色建筑等高调背景，避免自动修复把背景压成灰白。"),
+    RepairMethod("dehaze_midtones", "轻量去灰雾", "适合灰雾感、低通透度画面，轻微增强中间调层次和自然饱和度。"),
+    RepairMethod("protect_sky_water", "保护天空与水面", "处理风景时保护天空、水面和白墙，避免高光压灰或颜色发脏。"),
+    RepairMethod("foliage_balance", "绿植色彩平衡", "对绿植占比较高的画面做保守色彩平衡，避免绿色过艳或过暗。"),
 ]
 
 REPAIR_METHOD_MAP = {method.method_id: method for method in REPAIR_METHODS}
@@ -134,6 +137,20 @@ def suggest_methods_for_result(result: AnalysisResult | None) -> list[str]:
             add("reduce_noise")
         elif issue.code == "color_cast":
             add(issue.meta.get("method_hint", "cool_down"))
+        elif issue.code == "haze_flat":
+            add("dehaze_midtones")
+            add("boost_vibrance")
+        elif issue.code == "local_overexposure":
+            add("protect_sky_water")
+            add("recover_highlights")
+        elif issue.code == "local_underexposure":
+            add("lift_shadows")
+            add("boost_contrast")
+
+    if result.scene_type in {"water_sky_landscape_scene"}:
+        add("protect_sky_water")
+    if result.scene_type == "foliage_scene":
+        add("foliage_balance")
 
     if denoise_needed and "reduce_noise" not in seen and result.noise_level == "high":
         add("reduce_noise")
@@ -251,6 +268,14 @@ def build_repair_plan(result: AnalysisResult | None, selection: RepairSelection)
             value = 0.16
         elif method_id == "protect_high_key_background":
             value = 0.26 if unrecoverable_highlights or result.portrait_scene_type in {"high_key_portrait", "backlit_portrait"} else 0.18
+        elif method_id == "dehaze_midtones":
+            value = 0.18 + max(low_contrast, muted) * 0.18
+            if result.scene_type in {"water_sky_landscape_scene", "foliage_scene"}:
+                value = min(value, 0.22)
+        elif method_id == "protect_sky_water":
+            value = 0.16 if result.scene_type == "water_sky_landscape_scene" else 0.12
+        elif method_id == "foliage_balance":
+            value = 0.14 if result.scene_type == "foliage_scene" else 0.10
         else:
             value = 0.22
         if selection.mode == "manual" and method_id in {"lift_shadows", "recover_highlights"} and window_guard:

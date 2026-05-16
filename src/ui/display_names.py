@@ -20,6 +20,9 @@ ISSUE_CODE_LABELS_ZH = {
     "severe_underexposed": "严重曝光不足",
     "high_noise": "噪点偏高",
     "color_cast": "色偏",
+    "local_overexposure": "局部高光偏亮",
+    "local_underexposure": "局部暗部偏沉",
+    "haze_flat": "画面灰雾感",
 }
 
 ISSUE_CODE_LABELS_EN = {
@@ -36,6 +39,9 @@ ISSUE_CODE_LABELS_EN = {
     "severe_underexposed": "Severely underexposed",
     "high_noise": "High noise",
     "color_cast": "Color cast",
+    "local_overexposure": "Local highlights too bright",
+    "local_underexposure": "Local shadows too dark",
+    "haze_flat": "Hazy or flat image",
 }
 
 CLEANUP_REASON_LABELS_ZH = {
@@ -88,6 +94,32 @@ STATUS_LABELS_EN = {
     "skipped": "Skipped",
 }
 
+ISSUE_CODE_LABELS_JA = {
+    "overexposed": "露出オーバー / ハイライト過多",
+    "underexposed": "露出不足 / 暗部不足",
+    "low_contrast": "コントラスト低め",
+    "flat_tone": "階調が平坦",
+    "muted_colors": "色が淡い",
+    "over_saturated": "彩度が高すぎる",
+    "out_of_focus": "シャープさ不足",
+    "portrait_out_of_focus": "人物主体のピント不足",
+    "global_out_of_focus": "画像全体が大きくぼけています",
+    "severe_overexposed": "深刻な露出オーバー",
+    "severe_underexposed": "深刻な露出不足",
+    "high_noise": "ノイズ多め",
+    "color_cast": "色かぶり",
+    "local_overexposure": "局所的なハイライト過多",
+    "local_underexposure": "局所的な暗部沈み",
+    "haze_flat": "かすみ・抜け不足",
+}
+
+CLEANUP_REASON_LABELS_JA = {
+    "portrait_out_of_focus": "人物主体のピントが大きく外れています",
+    "global_out_of_focus": "画像全体が大きくぼけています",
+    "severe_overexposed": "深刻な露出オーバー",
+    "severe_underexposed": "深刻な露出不足",
+}
+
 STATUS_LABELS_JA = {
     "pending": "保留中",
     "selected": "選択済み",
@@ -108,6 +140,9 @@ SCENE_TYPE_LABELS_ZH = {
     "architecture_scene": "建筑/结构场景",
     "architecture_vivid_scene": "高饱和建筑场景",
     "natural_vivid_scene": "自然高饱和场景",
+    "water_sky_landscape_scene": "天空/水面风景",
+    "foliage_scene": "绿植场景",
+    "hazy_scene": "灰雾低通透场景",
 }
 
 SCENE_TYPE_LABELS_EN = {
@@ -121,6 +156,25 @@ SCENE_TYPE_LABELS_EN = {
     "architecture_scene": "Architecture/structure scene",
     "architecture_vivid_scene": "Vivid architecture scene",
     "natural_vivid_scene": "Naturally vivid scene",
+    "water_sky_landscape_scene": "Sky/water landscape",
+    "foliage_scene": "Foliage scene",
+    "hazy_scene": "Hazy low-clarity scene",
+}
+
+SCENE_TYPE_LABELS_JA = {
+    "generic_scene": "一般シーン",
+    "portrait_scene": "人物シーン",
+    "artwork_scene": "絵画/ポスター人物シーン",
+    "people_context_scene": "人物文脈シーン",
+    "silhouette_scene": "シルエットシーン",
+    "high_contrast_window_scene": "高コントラスト窓景",
+    "low_key_scene": "ローキーシーン",
+    "architecture_scene": "建築/構造シーン",
+    "architecture_vivid_scene": "鮮やかな建築シーン",
+    "natural_vivid_scene": "自然な高彩度シーン",
+    "water_sky_landscape_scene": "空/水面の風景",
+    "foliage_scene": "緑の多いシーン",
+    "hazy_scene": "かすみ・低明瞭シーン",
 }
 
 PORTRAIT_TYPE_LABELS_ZH = {
@@ -264,6 +318,7 @@ WORKER_LABELS_ZH = {
     "low": "低",
     "medium": "中",
     "high": "高",
+    "extreme": "极高",
     "custom": "自定义同时处理数量",
 }
 
@@ -272,6 +327,7 @@ WORKER_LABELS_EN = {
     "low": "Low",
     "medium": "Medium",
     "high": "High",
+    "extreme": "Extreme",
     "custom": "Custom worker count",
 }
 
@@ -374,6 +430,31 @@ REPAIR_METHOD_LABELS_EN = {
     "portrait_subject_midcontrast": "Portrait midtone contrast",
     "portrait_dark_clothing_detail": "Dark clothing detail enhancement",
     "protect_high_key_background": "Protect high-key background",
+    "dehaze_midtones": "Light dehaze",
+    "protect_sky_water": "Protect sky and water",
+    "foliage_balance": "Foliage color balance",
+}
+
+REPAIR_METHOD_LABELS_JA = {
+    "auto_tone": "自動階調補正",
+    "recover_highlights": "ハイライト回復",
+    "lift_shadows": "暗部を持ち上げる",
+    "boost_contrast": "コントラスト強化",
+    "boost_vibrance": "自然な彩度を強化",
+    "reduce_saturation": "彩度を下げる",
+    "boost_clarity": "明瞭度を強化",
+    "reduce_noise": "適応ノイズ低減",
+    "cool_down": "色温度を下げる / 暖色かぶりを抑える",
+    "warm_up": "色温度を上げる / 寒色かぶりを抑える",
+    "add_magenta": "マゼンタを補う / 緑かぶりを抑える",
+    "add_green": "緑を補う / マゼンタかぶりを抑える",
+    "portrait_local_face_enhance": "顔の局所強化",
+    "portrait_subject_midcontrast": "人物中間調コントラスト",
+    "portrait_dark_clothing_detail": "暗い服のディテール強化",
+    "protect_high_key_background": "ハイキー背景を保護",
+    "dehaze_midtones": "軽いかすみ除去",
+    "protect_sky_water": "空と水面を保護",
+    "foliage_balance": "緑の色バランス",
 }
 
 _TABLES = {
@@ -414,8 +495,8 @@ _TABLES = {
         "perf_stage": PERF_STAGE_LABELS_EN,
     },
     "ja_JP": {
-        "issue": ISSUE_CODE_LABELS_EN,
-        "cleanup_reason": CLEANUP_REASON_LABELS_EN,
+        "issue": ISSUE_CODE_LABELS_JA,
+        "cleanup_reason": CLEANUP_REASON_LABELS_JA,
         "severity": {
             "low": "低",
             "medium": "中",
@@ -425,7 +506,7 @@ _TABLES = {
             "severe": "深刻",
         },
         "status": STATUS_LABELS_JA,
-        "scene_type": SCENE_TYPE_LABELS_EN,
+        "scene_type": SCENE_TYPE_LABELS_JA,
         "portrait_type": PORTRAIT_TYPE_LABELS_EN,
         "portrait_scene_type": PORTRAIT_SCENE_LABELS_EN,
         "exposure_type": EXPOSURE_TYPE_LABELS_EN,
@@ -443,6 +524,7 @@ _TABLES = {
             "low": "低",
             "medium": "中",
             "high": "高",
+            "extreme": "極高",
             "custom": "同時処理数を指定",
         },
         "gpu": GPU_LABELS_JA,
@@ -473,6 +555,8 @@ def display_name(kind: str, value: object, *, unknown_prefix: str | None = None)
     if kind == "repair_method":
         if lang == "en_US" and raw in REPAIR_METHOD_LABELS_EN:
             return REPAIR_METHOD_LABELS_EN[raw]
+        if lang == "ja_JP" and raw in REPAIR_METHOD_LABELS_JA:
+            return REPAIR_METHOD_LABELS_JA[raw]
         method = REPAIR_METHOD_MAP.get(raw)
         return method.label if method is not None else _unknown(prefix, raw)
     table = _table(kind)

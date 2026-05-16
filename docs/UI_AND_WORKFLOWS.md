@@ -166,3 +166,13 @@
 - EXIF 编辑弹窗：保存确认按钮使用"保存修改 / 取消"，保护字段显示"此项由软件保留"，不显示保存前备份的实现细节。
 - 设置页更新区域：显示 `Shape Your Photo vX.Y.Z` 和"版本 ID N"，不显示 `build_id=` 原始字段和更新 URL。
 - 主窗口关闭仅显示关闭 Splash，不再显示"Closing..."文字。
+
+# 1.2.6 Continued UI Workflow Addendum
+
+- Help contains Help & Website, Contact Author, and FAQ. FAQ opens `https://helloalp.top/tools/shapeyourphoto/articles/faq.html`; Contact Author provides an email template, extra notes field, send mail, copy template, and copy email actions.
+- In non-English languages, a top-level `Language` menu item appears next to View / Settings / Help and opens Settings directly on the language page. It disappears when the current language is English.
+- Settings uses fixed bottom actions and per-tab scrolling. Save keeps the window open and refreshes the current window text where possible.
+- The main toolbar no longer shows the drag/drop hint. Recent Scan Summary lives in the task progress panel, replacing the former long scan explanation.
+- The task progress panel should keep its title/detail in one compact row plus the progress bar. Long scan details belong in the scan summary dialog or Console, not in the main row.
+- The right-side tabs use tight notebook content padding so Diagnosis, Preview, Properties / EXIF, and Console scrollbars align with the right edge.
+- Stats uses summary cards plus multiple charts; it should be useful with sparse data and richer after scan/analyze/repair/cancel flows add records.

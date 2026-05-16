@@ -469,6 +469,13 @@ def apply_method(
         fixed = portrait_dark_clothing_detail(image, result, effective_strength)
     elif method_id == "protect_high_key_background":
         fixed = protect_high_key_background(image, result, effective_strength, original_image=original_image)
+    elif method_id == "dehaze_midtones":
+        fixed = boost_contrast(image, result, min(0.45, effective_strength * 0.82))
+        fixed = boost_vibrance(fixed, result, min(0.34, effective_strength * 0.70))
+    elif method_id == "protect_sky_water":
+        fixed = recover_highlights(image, result, min(0.30, effective_strength * 0.72))
+    elif method_id == "foliage_balance":
+        fixed = reduce_saturation(image, result, min(0.22, effective_strength * 0.55))
     else:
         fixed = image
     if perf_timings is not None:
@@ -738,7 +745,7 @@ def _select_scene_candidate(
 
     if best_image is None:
         policy_notes.extend(rejected)
-        policy_notes.append("单图候选评分未优于原图，已回退为 no-op。")
+        policy_notes.append("单图候选评分未优于原图，未生成新的修复版本。")
         return None, None, [], policy_notes
 
     policy_notes.extend(rejected)
@@ -771,9 +778,15 @@ def repair_image_file(
     selection: RepairSelection,
     base_folder: str | Path,
     progress_callback: Callable[[str], None] | None = None,
+    cancel_event=None,
 ) -> RepairRecord | None:
+    def _raise_if_canceled() -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("repair canceled")
+
     perf_timings: dict[str, float] = {}
     repair_started_at = time.perf_counter()
+    _raise_if_canceled()
     primary_cleanup_candidate = _primary_cleanup_candidate(result)
     cleanup_skip_reason = None
     if primary_cleanup_candidate is not None:
@@ -787,6 +800,7 @@ def repair_image_file(
     started_at = time.perf_counter()
     if progress_callback is not None:
         progress_callback("生成修复方案")
+    _raise_if_canceled()
     plan = build_repair_plan(result, selection)
     _add_timing(perf_timings, "planner", started_at)
     if forced_repair:
@@ -823,6 +837,7 @@ def repair_image_file(
 
     if progress_callback is not None:
         progress_callback("读取图片与元数据")
+    _raise_if_canceled()
     started_at = time.perf_counter()
     with Image.open(source_path) as img:
         exif_bytes = img.info.get("exif")
@@ -879,6 +894,7 @@ def repair_image_file(
     if result is not None and result.portrait_likely:
         if progress_callback is not None:
             progress_callback("处理人像与画面细节")
+        _raise_if_canceled()
         fixed, applied_strength, warnings, policy_notes = _select_portrait_candidate(
             image,
             plan,
@@ -911,6 +927,7 @@ def repair_image_file(
     else:
         if progress_callback is not None:
             progress_callback("处理曝光、色彩与清晰度")
+        _raise_if_canceled()
         fixed, applied_strength, warnings, policy_notes = _select_scene_candidate(
             image,
             plan,
@@ -932,7 +949,7 @@ def repair_image_file(
                 skipped_reason=(
                     "强制尝试修复后，候选评分未优于原图，已回退。"
                     if forced_repair
-                    else scene_skip_reason or "当前候选未优于原图，已回退为 no-op。"
+                    else scene_skip_reason or "当前候选未优于原图，未生成新的修复版本。"
                 ),
                 applied_strength=None,
                 forced_repair=forced_repair,
@@ -973,6 +990,7 @@ def repair_image_file(
     started_at = time.perf_counter()
     if progress_callback is not None:
         progress_callback("准备保存结果")
+    _raise_if_canceled()
     save_kwargs: dict[str, object] = {}
     if dpi:
         save_kwargs["dpi"] = dpi
@@ -991,6 +1009,7 @@ def repair_image_file(
     started_at = time.perf_counter()
     if progress_callback is not None:
         progress_callback("保存结果")
+    _raise_if_canceled()
     fixed.save(output_path, **save_kwargs)
     _add_timing(perf_timings, "save_output", started_at)
     _add_timing(perf_timings, "repair_total", repair_started_at)

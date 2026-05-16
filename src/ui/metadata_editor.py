@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from tkinter import messagebox, ttk
 from PIL import ExifTags, Image
 
 from developer_mode import developer_session
+from ui.language import tr
 from ui.window_titles import app_window_title
 from window_layout import center_window
 
@@ -23,6 +25,8 @@ SAFE_TEXT_TAGS = {
     "artist": (315, "作者", "str"),
     "copyright": (33432, "版权", "str"),
     "keywords": (40094, "关键词 / 备注", "xp"),
+    "image_unique_id": (42016, "图片唯一标识", "str"),
+    "user_comment": (37510, "用户备注", "str"),
 }
 
 ADVANCED_TAGS = {
@@ -45,7 +49,11 @@ EXIFTOOL_ADVANCED_FIELDS = {
     "gps_altitude": ("GPSAltitude", "GPS 高度"),
     "xmp_title": ("XMP-dc:Title", "XMP 标题"),
     "xmp_description": ("XMP-dc:Description", "XMP 描述"),
+    "xmp_creator": ("XMP-dc:Creator", "XMP 作者"),
+    "xmp_rights": ("XMP-dc:Rights", "XMP 版权"),
     "iptc_keywords": ("IPTC:Keywords", "IPTC 关键词"),
+    "iptc_caption": ("IPTC:Caption-Abstract", "IPTC 说明"),
+    "iptc_credit": ("IPTC:Credit", "IPTC 来源/署名"),
 }
 
 ALWAYS_PROTECTED_TAGS = {
@@ -84,7 +92,19 @@ def _clean_text(value: object, *, encoding: str = "str") -> str:
 
 
 def _contains_marker(value: object) -> bool:
-    return SHAPEYOURPHOTO_MARKER in _clean_text(value).casefold()
+    cleaned = _clean_text(value).casefold()
+    compact = re.sub(r"[\s_\-./\\:|]+", "", cleaned)
+    return SHAPEYOURPHOTO_MARKER in compact or "shapeyourphoto" in cleaned or "shape your photo" in cleaned
+
+
+def _is_protected_field(label: str, value: object) -> bool:
+    return _contains_marker(label) or _contains_marker(value)
+
+
+def _field_label(field_id: str, fallback: str) -> str:
+    key = f"meta.field.{field_id}"
+    value = tr(key)
+    return value if value != key else fallback
 
 
 def _gps_summary(exif: Image.Exif) -> str:
@@ -137,7 +157,7 @@ def supports_metadata_edit(path: Path, *, developer_unlocked: bool | None = None
             img.getexif()
     except Exception as exc:
         return False, f"读取元数据失败：{exc}"
-    return True, "开发者模式可编辑更多 EXIF 字段。" if (developer_unlocked if developer_unlocked is not None else developer_session.unlocked) else ""
+    return True, "" if not (developer_unlocked if developer_unlocked is not None else developer_session.unlocked) else "开发者模式可编辑更多 EXIF 字段。"
 
 
 def _confirm_save_metadata(parent: tk.Widget) -> bool:
@@ -160,8 +180,8 @@ def _confirm_save_metadata(parent: tk.Widget) -> bool:
         result.set(value)
         dialog.destroy()
 
-    ttk.Button(actions, text="取消", command=lambda: _finish(False)).grid(row=0, column=1, padx=(8, 0))
-    ttk.Button(actions, text="保存修改", command=lambda: _finish(True)).grid(row=0, column=2)
+    ttk.Button(actions, text=tr("meta.cancel"), command=lambda: _finish(False)).grid(row=0, column=1, padx=(8, 0))
+    ttk.Button(actions, text=tr("meta.save"), command=lambda: _finish(True)).grid(row=0, column=2)
     dialog.protocol("WM_DELETE_WINDOW", lambda: _finish(False))
     center_window(dialog, 380, 150)
     dialog.wait_window()
@@ -220,8 +240,8 @@ class MetadataEditDialog(tk.Toplevel):
         actions = ttk.Frame(outer)
         actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(16, 0))
         actions.columnconfigure(0, weight=1)
-        ttk.Button(actions, text="取消", command=self._cancel).grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(actions, text="保存修改", command=self._save).grid(row=0, column=2)
+        ttk.Button(actions, text=tr("meta.cancel"), command=self._cancel).grid(row=0, column=1, padx=(8, 0))
+        ttk.Button(actions, text=tr("meta.save"), command=self._save).grid(row=0, column=2)
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         center_window(self, 780, 620)
 
@@ -235,28 +255,30 @@ class MetadataEditDialog(tk.Toplevel):
             if self.developer_unlocked:
                 specs.update(ADVANCED_TAGS)
             for field_id, (tag, label, encoding) in specs.items():
+                label = _field_label(field_id, label)
                 raw = _gps_summary(exif) if tag == 34853 else exif.get(tag, "")
                 value = _clean_text(raw, encoding=encoding)
                 reason = ""
                 editable = encoding != "readonly"
                 if tag in ALWAYS_PROTECTED_TAGS:
                     editable = False
-                    reason = ALWAYS_PROTECTED_TAGS[tag]
-                if _contains_marker(raw):
+                    reason = tr("meta.protected")
+                if _is_protected_field(label, raw):
                     editable = False
-                    reason = "字段内容包含 ShapeYourPhoto 标记，属于软件完整性/溯源字段。"
+                    reason = tr("meta.protected")
                 if not self.developer_unlocked and field_id not in SAFE_TEXT_TAGS:
                     editable = False
-                    reason = "需要开发者模式。"
+                    reason = tr("meta.developer_required")
                 fields.append(FieldState(field_id, tag, label, value, encoding, editable, reason))
             if self.developer_unlocked:
                 for field_id, (tool_tag, label) in EXIFTOOL_ADVANCED_FIELDS.items():
+                    label = _field_label(field_id, label)
                     value = exiftool_values.get(tool_tag, "")
                     editable = exiftool_available
-                    reason = "" if editable else "需要安装/打包 exiftool 后端。"
-                    if _contains_marker(value):
+                    reason = "" if editable else tr("meta.exiftool_required")
+                    if _is_protected_field(label, value):
                         editable = False
-                        reason = "字段内容包含 ShapeYourPhoto 标记，属于软件完整性/溯源字段。"
+                        reason = tr("meta.protected")
                     fields.append(FieldState(field_id, 0, label, value, f"exiftool:{tool_tag}", editable, reason))
         return fields
 
@@ -287,14 +309,14 @@ class MetadataEditDialog(tk.Toplevel):
                     if field.encoding.startswith("exiftool:"):
                         tool_tag = field.encoding.split(":", 1)[1]
                         new_value = self.vars[field_id].get().strip()
-                        if _contains_marker(new_value):
-                            raise RuntimeError(f"{field.label} 包含 ShapeYourPhoto 标记，禁止写入。")
+                        if _is_protected_field(field.label, new_value):
+                            raise RuntimeError(tr("meta.protected"))
                         exiftool_updates.append((tool_tag, new_value))
                         continue
                     old_value = exif.get(field.tag, "")
                     new_value = self.vars[field_id].get().strip()
-                    if _contains_marker(old_value) or _contains_marker(new_value):
-                        raise RuntimeError(f"{field.label} 包含 ShapeYourPhoto 标记，禁止写入。")
+                    if _is_protected_field(field.label, old_value) or _is_protected_field(field.label, new_value):
+                        raise RuntimeError(tr("meta.protected"))
                     encoded = self._encode_value(field, new_value)
                     if encoded:
                         exif[field.tag] = encoded

@@ -11,7 +11,7 @@ from paths import migrate_legacy_file
 from ui.language import DEFAULT_LANGUAGE, normalize_language
 
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 6
+SETTINGS_SCHEMA_VERSION = 7
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
 DEFAULT_SCAN_IGNORE_SUFFIXES: list[str] = []
 DEFAULT_SCAN_IGNORE_CONTAINS: list[str] = []
@@ -29,6 +29,7 @@ ANALYSIS_CONCURRENCY_AUTO = "auto"
 ANALYSIS_CONCURRENCY_LOW = "low"
 ANALYSIS_CONCURRENCY_MEDIUM = "medium"
 ANALYSIS_CONCURRENCY_HIGH = "high"
+ANALYSIS_CONCURRENCY_EXTREME = "extreme"
 ANALYSIS_CONCURRENCY_CUSTOM = "custom"
 
 ANALYSIS_CONCURRENCY_OPTIONS: list[tuple[str, str]] = [
@@ -36,6 +37,7 @@ ANALYSIS_CONCURRENCY_OPTIONS: list[tuple[str, str]] = [
     (ANALYSIS_CONCURRENCY_LOW, "低"),
     (ANALYSIS_CONCURRENCY_MEDIUM, "中"),
     (ANALYSIS_CONCURRENCY_HIGH, "高"),
+    (ANALYSIS_CONCURRENCY_EXTREME, "极高"),
     (ANALYSIS_CONCURRENCY_CUSTOM, "自定义同时处理数量"),
 ]
 ANALYSIS_CONCURRENCY_LABELS = {value: label for value, label in ANALYSIS_CONCURRENCY_OPTIONS}
@@ -172,7 +174,12 @@ def normalize_analysis_custom_workers(value: object) -> int:
         workers = int(value)
     except (TypeError, ValueError):
         return 0
-    return max(0, min(32, workers))
+    return max(0, min(max_analysis_workers(), workers))
+
+
+def max_analysis_workers(*, cpu_count: int | None = None) -> int:
+    cpus = max(1, int(cpu_count or os.cpu_count() or 4))
+    return max(2, min(32, cpus * 2))
 
 
 @dataclass(frozen=True)
@@ -195,19 +202,25 @@ def resolve_analysis_worker_plan(
     normalized_mode = normalize_analysis_concurrency_mode(mode)
     notes: list[str] = []
 
+    limit = max_analysis_workers(cpu_count=cpus)
+
     if normalized_mode == ANALYSIS_CONCURRENCY_LOW:
         requested = max(1, min(2, cpus // 2 or 1))
     elif normalized_mode == ANALYSIS_CONCURRENCY_MEDIUM:
         requested = max(1, min(6, max(2, cpus // 2)))
     elif normalized_mode == ANALYSIS_CONCURRENCY_HIGH:
         requested = max(1, min(16, max(2, cpus + 2)))
+    elif normalized_mode == ANALYSIS_CONCURRENCY_EXTREME:
+        requested = max(2, min(limit, cpus * 2))
     elif normalized_mode == ANALYSIS_CONCURRENCY_CUSTOM:
         custom = normalize_analysis_custom_workers(custom_workers)
         if custom <= 0:
             requested = max(1, min(12, max(2, cpus)))
             notes.append("custom worker value is empty; using auto default")
         else:
-            requested = custom
+            requested = min(custom, limit)
+            if custom > limit:
+                notes.append(f"limited by this computer ({limit})")
     else:
         requested = max(1, min(12, max(2, cpus)))
 
@@ -296,6 +309,9 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
         migrated.setdefault("scan_ignore_suffixes", list(DEFAULT_SCAN_IGNORE_SUFFIXES))
         migrated.setdefault("scan_ignore_contains", list(DEFAULT_SCAN_IGNORE_CONTAINS))
         migrated.setdefault("ui_density", UI_DENSITY_STANDARD)
+    if old_version < 7:
+        if migrated.get("analysis_concurrency_mode") == "very_high":
+            migrated["analysis_concurrency_mode"] = ANALYSIS_CONCURRENCY_EXTREME
     return migrated
 
 

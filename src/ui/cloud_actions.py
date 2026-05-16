@@ -96,7 +96,7 @@ class UiCloudActionsMixin:
             return "current"
         remote_id = int(manifest.get("version_id") or manifest.get("build_id") or 0)
         if not manual and should_suppress_update_prompt(remote_id):
-            self._log_console(f"update available but prompt suppressed for version_id={remote_id}")
+            self._log_console(f"检测到更新，但本次暂不重复提示：{remote_id}")
             return "suppressed"
         result = show_update_available_dialog(owner, manifest, manual=manual)
         if result == "decline":

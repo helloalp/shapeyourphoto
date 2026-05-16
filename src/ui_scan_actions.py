@@ -7,10 +7,11 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 
 from analyzer import is_supported_image
-from app_settings import scan_mode_label
 from file_actions import ScanResult, scan_image_paths_with_progress
 from scan_dialogs import SCAN_MODE_ALL, show_scan_mode_dialog
 from scan_summary_dialog import show_scan_summary_dialog
+from stats_store import record_scan_batch, save_stats
+from ui.display_names import display_name
 
 
 class UiScanActionsMixin:
@@ -139,7 +140,7 @@ class UiScanActionsMixin:
         )
 
     def _scan_mode_label(self, mode: str) -> str:
-        return scan_mode_label(mode)
+        return display_name("scan_mode", mode)
 
     def _start_directory_scans(
         self,
@@ -309,10 +310,16 @@ class UiScanActionsMixin:
             f"scan timing: total_wall_time={self._format_ms(scan_wall_ms)} | visited_files={visited} | "
             f"imported={len(paths)} | skipped_dirs={skipped}"
         )
-        detail = f"当前列表共 {len(self.image_paths)} 张图片，本次新读取 {len(paths)} 张。"
-        if self._last_scan_summary:
-            skipped_count = sum(result.summary.skipped_directory_count for result in scan_results)
-            detail = f"{detail} 跳过文件夹 {skipped_count} 个，可点击“查看最近扫描摘要”查看明细。"
+        self.stats = record_scan_batch(
+            self.stats,
+            folders=len(scan_results),
+            files=visited,
+            imported=len(paths),
+            skipped_folders=skipped,
+            wall_ms=scan_wall_ms,
+        )
+        save_stats(self.stats)
+        detail = f"本次新读取 {len(paths)} 张，跳过文件夹 {skipped} 个。"
         self._finish_task("文件夹扫描和加载完成", detail)
         self.refresh_tree()
         if self.image_paths:

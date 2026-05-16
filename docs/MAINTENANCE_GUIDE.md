@@ -1,6 +1,6 @@
 # Maintenance Guide
 
-本文是 1.2.5 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
+本文是 1.2.6 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
 
 ## 基本原则
 
@@ -191,6 +191,15 @@
 - 开发者私有文件如部署流程、AI协作提示词等归档于 `private_docs/`，严禁提交到公开仓库或发版包中。
 - UI/云端操作相关的网络调用必须放置于后台线程，超时和重试必须不阻塞主界面的重绘和用户操作，关闭窗口时必须能安全切断关联。
 
+# 1.2.6 维护补充说明
+
+- 设置页保存动作应立即应用配置但保留窗口，方便用户连续调整；只有取消或关闭才退出设置页。
+- 右侧预览图必须从原图生成，不复用列表缩略图；首次选择图片时需在布局稳定后重绘，避免首屏小图。超高清图片预览应按显示区域降采样解码，后台完成像素解码，并缓存当前路径、尺寸和文件时间戳，避免主线程等待完整解码或重复解码。
+- 主列表缩略图缓存必须有容量上限并带文件时间戳；大文件夹浏览不能让 `PhotoImage` 缓存无限增长，原图修改后也不能继续复用旧缩略图。
+- 列表、清理复核和相似图复核的缩略图应按目标尺寸解码，不得为了小缩略图完整解码大 JPEG。
+- GPU 状态必须区分硬件检测、运行后端检测和当前任务是否实际使用三层。显卡可见但 CuPy/OpenCV CUDA/torch CUDA 缺失时继续 CPU 回退，并指向 `requirements-gpu.txt` 作为可选后端验证入口。
+- GPU 后端探测必须使用共享总耗时预算，不能让多个可选库串行累积完整超时。
+
 ---
 > 下方内容为旧版本的维护规范英文历史记录，供追溯使用。
 
@@ -200,7 +209,7 @@
 - Update and cloud-message UI orchestration lives in `ui/cloud_actions.py` and `ui/cloud_dialogs.py`; do not move protocol logic into `ui_app.py`.
 - Developer mode is session-only and backed by `developer_mode.py`; never store an unlocked flag in `app_settings.json`.
 - EXIF edits must preserve ShapeYourPhoto provenance fields and block any value containing `shapeyourphoto`.
-- Startup scripts must stay fast; 1.2.5 allows only on-demand runtime dependency installation from `requirements.txt`, and still forbids benchmarks, scans or update-package downloads during startup.
+- Startup scripts must stay fast; 1.2.6 allows only on-demand runtime dependency installation from `requirements.txt`, and still forbids benchmarks, scans or update-package downloads during startup.
 - GitHub auto-packaging workflow is paused in 1.1.8; release/server steps live in ignored private docs.
 
 # 1.1.9 Maintenance Addendum

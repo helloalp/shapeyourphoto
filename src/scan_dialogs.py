@@ -12,12 +12,13 @@ from app_settings import (
     normalize_scan_ignore_prefixes,
     normalize_scan_ignore_suffixes,
 )
+from ui.language import tr
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
 def _rule_text(label: str, values: list[str]) -> str:
-    return f"{label}：{', '.join(values) if values else '无'}"
+    return label.format(values=", ".join(values) if values else tr("scan_dialog.none"))
 
 
 class ScanModeDialog(tk.Toplevel):
@@ -30,11 +31,11 @@ class ScanModeDialog(tk.Toplevel):
         ignored_contains: list[str] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.title(app_window_title("选择文件夹扫描范围"))
+        self.title(app_window_title(tr("scan_dialog.title")))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
-        self.resizable(False, True)
-        self.minsize(620, 320)
+        self.resizable(True, True)
+        self.minsize(680, 460)
         self.result: str | None = None
         self._size_notice_var = tk.StringVar(value="")
         self._ignored_prefixes = normalize_scan_ignore_prefixes(ignored_prefixes)
@@ -67,42 +68,42 @@ class ScanModeDialog(tk.Toplevel):
 
         ttk.Label(
             content,
-            text="当前文件夹包含子文件夹，请选择扫描范围。",
+            text=tr("scan_dialog.heading"),
             font=("Microsoft YaHei UI", 11, "bold"),
         ).pack(anchor="w")
         ttk.Label(
             content,
             text=(
-                f"文件夹：{folder}\n"
-                f"{_rule_text('忽略前缀', self._ignored_prefixes)}\n"
-                f"{_rule_text('忽略后缀', self._ignored_suffixes)}\n"
-                f"{_rule_text('名称包含', self._ignored_contains)}\n"
-                "名称符合这些规则的文件夹会被跳过，里面的图片也不会扫描。"
+                f"{tr('scan_dialog.folder').format(folder=folder)}\n"
+                f"{_rule_text(tr('scan_dialog.prefix'), self._ignored_prefixes)}\n"
+                f"{_rule_text(tr('scan_dialog.suffix'), self._ignored_suffixes)}\n"
+                f"{_rule_text(tr('scan_dialog.contains'), self._ignored_contains)}\n"
+                f"{tr('scan_dialog.rule_note')}"
             ),
-            wraplength=560,
+            wraplength=620,
             justify="left",
         ).pack(anchor="w", pady=(8, 14))
 
         options = [
-            (SCAN_MODE_ALL, "扫描全部，包含子文件夹", "扫描当前文件夹和所有允许进入的子文件夹。"),
-            (SCAN_MODE_CURRENT_ONLY, "只扫描当前文件夹", "只读取当前文件夹里的图片。"),
-            (SCAN_MODE_SUBDIRS_ONLY, "只扫描子文件夹", "只读取子文件夹中的图片。"),
+            (SCAN_MODE_ALL, tr("scan_dialog.all"), tr("scan_dialog.all_desc")),
+            (SCAN_MODE_CURRENT_ONLY, tr("scan_dialog.current"), tr("scan_dialog.current_desc")),
+            (SCAN_MODE_SUBDIRS_ONLY, tr("scan_dialog.subdirs"), tr("scan_dialog.subdirs_desc")),
         ]
         for mode, label, description in options:
             ttk.Button(content, text=label, command=lambda value=mode: self._choose(value)).pack(fill="x", pady=4)
-            ttk.Label(content, text=description, wraplength=560, justify="left").pack(anchor="w", padx=(6, 0))
+            ttk.Label(content, text=description, wraplength=620, justify="left").pack(anchor="w", padx=(6, 0))
 
         action_row = ttk.Frame(outer)
         action_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         ttk.Label(action_row, textvariable=self._size_notice_var).pack(side="left")
-        ttk.Button(action_row, text="取消扫描", command=self._cancel).pack(side="right")
+        ttk.Button(action_row, text=tr("scan_dialog.cancel"), command=self._cancel).pack(side="right")
 
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         self.update_idletasks()
-        width = 640
-        max_height = max(260, self.winfo_screenheight() - 120)
-        requested_height = min(max_height, max(320, self.winfo_reqheight()))
-        bind_minimum_size_notice(self, self._size_notice_var, 620, 320)
+        width = min(760, max(680, self.winfo_reqwidth()))
+        max_height = max(460, self.winfo_screenheight() - 120)
+        requested_height = min(max_height, max(520, self.winfo_reqheight()))
+        bind_minimum_size_notice(self, self._size_notice_var, 680, 460)
         center_window(self, width, requested_height)
 
     def _choose(self, mode: str) -> None:

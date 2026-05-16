@@ -16,9 +16,12 @@
 - `low`：低并发。
 - `medium`：平衡模式。
 - `high`：激进模式。
+- `extreme`：极高模式，按本机 CPU 规模给出更高默认值，但仍受 `max_analysis_workers()` 上限保护。
 - `custom`：用户自定义，并受校验上限限制。
 
 Console 和 benchmark 应同时显示 requested workers、actual workers 和限制原因。
+
+设置-性能页必须显示当前模式默认 worker 数和本机允许范围；自定义值不能超过 `max_analysis_workers()`。UI 显示与运行时调度必须都来自 `resolve_analysis_worker_plan()` / `normalize_analysis_custom_workers()`，不得另写一套估算。
 
 ## 取消与旧结果防护
 
@@ -34,6 +37,8 @@ Console 和 benchmark 应同时显示 requested workers、actual workers 和限�
 - 取消按钮和窗口关闭叉号走同一取消路径。
 - 取消后恢复到分析完成、修复前状态，保留原有分析结果、推荐方法、cleanup/similar 状态和用户选择。
 - 已写出的非覆盖输出优先删除，删除失败时移入 `_repair_canceled_outputs`；覆盖原文件修复依赖 `_repair_cancel_backups` 恢复。
+- 大文件删除、隔离和覆盖回滚不得在 Tk 主线程执行；取消后 UI 先进入“正在收尾”状态，清理/回滚在后台线程完成，再回主线程恢复按钮、关闭进度窗口和提示警告。
+- `repair_image_file()` 在生成计划、读取、处理、保存前检查 cancel_event；取消后不应继续进入后续重计算阶段。
 - 已取消批次不得写入完成统计、调试打开列表或修复完成详情。
 
 ## Console 合并刷新
@@ -43,6 +48,13 @@ Console 文本框不应每条日志都重绘。当前策略是日志进入 `AppC
 Console 时间戳由 `AppConsole` 统一格式化，时间模式来自 `app_settings.py`。分析、修复、扫描等模块不得散落自己的 `strftime()`。目录扫描只输出摘要，完整跳过目录明细进入扫描摘要窗口，避免大批量扫描时 Console 刷屏拖慢主线程。
 
 扫描完成应输出 wall time、访问文件数、导入数量和跳过文件夹数量。导入和扫描后不要整批清空缩略图缓存，除非确实需要让所有缩略图失效。
+
+## 预览与缩略图
+
+- 右侧大图预览不得在 Tk 主线程同步完整解码超高清原图。当前流程只在主线程读取尺寸和更新文字，预览像素解码交给后台线程，完成后通过 UI 队列回主线程创建 `ImageTk.PhotoImage`。
+- 预览请求使用 run_id、当前路径和 `(path, target_width, target_height, mtime_ns)` 渲染 key 防护；快速连续点选或布局变化时，旧解码结果必须丢弃，不能刷回当前图片。
+- 主列表缩略图缓存使用带 `mtime_ns` 的 LRU。新增缩略图缓存时要限制总量，并在文件修改后淘汰同路径旧 key，避免大文件夹长时间浏览导致内存无限增长或显示旧缩略图。
+- 右侧大预览必须继续从原图生成，不得复用列表缩略图；JPEG 解码应继续使用接近目标显示尺寸的 `Image.draft()`。
 
 ## perf_timings / perf_notes
 
@@ -62,3 +74,5 @@ Console 时间戳由 `AppConsole` 统一格式化，时间模式来自 `app_sett
 - torch CUDA
 
 GPU 状态分为硬件存在、可用运行后端和当前任务是否使用三层。硬件可通过 `nvidia-smi` 或 Windows 显卡控制器信息识别；后端检测必须有超时并允许后台执行。无论 GPU 设置为关闭、自动或开启，缺少后端时都必须安全回退 CPU。除非未来有 `/test` 真实样张证明数据搬运收益，否则不要声称默认 GPU offload 已启用。
+
+GPU 后端检测使用共享总耗时预算，不能让 CuPy、OpenCV CUDA、torch CUDA 分别等待完整超时时间后线性累加。显卡硬件可见但后端缺失时属于环境依赖缺口，不是硬件检测失败；普通运行继续使用 CPU，可选后端依赖集中记录在项目根目录 `requirements-gpu.txt`。

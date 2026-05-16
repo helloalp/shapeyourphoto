@@ -183,7 +183,7 @@ class UiReviewActionsMixin:
         try:
             operation = safe_cleanup_paths(chosen, self._resolve_base_folder())
         except Exception as exc:
-            self._log_console(f"cleanup candidates failed: {exc}")
+            self._log_console(f"不适合保留图片处理失败：{exc}")
             messagebox.showerror("无法删除", f"删除失败：\n{exc}")
             return
         for path in chosen:
@@ -192,7 +192,9 @@ class UiReviewActionsMixin:
         self.image_paths = [path for path in self.image_paths if path.exists()]
         self.refresh_tree()
 
-        self._log_console(f"cleanup candidates handled: mode={operation.mode} moved={operation.moved} destination={operation.destination_label}")
+        self._log_console(
+            f"不适合保留图片已处理：方式={operation.mode} 数量={operation.moved} 位置={operation.destination_label}"
+        )
         if operation.mode == "recycle_bin":
             detail = f"已将 {operation.moved} 张图片移入系统回收站。"
         elif operation.mode == "mixed":

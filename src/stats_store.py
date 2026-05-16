@@ -86,6 +86,15 @@ def _decrypt(data: bytes) -> bytes:
 def _stats_from_payload(payload: object) -> SessionStats:
     if not isinstance(payload, dict):
         return SessionStats()
+    performance_points: list[tuple[str, str, float]] = []
+    for item in payload.get("performance_points", []):
+        if not isinstance(item, (list, tuple)) or len(item) != 3:
+            continue
+        ts, kind, value = item
+        try:
+            performance_points.append((str(ts), str(kind), float(value)))
+        except (TypeError, ValueError):
+            continue
     return SessionStats(
         analyzed_images=int(payload.get("analyzed_images", 0)),
         analyzed_bytes=int(payload.get("analyzed_bytes", 0)),
@@ -99,10 +108,18 @@ def _stats_from_payload(payload: object) -> SessionStats:
         rollback_images=int(payload.get("rollback_images", 0)),
         cleanup_candidate_images=int(payload.get("cleanup_candidate_images", 0)),
         similar_group_count=int(payload.get("similar_group_count", 0)),
+        scanned_folders=int(payload.get("scanned_folders", 0)),
+        scanned_files=int(payload.get("scanned_files", 0)),
+        skipped_folders=int(payload.get("skipped_folders", 0)),
+        failed_images=int(payload.get("failed_images", 0)),
+        canceled_tasks=int(payload.get("canceled_tasks", 0)),
         analysis_runs=int(payload.get("analysis_runs", 0)),
         repair_runs=int(payload.get("repair_runs", 0)),
         analysis_wall_ms_total=float(payload.get("analysis_wall_ms_total", 0.0)),
         repair_wall_ms_total=float(payload.get("repair_wall_ms_total", 0.0)),
+        issue_code_counts={str(k): int(v) for k, v in dict(payload.get("issue_code_counts", {})).items()},
+        repair_outcome_counts={str(k): int(v) for k, v in dict(payload.get("repair_outcome_counts", {})).items()},
+        performance_points=performance_points[-200:],
         last_run_at=str(payload.get("last_run_at", "")),
         daily_counts={
             str(day): {str(k): int(v) for k, v in values.items()}
@@ -186,13 +203,49 @@ def record_analysis(stats: SessionStats, *, image_bytes: int, has_issue: bool, c
     return stats
 
 
+def record_analysis_result(stats: SessionStats, *, image_bytes: int, issue_codes: list[str], cleanup_candidate_count: int = 0) -> SessionStats:
+    record_analysis(
+        stats,
+        image_bytes=image_bytes,
+        has_issue=bool(issue_codes),
+        cleanup_candidate_count=cleanup_candidate_count,
+    )
+    for code in issue_codes:
+        stats.issue_code_counts[code] = stats.issue_code_counts.get(code, 0) + 1
+        _bump_bucket(stats, f"issue:{code}", 1)
+    return stats
+
+
 def record_analysis_batch(stats: SessionStats, *, wall_ms: float, similar_groups: int = 0) -> SessionStats:
     stats.analysis_runs += 1
     stats.analysis_wall_ms_total += max(0.0, float(wall_ms))
+    stats.performance_points.append((datetime.now().isoformat(timespec="seconds"), "analysis", max(0.0, float(wall_ms))))
+    stats.performance_points = stats.performance_points[-200:]
     stats.similar_group_count += max(0, int(similar_groups))
     _bump_bucket(stats, "analysis_runs", 1)
     if similar_groups:
         _bump_bucket(stats, "similar_groups", int(similar_groups))
+    return stats
+
+
+def record_scan_batch(stats: SessionStats, *, folders: int, files: int, imported: int, skipped_folders: int, wall_ms: float = 0.0) -> SessionStats:
+    stats.scanned_folders += max(0, int(folders))
+    stats.scanned_files += max(0, int(files))
+    stats.skipped_folders += max(0, int(skipped_folders))
+    _bump_bucket(stats, "scan_runs", max(1, int(folders)))
+    if imported:
+        _bump_bucket(stats, "scan_imported", int(imported))
+    if skipped_folders:
+        _bump_bucket(stats, "scan_skipped_folders", int(skipped_folders))
+    if wall_ms:
+        stats.performance_points.append((datetime.now().isoformat(timespec="seconds"), "scan", max(0.0, float(wall_ms))))
+        stats.performance_points = stats.performance_points[-200:]
+    return stats
+
+
+def record_canceled_task(stats: SessionStats, *, task_type: str) -> SessionStats:
+    stats.canceled_tasks += 1
+    _bump_bucket(stats, f"canceled:{task_type}", 1)
     return stats
 
 
@@ -213,10 +266,18 @@ def record_repair_batch(
     stats.repair_runs += 1
     stats.repair_wall_ms_total += max(0.0, float(wall_ms))
     stats.repair_attempted_images += len(records) + max(0, int(failed_count))
+    stats.failed_images += max(0, int(failed_count))
     skipped = [record for record in records if not record.saved_output]
     stats.skipped_images += len(skipped)
     stats.noop_images += sum(1 for record in skipped if "no-op" in (record.skipped_reason or "").lower())
     stats.rollback_images += sum(1 for record in records if "rollback" in record.outcome_category or "回退" in (record.skipped_reason or ""))
+    for record in records:
+        stats.repair_outcome_counts[record.outcome_category] = stats.repair_outcome_counts.get(record.outcome_category, 0) + 1
+        _bump_bucket(stats, f"repair_outcome:{record.outcome_category}", 1)
+    if failed_count:
+        stats.repair_outcome_counts["failed"] = stats.repair_outcome_counts.get("failed", 0) + int(failed_count)
+    stats.performance_points.append((datetime.now().isoformat(timespec="seconds"), "repair", max(0.0, float(wall_ms))))
+    stats.performance_points = stats.performance_points[-200:]
     if skipped:
         _bump_bucket(stats, "skipped", len(skipped))
     if failed_count:
@@ -240,6 +301,11 @@ def export_stats_report(stats: SessionStats, output_path: str | Path) -> Path:
         ("rollback_images", stats.rollback_images),
         ("cleanup_candidate_images", stats.cleanup_candidate_images),
         ("similar_group_count", stats.similar_group_count),
+        ("scanned_folders", stats.scanned_folders),
+        ("scanned_files", stats.scanned_files),
+        ("skipped_folders", stats.skipped_folders),
+        ("failed_images", stats.failed_images),
+        ("canceled_tasks", stats.canceled_tasks),
         ("average_analysis_wall_ms", stats.average_analysis_wall_ms()),
         ("average_repair_wall_ms", stats.average_repair_wall_ms()),
         ("last_run_at", stats.last_run_at),
@@ -252,4 +318,10 @@ def export_stats_report(stats: SessionStats, output_path: str | Path) -> Path:
         writer.writerow(["timestamp", "issue_rate"])
         for ts, rate in stats.issue_points:
             writer.writerow([ts, f"{rate:.6f}"])
+        writer.writerow([])
+        writer.writerow(["issue_code", "count"])
+        writer.writerows(sorted(stats.issue_code_counts.items()))
+        writer.writerow([])
+        writer.writerow(["repair_outcome", "count"])
+        writer.writerows(sorted(stats.repair_outcome_counts.items()))
     return path

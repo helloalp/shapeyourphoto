@@ -1,0 +1,8 @@
+# Optional GPU runtime probe dependencies for NVIDIA/CUDA environments.
+#
+# These packages are intentionally not part of requirements.txt because they are
+# large, platform-sensitive, and not needed for normal CPU analysis/repair.
+# Install only in a local environment where NVIDIA drivers and CUDA-compatible
+# wheels are expected to work.
+
+cupy-cuda12x>=13.0.0

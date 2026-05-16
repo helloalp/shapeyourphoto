@@ -167,6 +167,10 @@ class CleanupReviewDialog(tk.Toplevel):
     def _build_thumbnail(self, path: Path, size: tuple[int, int] = (90, 68)) -> ImageTk.PhotoImage | None:
         try:
             with Image.open(path) as img:
+                try:
+                    img.draft("RGB", (max(1, size[0] * 2), max(1, size[1] * 2)))
+                except Exception:
+                    pass
                 image = ImageOps.exif_transpose(img).convert("RGB")
         except Exception:
             return None

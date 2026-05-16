@@ -187,10 +187,18 @@ class SessionStats:
     rollback_images: int = 0
     cleanup_candidate_images: int = 0
     similar_group_count: int = 0
+    scanned_folders: int = 0
+    scanned_files: int = 0
+    skipped_folders: int = 0
+    failed_images: int = 0
+    canceled_tasks: int = 0
     analysis_runs: int = 0
     repair_runs: int = 0
     analysis_wall_ms_total: float = 0.0
     repair_wall_ms_total: float = 0.0
+    issue_code_counts: dict[str, int] = field(default_factory=dict)
+    repair_outcome_counts: dict[str, int] = field(default_factory=dict)
+    performance_points: list[tuple[str, str, float]] = field(default_factory=list)
     last_run_at: str = ""
     daily_counts: dict[str, dict[str, int]] = field(default_factory=dict)
     version_counts: dict[str, dict[str, int]] = field(default_factory=dict)

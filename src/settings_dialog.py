@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import webbrowser
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -9,342 +10,383 @@ from app_settings import (
     ANALYSIS_CONCURRENCY_OPTIONS,
     AppSettings,
     CONSOLE_TIME_MODE_OPTIONS,
+    DEFAULT_SCAN_IGNORE_CONTAINS,
     DEFAULT_SCAN_IGNORE_PREFIXES,
     DEFAULT_SCAN_IGNORE_SUFFIXES,
-    DEFAULT_SCAN_IGNORE_CONTAINS,
     GPU_ACCELERATION_OPTIONS,
     REPAIR_SUMMARY_FILTER_OPTIONS,
     SCAN_MODE_OPTIONS,
     UI_DENSITY_OPTIONS,
+    max_analysis_workers,
     normalize_analysis_concurrency_mode,
     normalize_analysis_custom_workers,
+    normalize_console_time_mode,
     normalize_default_scan_mode,
     normalize_gpu_acceleration_mode,
-    normalize_console_time_mode,
     normalize_repair_summary_filter,
+    normalize_scan_ignore_contains,
     normalize_scan_ignore_prefixes,
     normalize_scan_ignore_suffixes,
-    normalize_scan_ignore_contains,
     normalize_ui_density,
+    resolve_analysis_worker_plan,
     validate_settings_payload,
 )
 from cloud_client import fetch_cloud_messages
 from gpu_accel import detect_gpu_backend
-from ui.language import LANGUAGE_OPTIONS, language_label, normalize_language, set_current_language
+from ui.language import LANGUAGE_OPTIONS, language_label, normalize_language, set_current_language, tr
 from ui.themes import THEME_OPTIONS, normalize_theme_id
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
+THEME_LABEL_KEYS = {
+    "classic_green": {"zh_CN": "经典清绿", "en_US": "Classic Green", "ja_JP": "クラシックグリーン"},
+    "graphite": {"zh_CN": "石墨灰", "en_US": "Graphite", "ja_JP": "グラファイト"},
+    "studio_blue": {"zh_CN": "影像蓝", "en_US": "Studio Blue", "ja_JP": "スタジオブルー"},
+    "warm_paper": {"zh_CN": "暖白纸", "en_US": "Warm Paper", "ja_JP": "ウォームペーパー"},
+    "high_contrast": {"zh_CN": "高对比", "en_US": "High Contrast", "ja_JP": "高コントラスト"},
+    "forest_mist": {"zh_CN": "森林薄雾", "en_US": "Forest Mist", "ja_JP": "森の薄霧"},
+    "clear_sky": {"zh_CN": "晴空", "en_US": "Clear Sky", "ja_JP": "晴れ空"},
+    "rose_gray": {"zh_CN": "玫瑰灰", "en_US": "Rose Gray", "ja_JP": "ローズグレー"},
+}
+
+
+class ScrollablePage(ttk.Frame):
+    def __init__(self, parent: tk.Widget) -> None:
+        super().__init__(parent)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        self.scroll = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scroll.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scroll.grid(row=0, column=1, sticky="ns")
+        self.content = ttk.Frame(self.canvas, padding=14)
+        self.content.columnconfigure(1, weight=1)
+        self.window_id = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
+        self.content.bind("<Configure>", self._sync_scroll)
+        self.canvas.bind("<Configure>", self._fit_width)
+
+    def _sync_scroll(self, _event=None) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _fit_width(self, event) -> None:
+        self.canvas.itemconfigure(self.window_id, width=max(360, event.width))
+
+
 class AppSettingsDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Widget, settings: AppSettings, update_check_callback=None, log_callback=None) -> None:
+    def __init__(
+        self,
+        parent: tk.Widget,
+        settings: AppSettings,
+        update_check_callback=None,
+        log_callback=None,
+        apply_callback=None,
+        initial_tab: str | None = None,
+    ) -> None:
         super().__init__(parent)
         self._update_check_callback = update_check_callback
         self._log_callback = log_callback
-        self.title(app_window_title("应用设置"))
+        self._apply_callback = apply_callback
+        self._initial_tab = initial_tab or ""
+        self.title(app_window_title(tr("settings.app")))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
-        self.minsize(760, 560)
+        self.minsize(820, 620)
         self.result: AppSettings | None = None
         self._size_notice_var = tk.StringVar(value="")
+        self._save_status_var = tk.StringVar(value="")
         self._initial_language = settings.language
+        self._text_widgets: list[tuple[tk.Widget, str]] = []
+        self._settings_tabs: list[tuple[tk.Widget, str, str]] = []
+        self._notebook_tab_labels: list[tuple[ttk.Notebook, tk.Widget, str]] = []
+        self._option_boxes: list[tuple[ttk.Combobox, tk.StringVar, str, list[str]]] = []
+        self._last_gpu_status = None
 
         normalized = validate_settings_payload(settings.__dict__)
-        self._scan_mode_value_to_label = dict(SCAN_MODE_OPTIONS)
-        self._scan_mode_label_to_value = {label: value for value, label in SCAN_MODE_OPTIONS}
-        self._summary_filter_value_to_label = dict(REPAIR_SUMMARY_FILTER_OPTIONS)
-        self._summary_filter_label_to_value = {label: value for value, label in REPAIR_SUMMARY_FILTER_OPTIONS}
-        self._concurrency_value_to_label = dict(ANALYSIS_CONCURRENCY_OPTIONS)
-        self._concurrency_label_to_value = {label: value for value, label in ANALYSIS_CONCURRENCY_OPTIONS}
-        self._gpu_value_to_label = dict(GPU_ACCELERATION_OPTIONS)
-        self._gpu_label_to_value = {label: value for value, label in GPU_ACCELERATION_OPTIONS}
-        self._console_time_value_to_label = dict(CONSOLE_TIME_MODE_OPTIONS)
-        self._console_time_label_to_value = {label: value for value, label in CONSOLE_TIME_MODE_OPTIONS}
-        self._theme_value_to_label = dict(THEME_OPTIONS)
-        self._theme_label_to_value = {label: value for value, label in THEME_OPTIONS}
-        self._density_value_to_label = dict(UI_DENSITY_OPTIONS)
-        self._density_label_to_value = {label: value for value, label in UI_DENSITY_OPTIONS}
-        self._language_value_to_label = dict(LANGUAGE_OPTIONS)
-        self._language_label_to_value = {label: value for value, label in LANGUAGE_OPTIONS}
+        self._scan_rule_widgets: dict[str, tuple[tk.Listbox, tk.StringVar, ttk.Button]] = {}
+        self._option_vars: dict[str, tk.StringVar] = {}
 
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
 
-        ttk.Label(outer, text="应用设置", font=("Microsoft YaHei UI", 12, "bold")).grid(row=0, column=0, sticky="w")
+        self.header_label = ttk.Label(outer, text=tr("settings.app"), font=("Microsoft YaHei UI", 12, "bold"))
+        self.header_label.grid(row=0, column=0, sticky="w")
+        self.notebook = ttk.Notebook(outer)
+        self.notebook.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
 
-        notebook = ttk.Notebook(outer)
-        notebook.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        self._build_scan_tab(normalized)
+        self._build_behavior_tab(normalized)
+        self._build_performance_tab(normalized)
+        self._build_console_tab(normalized)
+        self._build_appearance_tab(normalized)
+        self._build_language_tab(normalized)
+        self._build_update_tab()
+        self._build_announcements_tab()
 
-        scan_tab = ttk.Frame(notebook, padding=14)
-        scan_tab.columnconfigure(0, weight=1)
-        scan_tab.rowconfigure(2, weight=1)
-        notebook.add(scan_tab, text="扫描")
+        buttons = ttk.Frame(outer)
+        buttons.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        buttons.columnconfigure(1, weight=1)
+        ttk.Label(buttons, textvariable=self._size_notice_var).grid(row=0, column=0, sticky="w")
+        self.status_label = ttk.Label(buttons, textvariable=self._save_status_var, anchor="e")
+        self.status_label.grid(row=0, column=1, sticky="ew", padx=(12, 10))
+        self.save_button = ttk.Button(buttons, text=tr("settings.save"), command=self._confirm)
+        self.save_button.grid(row=0, column=2, sticky="e", padx=(0, 8))
+        self.cancel_button = ttk.Button(buttons, text=tr("settings.cancel"), command=self._cancel)
+        self.cancel_button.grid(row=0, column=3, sticky="e")
 
-        ttk.Label(scan_tab, text="扫描忽略规则", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            scan_tab,
-            text="这些规则只作用于文件夹名称。命中的文件夹和里面的图片会被跳过；_repair 会始终保留，避免修复输出被重新扫入。",
-            wraplength=680,
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        bind_minimum_size_notice(self, self._size_notice_var, 820, 620)
+        center_window(self, 900, 700)
+        self._refresh_option_labels()
+        self._update_concurrency_hint()
+        self._select_initial_tab()
+        self._start_gpu_status_refresh(force_refresh=False)
+
+    def _tr_widget(self, widget: tk.Widget, key: str) -> tk.Widget:
+        self._text_widgets.append((widget, key))
+        return widget
+
+    def _label(self, parent: tk.Widget, key: str, *, row: int, column: int = 0, columnspan: int = 1, bold: bool = False, pady=0, wrap: bool = False) -> ttk.Label:
+        label = ttk.Label(
+            parent,
+            text=tr(key),
+            font=("Microsoft YaHei UI", 11, "bold") if bold else None,
+            wraplength=700 if wrap else 0,
             justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(8, 10))
-
-        rule_book = ttk.Notebook(scan_tab)
-        rule_book.grid(row=2, column=0, sticky="nsew")
-        self._scan_rule_widgets: dict[str, tuple[tk.Listbox, tk.StringVar]] = {}
-        self._build_scan_rule_page(
-            rule_book,
-            key="prefix",
-            title="前缀",
-            description="文件夹名称以规则开头时跳过，例如 _repair、_old。",
-            values=normalized.scan_ignore_prefixes,
         )
-        self._build_scan_rule_page(
-            rule_book,
-            key="suffix",
-            title="后缀",
-            description="文件夹名称以规则结尾时跳过，例如 _backup、_old。",
-            values=normalized.scan_ignore_suffixes,
-        )
-        self._build_scan_rule_page(
-            rule_book,
-            key="contains",
-            title="包含",
-            description="文件夹名称中包含规则文字时跳过。请谨慎添加，避免误跳过正常相册。",
-            values=normalized.scan_ignore_contains,
-        )
+        label.grid(row=row, column=column, columnspan=columnspan, sticky="w", pady=pady)
+        self._tr_widget(label, key)
+        return label
 
-        behavior_tab = ttk.Frame(notebook, padding=14)
-        behavior_tab.columnconfigure(1, weight=1)
-        notebook.add(behavior_tab, text="行为偏好")
+    def _make_page(self, tab_key: str, tab_id: str) -> ScrollablePage:
+        page = ScrollablePage(self.notebook)
+        self.notebook.add(page, text=tr(tab_key))
+        self._settings_tabs.append((page, tab_key, tab_id))
+        self._notebook_tab_labels.append((self.notebook, page, tab_key))
+        return page
 
-        ttk.Label(behavior_tab, text="默认扫描行为", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            behavior_tab,
-            text="当文件夹包含子文件夹时，可以选择每次询问，或使用固定扫描模式。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
+    def _build_scan_tab(self, settings: AppSettings) -> None:
+        page = self._make_page("settings.tab.scan", "scan")
+        c = page.content
+        self._label(c, "settings.section.scan_rules", row=0, bold=True)
+        self._label(c, "settings.desc.scan_rules", row=1, columnspan=2, wrap=True, pady=(8, 10))
+        rule_book = ttk.Notebook(c)
+        rule_book.grid(row=2, column=0, columnspan=2, sticky="nsew")
+        c.rowconfigure(2, weight=1)
+        for key, values in (
+            ("prefix", settings.scan_ignore_prefixes),
+            ("suffix", settings.scan_ignore_suffixes),
+            ("contains", settings.scan_ignore_contains),
+        ):
+            self._build_scan_rule_page(rule_book, key, values)
 
-        ttk.Label(behavior_tab, text="默认扫描模式：").grid(row=2, column=0, sticky="w")
-        self.scan_mode_var = tk.StringVar(value=self._scan_mode_value_to_label[normalized.default_scan_mode])
-        ttk.Combobox(
-            behavior_tab,
-            textvariable=self.scan_mode_var,
-            state="readonly",
-            values=[label for _value, label in SCAN_MODE_OPTIONS],
-            width=28,
-        ).grid(row=2, column=1, sticky="w")
+    def _build_scan_rule_page(self, notebook: ttk.Notebook, key: str, values: list[str]) -> None:
+        page = ttk.Frame(notebook, padding=12)
+        page.columnconfigure(0, weight=1)
+        page.rowconfigure(3, weight=1)
+        notebook.add(page, text=tr(f"settings.rule.{key}"))
+        self._notebook_tab_labels.append((notebook, page, f"settings.rule.{key}"))
+        self._label(page, f"settings.rule.{key}_desc", row=0, wrap=True)
+        add_row = ttk.Frame(page)
+        add_row.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        add_row.columnconfigure(0, weight=1)
+        value_var = tk.StringVar()
+        entry = ttk.Entry(add_row, textvariable=value_var)
+        entry.grid(row=0, column=0, sticky="ew")
+        entry.bind("<Return>", lambda _event, k=key: self._add_rule(k))
+        add_button = ttk.Button(add_row, text=f"{tr('settings.rule.add')} {tr(f'settings.rule.{key}')}", command=lambda k=key: self._add_rule(k))
+        add_button.grid(row=0, column=1, padx=(8, 0))
+        self._label(page, "settings.rule.multi_hint", row=2, pady=(8, 0))
+        list_frame = ttk.Frame(page)
+        list_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        listbox = tk.Listbox(list_frame, activestyle="none", font=("Consolas", 11), exportselection=False, selectmode="extended")
+        scroll = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+        listbox.configure(yscrollcommand=scroll.set)
+        listbox.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        actions = ttk.Frame(page)
+        actions.grid(row=4, column=0, sticky="ew", pady=(10, 0))
+        remove_button = ttk.Button(actions, text=tr("settings.rule.remove"), command=lambda k=key: self._remove_selected_rules(k))
+        remove_button.pack(side="left")
+        restore_button = ttk.Button(actions, text=tr("settings.rule.restore"), command=lambda k=key: self._restore_default_rules(k))
+        restore_button.pack(side="left", padx=(8, 0))
+        self._tr_widget(remove_button, "settings.rule.remove")
+        self._tr_widget(restore_button, "settings.rule.restore")
+        self._scan_rule_widgets[key] = (listbox, value_var, add_button)
+        self._refresh_rule_list(key, values)
 
-        ttk.Label(behavior_tab, text="修复完成详情默认筛选：").grid(row=3, column=0, sticky="w", pady=(16, 0))
-        self.summary_filter_var = tk.StringVar(value=self._summary_filter_value_to_label[normalized.repair_summary_default_filter])
-        ttk.Combobox(
-            behavior_tab,
-            textvariable=self.summary_filter_var,
-            state="readonly",
-            values=[label for _value, label in REPAIR_SUMMARY_FILTER_OPTIONS],
-            width=28,
-        ).grid(row=3, column=1, sticky="w", pady=(16, 0))
+    def _build_behavior_tab(self, settings: AppSettings) -> None:
+        page = self._make_page("settings.tab.behavior", "behavior")
+        c = page.content
+        self._label(c, "settings.section.default_scan", row=0, bold=True)
+        self._label(c, "settings.desc.default_scan", row=1, columnspan=2, wrap=True, pady=(8, 10))
+        self._label(c, "settings.default_scan_mode", row=2)
+        self.scan_mode_var = tk.StringVar(value=settings.default_scan_mode)
+        self._option_combobox(c, self.scan_mode_var, "scan", [v for v, _ in SCAN_MODE_OPTIONS], row=2)
+        self._label(c, "settings.repair_summary_filter", row=3, pady=(14, 0))
+        self.summary_filter_var = tk.StringVar(value=settings.repair_summary_default_filter)
+        self._option_combobox(c, self.summary_filter_var, "summary", [v for v, _ in REPAIR_SUMMARY_FILTER_OPTIONS], row=3, pady=(14, 0))
+        self._label(c, "settings.desc.future_tasks", row=4, columnspan=2, wrap=True, pady=(18, 0))
 
-        ttk.Label(
-            behavior_tab,
-            text="这些选项只影响之后的新任务，不会改动已经完成的分析结果。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 0))
+    def _build_performance_tab(self, settings: AppSettings) -> None:
+        page = self._make_page("settings.tab.performance", "performance")
+        c = page.content
+        self._label(c, "settings.section.concurrency", row=0, bold=True)
+        self._label(c, "settings.desc.concurrency", row=1, columnspan=3, wrap=True, pady=(8, 10))
+        self._label(c, "settings.concurrency_mode", row=2)
+        self.concurrency_var = tk.StringVar(value=settings.analysis_concurrency_mode)
+        box = self._option_combobox(c, self.concurrency_var, "worker", [v for v, _ in ANALYSIS_CONCURRENCY_OPTIONS], row=2)
+        box.bind("<<ComboboxSelected>>", lambda _event: self._update_concurrency_hint(), add="+")
+        self.concurrency_default_var = tk.StringVar(value="")
+        ttk.Label(c, textvariable=self.concurrency_default_var).grid(row=2, column=2, sticky="w", padx=(12, 0))
+        self._label(c, "settings.concurrent_workers", row=3, pady=(12, 0))
+        self.custom_workers_var = tk.StringVar(value=str(settings.analysis_custom_workers or ""))
+        self.custom_workers_spin = ttk.Spinbox(c, from_=1, to=max_analysis_workers(), textvariable=self.custom_workers_var, width=10)
+        self.custom_workers_spin.grid(row=3, column=1, sticky="w", pady=(12, 0))
+        self.worker_range_var = tk.StringVar(value="")
+        ttk.Label(c, textvariable=self.worker_range_var).grid(row=3, column=2, sticky="w", padx=(12, 0), pady=(12, 0))
+        self._label(c, "settings.section.gpu", row=4, columnspan=3, bold=True, pady=(22, 0))
+        self._label(c, "settings.desc.gpu", row=5, columnspan=3, wrap=True, pady=(8, 10))
+        self._label(c, "settings.gpu_mode", row=6)
+        self.gpu_mode_var = tk.StringVar(value=settings.gpu_acceleration_mode)
+        self._option_combobox(c, self.gpu_mode_var, "gpu", [v for v, _ in GPU_ACCELERATION_OPTIONS], row=6)
+        self._label(c, "settings.gpu_hardware", row=7, pady=(12, 0))
+        self.gpu_hardware_var = tk.StringVar(value=tr("settings.gpu_detecting"))
+        ttk.Label(c, textvariable=self.gpu_hardware_var).grid(row=7, column=1, columnspan=2, sticky="w", pady=(12, 0))
+        self._label(c, "settings.gpu_backend", row=8, pady=(8, 0))
+        self.gpu_backend_var = tk.StringVar(value=tr("settings.gpu_detecting"))
+        ttk.Label(c, textvariable=self.gpu_backend_var).grid(row=8, column=1, columnspan=2, sticky="w", pady=(8, 0))
+        self.gpu_reason_var = tk.StringVar(value=tr("settings.gpu_reason_detecting"))
+        ttk.Label(c, textvariable=self.gpu_reason_var, wraplength=700, justify="left").grid(row=9, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.gpu_next_step_var = tk.StringVar(value="")
+        ttk.Label(c, textvariable=self.gpu_next_step_var, wraplength=700, justify="left").grid(row=10, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        gpu_actions = ttk.Frame(c)
+        gpu_actions.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        for key, command in (
+            ("settings.gpu_check", lambda: self._start_gpu_status_refresh(force_refresh=True)),
+            ("settings.gpu_copy", self._copy_gpu_diagnostics),
+            ("settings.gpu_help", self._open_gpu_help),
+        ):
+            button = ttk.Button(gpu_actions, text=tr(key), command=command)
+            button.pack(side="left", padx=(0, 8))
+            self._tr_widget(button, key)
 
-        performance_tab = ttk.Frame(notebook, padding=14)
-        performance_tab.columnconfigure(1, weight=1)
-        notebook.add(performance_tab, text="性能")
+    def _build_console_tab(self, settings: AppSettings) -> None:
+        page = self._make_page("settings.tab.console", "console")
+        c = page.content
+        self._label(c, "settings.section.console", row=0, bold=True)
+        self._label(c, "settings.desc.console", row=1, columnspan=2, wrap=True, pady=(8, 10))
+        self._label(c, "settings.console_time", row=2)
+        self.console_time_var = tk.StringVar(value=settings.console_time_mode)
+        self._option_combobox(c, self.console_time_var, "console", [v for v, _ in CONSOLE_TIME_MODE_OPTIONS], row=2, width=34)
+        self._label(c, "settings.desc.console_tz", row=3, columnspan=2, wrap=True, pady=(14, 0))
 
-        ttk.Label(performance_tab, text="分析并发", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(
-            performance_tab,
-            text="控制同时分析图片的数量。通常保持自动即可；如果电脑变卡，可以调低。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
+    def _build_appearance_tab(self, settings: AppSettings) -> None:
+        page = self._make_page("settings.tab.appearance", "appearance")
+        c = page.content
+        self._label(c, "settings.section.appearance", row=0, bold=True)
+        self._label(c, "settings.desc.appearance", row=1, columnspan=2, wrap=True, pady=(8, 10))
+        self._label(c, "settings.theme", row=2)
+        self.theme_var = tk.StringVar(value=settings.theme_id)
+        self._option_combobox(c, self.theme_var, "theme", [v for v, _ in THEME_OPTIONS], row=2)
+        self._label(c, "settings.density", row=3, pady=(14, 0))
+        self.density_var = tk.StringVar(value=settings.ui_density)
+        self._option_combobox(c, self.density_var, "density", [v for v, _ in UI_DENSITY_OPTIONS], row=3, pady=(14, 0))
+        self._label(c, "settings.desc.density", row=4, columnspan=2, wrap=True, pady=(10, 0))
 
-        ttk.Label(performance_tab, text="并发模式：").grid(row=2, column=0, sticky="w")
-        self.concurrency_var = tk.StringVar(value=self._concurrency_value_to_label[normalized.analysis_concurrency_mode])
-        ttk.Combobox(
-            performance_tab,
-            textvariable=self.concurrency_var,
-            state="readonly",
-            values=[label for _value, label in ANALYSIS_CONCURRENCY_OPTIONS],
-            width=28,
-        ).grid(row=2, column=1, sticky="w")
+    def _build_language_tab(self, settings: AppSettings) -> None:
+        page = self._make_page("settings.tab.language", "language")
+        c = page.content
+        self._label(c, "settings.section.language", row=0, bold=True)
+        self._label(c, "settings.language", row=1, pady=(12, 0))
+        self.language_var = tk.StringVar(value=settings.language)
+        self._option_combobox(c, self.language_var, "language", [value for value, _ in LANGUAGE_OPTIONS], row=1, pady=(12, 0))
 
-        ttk.Label(performance_tab, text="同时处理数量：").grid(row=3, column=0, sticky="w", pady=(12, 0))
-        self.custom_workers_var = tk.StringVar(value=str(normalized.analysis_custom_workers or ""))
-        ttk.Spinbox(
-            performance_tab,
-            from_=1,
-            to=32,
-            textvariable=self.custom_workers_var,
-            width=10,
-        ).grid(row=3, column=1, sticky="w", pady=(12, 0))
+    def _build_update_tab(self) -> None:
+        page = self._make_page("settings.tab.update", "update")
+        c = page.content
+        self._label(c, "settings.section.version", row=0, bold=True)
+        self.version_var = tk.StringVar(value=f"{APP_NAME} v{APP_VERSION}\n{tr('settings.version_id').format(id=APP_VERSION_ID)}")
+        ttk.Label(c, textvariable=self.version_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
+        self.update_button = ttk.Button(c, text=tr("settings.check_updates"), command=self._check_updates_now)
+        self.update_button.grid(row=2, column=0, sticky="w")
+        self._tr_widget(self.update_button, "settings.check_updates")
+        self._label(c, "settings.desc.update", row=3, columnspan=2, wrap=True, pady=(14, 0))
 
-        ttk.Label(performance_tab, text="GPU 加速", font=("Microsoft YaHei UI", 11, "bold")).grid(row=4, column=0, columnspan=2, sticky="w", pady=(22, 0))
-        ttk.Label(
-            performance_tab,
-            text="有可用加速能力时可以尝试开启；没有检测到时会自动使用 CPU。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 10))
-
-        ttk.Label(performance_tab, text="GPU 加速：").grid(row=6, column=0, sticky="w")
-        self.gpu_mode_var = tk.StringVar(value=self._gpu_value_to_label[normalized.gpu_acceleration_mode])
-        ttk.Combobox(
-            performance_tab,
-            textvariable=self.gpu_mode_var,
-            state="readonly",
-            values=[label for _value, label in GPU_ACCELERATION_OPTIONS],
-            width=28,
-        ).grid(row=6, column=1, sticky="w")
-
-        self.gpu_hardware_var = tk.StringVar(value="正在检测...")
-        self.gpu_backend_var = tk.StringVar(value="正在检测...")
-        self.gpu_reason_var = tk.StringVar(value="正在后台检测 GPU 硬件和可用后端，设置窗口可以继续使用。")
-        ttk.Label(performance_tab, text="硬件状态：").grid(row=7, column=0, sticky="w", pady=(12, 0))
-        ttk.Label(performance_tab, textvariable=self.gpu_hardware_var).grid(row=7, column=1, sticky="w", pady=(12, 0))
-        ttk.Label(performance_tab, text="加速状态：").grid(row=8, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(performance_tab, textvariable=self.gpu_backend_var).grid(row=8, column=1, sticky="w", pady=(8, 0))
-        ttk.Label(
-            performance_tab,
-            textvariable=self.gpu_reason_var,
-            wraplength=680,
-            justify="left",
-        ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        self._start_gpu_status_refresh()
-
-        console_tab = ttk.Frame(notebook, padding=14)
-        console_tab.columnconfigure(1, weight=1)
-        notebook.add(console_tab, text="Console")
-        ttk.Label(console_tab, text="Console 时间显示", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(
-            console_tab,
-            text="选择 Console 新日志的时间显示方式。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
-        ttk.Label(console_tab, text="时间格式：").grid(row=2, column=0, sticky="w")
-        self.console_time_var = tk.StringVar(value=self._console_time_value_to_label[normalized.console_time_mode])
-        ttk.Combobox(
-            console_tab,
-            textvariable=self.console_time_var,
-            state="readonly",
-            values=[label for _value, label in CONSOLE_TIME_MODE_OPTIONS],
-            width=34,
-        ).grid(row=2, column=1, sticky="w")
-        ttk.Label(
-            console_tab,
-            text="跨时区沟通或排查问题时，可以选择带时区的时间格式。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(14, 0))
-
-        appearance_tab = ttk.Frame(notebook, padding=14)
-        appearance_tab.columnconfigure(1, weight=1)
-        notebook.add(appearance_tab, text="外观 / 风格")
-        ttk.Label(appearance_tab, text="应用风格", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(
-            appearance_tab,
-            text="选择你喜欢的界面配色。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 10))
-        ttk.Label(appearance_tab, text="预置风格：").grid(row=2, column=0, sticky="w")
-        self.theme_var = tk.StringVar(value=self._theme_value_to_label[normalized.theme_id])
-        theme_box = ttk.Combobox(
-            appearance_tab,
-            textvariable=self.theme_var,
-            state="readonly",
-            values=[label for _value, label in THEME_OPTIONS],
-            width=28,
-        )
-        theme_box.grid(row=2, column=1, sticky="w")
-        ttk.Label(appearance_tab, text="界面清晰度 / 密度：").grid(row=3, column=0, sticky="w", pady=(14, 0))
-        self.density_var = tk.StringVar(value=self._density_value_to_label[normalized.ui_density])
-        ttk.Combobox(
-            appearance_tab,
-            textvariable=self.density_var,
-            state="readonly",
-            values=[label for _value, label in UI_DENSITY_OPTIONS],
-            width=28,
-        ).grid(row=3, column=1, sticky="w", pady=(14, 0))
-        ttk.Label(
-            appearance_tab,
-            text="高清细节会略微提高字体、行高和按钮留白，适合 2K/4K 或高缩放屏幕。",
-            wraplength=680,
-            justify="left",
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
-        language_tab = ttk.Frame(notebook, padding=14)
-        language_tab.columnconfigure(1, weight=1)
-        notebook.add(language_tab, text="语言")
-        ttk.Label(language_tab, text="界面语言", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(language_tab, text="语言：").grid(row=1, column=0, sticky="w", pady=(12, 0))
-        self.language_var = tk.StringVar(value=language_label(normalized.language))
-        ttk.Combobox(
-            language_tab,
-            textvariable=self.language_var,
-            state="readonly",
-            values=[label for _value, label in LANGUAGE_OPTIONS],
-            width=28,
-        ).grid(row=1, column=1, sticky="w", pady=(12, 0))
-
-        update_tab = ttk.Frame(notebook, padding=14)
-        update_tab.columnconfigure(1, weight=1)
-        notebook.add(update_tab, text="更新")
-        ttk.Label(update_tab, text="当前版本", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(
-            update_tab,
-            text=f"{APP_NAME} v{APP_VERSION}\n版本ID {APP_VERSION_ID}",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
-        ttk.Button(update_tab, text="检查更新", command=self._check_updates_now).grid(row=2, column=0, sticky="w")
-        ttk.Label(update_tab, text="可以随时手动检查是否有新版本。", wraplength=680, justify="left").grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(14, 0)
-        )
-
-        message_tab = ttk.Frame(notebook, padding=14)
-        message_tab.columnconfigure(1, weight=1)
-        message_tab.rowconfigure(2, weight=1)
-        notebook.add(message_tab, text="公告")
-        ttk.Label(message_tab, text="公告", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
-        ttk.Button(message_tab, text="刷新公告", command=self._refresh_announcements_now).grid(row=0, column=1, sticky="e")
-        self.announcement_status_var = tk.StringVar(value="暂无公告。")
-        ttk.Label(message_tab, textvariable=self.announcement_status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 8))
-        message_frame = ttk.Frame(message_tab)
+    def _build_announcements_tab(self) -> None:
+        page = self._make_page("settings.tab.announcements", "announcements")
+        c = page.content
+        c.rowconfigure(2, weight=1)
+        self._label(c, "settings.section.announcements", row=0, bold=True)
+        self.announcement_button = ttk.Button(c, text=tr("settings.refresh_announcements"), command=self._refresh_announcements_now)
+        self.announcement_button.grid(row=0, column=1, sticky="e")
+        self._tr_widget(self.announcement_button, "settings.refresh_announcements")
+        self.announcement_status_var = tk.StringVar(value=tr("settings.no_announcements"))
+        ttk.Label(c, textvariable=self.announcement_status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 8))
+        message_frame = ttk.Frame(c)
         message_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
         message_frame.columnconfigure(0, weight=1)
         message_frame.rowconfigure(0, weight=1)
-        self.announcement_text = tk.Text(
-            message_frame,
-            height=10,
-            wrap="word",
-            font=("Microsoft YaHei UI", 10),
-            bg="#f8fbf8",
-            relief="flat",
-            padx=10,
-            pady=10,
-        )
+        self.announcement_text = tk.Text(message_frame, height=10, wrap="word", font=("Microsoft YaHei UI", 10), bg="#f8fbf8", relief="flat", padx=10, pady=10)
         announcement_scroll = ttk.Scrollbar(message_frame, orient="vertical", command=self.announcement_text.yview)
         self.announcement_text.configure(yscrollcommand=announcement_scroll.set)
         self.announcement_text.grid(row=0, column=0, sticky="nsew")
         announcement_scroll.grid(row=0, column=1, sticky="ns")
-        self._set_announcement_text("暂无公告。")
+        self._set_announcement_text(tr("settings.no_announcements"))
 
-        buttons = ttk.Frame(outer)
-        buttons.grid(row=2, column=0, sticky="ew", pady=(14, 0))
-        ttk.Label(buttons, textvariable=self._size_notice_var).pack(side="left")
-        ttk.Button(buttons, text="取消", command=self._cancel).pack(side="right")
-        ttk.Button(buttons, text="保存设置", command=self._confirm).pack(side="right", padx=(0, 8))
+    def _option_combobox(self, parent: tk.Widget, var: tk.StringVar, kind: str, values: list[str], *, row: int, width: int = 28, pady=0) -> ttk.Combobox:
+        label_var = tk.StringVar()
+        box = ttk.Combobox(parent, textvariable=label_var, state="readonly", width=width)
+        box.grid(row=row, column=1, sticky="w", pady=pady)
+        self._option_vars[kind] = var
+        self._option_boxes.append((box, label_var, kind, values))
 
-        self.protocol("WM_DELETE_WINDOW", self._cancel)
-        bind_minimum_size_notice(self, self._size_notice_var, 760, 560)
-        center_window(self, 820, 620)
+        def _selected(_event=None, b=box, lv=label_var, code_var=var, k=kind) -> None:
+            reverse = getattr(b, "_label_to_code", {})
+            code_var.set(reverse.get(lv.get(), code_var.get()))
+            if k == "worker":
+                self._update_concurrency_hint()
+
+        box.bind("<<ComboboxSelected>>", _selected)
+        return box
+
+    def _option_label(self, kind: str, code: str) -> str:
+        if kind == "language":
+            return language_label(code)
+        if kind == "theme":
+            lang = normalize_language(self.language_var.get() if hasattr(self, "language_var") else None)
+            labels = THEME_LABEL_KEYS.get(code)
+            if labels:
+                return labels.get(lang, labels.get("zh_CN", code))
+            return code
+        return tr(f"option.{kind}.{code}")
+
+    def _refresh_option_labels(self) -> None:
+        for box, label_var, kind, values in self._option_boxes:
+            labels = [self._option_label(kind, value) for value in values]
+            label_to_code = dict(zip(labels, values))
+            code_to_label = dict(zip(values, labels))
+            box.configure(values=labels)
+            box._label_to_code = label_to_code  # type: ignore[attr-defined]
+            code_var = self._option_vars[kind]
+            label_var.set(code_to_label.get(code_var.get(), labels[0] if labels else ""))
+
+    def _select_initial_tab(self) -> None:
+        if not self._initial_tab:
+            return
+        for tab, _key, tab_id in self._settings_tabs:
+            if tab_id == self._initial_tab:
+                try:
+                    self.notebook.select(tab)
+                except tk.TclError:
+                    pass
+                return
 
     def _normalize_rule_values(self, key: str, values: list[str]) -> list[str]:
         if key == "prefix":
@@ -353,63 +395,13 @@ class AppSettingsDialog(tk.Toplevel):
             return normalize_scan_ignore_suffixes(values)
         return normalize_scan_ignore_contains(values)
 
-    def _build_scan_rule_page(
-        self,
-        notebook: ttk.Notebook,
-        *,
-        key: str,
-        title: str,
-        description: str,
-        values: list[str],
-    ) -> None:
-        page = ttk.Frame(notebook, padding=12)
-        page.columnconfigure(0, weight=1)
-        page.rowconfigure(3, weight=1)
-        notebook.add(page, text=title)
-        ttk.Label(page, text=description, wraplength=640, justify="left").grid(row=0, column=0, sticky="w")
-
-        add_row = ttk.Frame(page)
-        add_row.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-        add_row.columnconfigure(0, weight=1)
-        value_var = tk.StringVar()
-        entry = ttk.Entry(add_row, textvariable=value_var)
-        entry.grid(row=0, column=0, sticky="ew")
-        entry.bind("<Return>", lambda _event, k=key: self._add_rule(k))
-        ttk.Button(add_row, text=f"添加{title}", command=lambda k=key: self._add_rule(k)).grid(row=0, column=1, padx=(8, 0))
-
-        hint = "列表支持按 Ctrl 或 Shift 多选后一次删除。"
-        ttk.Label(page, text=hint).grid(row=2, column=0, sticky="w", pady=(8, 0))
-
-        list_frame = ttk.Frame(page)
-        list_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
-        list_frame.columnconfigure(0, weight=1)
-        list_frame.rowconfigure(0, weight=1)
-        listbox = tk.Listbox(
-            list_frame,
-            activestyle="none",
-            font=("Consolas", 11),
-            exportselection=False,
-            selectmode="extended",
-        )
-        scroll = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
-        listbox.configure(yscrollcommand=scroll.set)
-        listbox.grid(row=0, column=0, sticky="nsew")
-        scroll.grid(row=0, column=1, sticky="ns")
-        self._scan_rule_widgets[key] = (listbox, value_var)
-        self._refresh_rule_list(key, values)
-
-        actions = ttk.Frame(page)
-        actions.grid(row=4, column=0, sticky="ew", pady=(10, 0))
-        ttk.Button(actions, text="删除选中", command=lambda k=key: self._remove_selected_rules(k)).pack(side="left")
-        ttk.Button(actions, text="恢复默认", command=lambda k=key: self._restore_default_rules(k)).pack(side="left", padx=(8, 0))
-
     def _current_rules(self, key: str) -> list[str]:
-        listbox, _value_var = self._scan_rule_widgets[key]
+        listbox, _value_var, _button = self._scan_rule_widgets[key]
         values = [listbox.get(index).split(". ", 1)[-1] for index in range(listbox.size())]
         return self._normalize_rule_values(key, values)
 
     def _refresh_rule_list(self, key: str, values: list[str], *, select_value: str | None = None) -> None:
-        listbox, _value_var = self._scan_rule_widgets[key]
+        listbox, _value_var, _button = self._scan_rule_widgets[key]
         normalized_values = self._normalize_rule_values(key, values)
         listbox.delete(0, "end")
         for index, value in enumerate(normalized_values, start=1):
@@ -423,24 +415,19 @@ class AppSettingsDialog(tk.Toplevel):
                     break
 
     def _add_rule(self, key: str) -> None:
-        _listbox, value_var = self._scan_rule_widgets[key]
+        _listbox, value_var, _button = self._scan_rule_widgets[key]
         raw_value = value_var.get().strip()
         if not raw_value:
             return
-        merged = self._current_rules(key) + [raw_value]
-        self._refresh_rule_list(key, merged, select_value=raw_value)
+        self._refresh_rule_list(key, self._current_rules(key) + [raw_value], select_value=raw_value)
         value_var.set("")
 
     def _remove_selected_rules(self, key: str) -> None:
-        listbox, _value_var = self._scan_rule_widgets[key]
+        listbox, _value_var, _button = self._scan_rule_widgets[key]
         selection = set(listbox.curselection())
         if not selection:
             return
-        values = [
-            listbox.get(index).split(". ", 1)[-1]
-            for index in range(listbox.size())
-            if index not in selection
-        ]
+        values = [listbox.get(index).split(". ", 1)[-1] for index in range(listbox.size()) if index not in selection]
         self._refresh_rule_list(key, values)
 
     def _restore_default_rules(self, key: str) -> None:
@@ -460,72 +447,159 @@ class AppSettingsDialog(tk.Toplevel):
     def _current_contains(self) -> list[str]:
         return self._current_rules("contains")
 
-    def _refresh_prefix_list(self, prefixes: list[str], *, select_value: str | None = None) -> None:
-        self._refresh_rule_list("prefix", prefixes, select_value=select_value)
+    def _update_concurrency_hint(self) -> None:
+        if not hasattr(self, "concurrency_var"):
+            return
+        limit = max_analysis_workers()
+        plan = resolve_analysis_worker_plan(9999, self.concurrency_var.get(), self.custom_workers_var.get() if hasattr(self, "custom_workers_var") else 0)
+        self.concurrency_default_var.set(tr("settings.default_workers").format(count=plan.requested_workers))
+        self.worker_range_var.set(tr("settings.worker_range").format(max=limit))
+        if hasattr(self, "custom_workers_spin"):
+            self.custom_workers_spin.configure(to=limit)
+        current = normalize_analysis_custom_workers(self.custom_workers_var.get() if hasattr(self, "custom_workers_var") else 0)
+        if current > limit:
+            self.custom_workers_var.set(str(limit))
 
-    def _add_prefix(self) -> None:
-        self._add_rule("prefix")
+    def _start_gpu_status_refresh(self, *, force_refresh: bool = False) -> None:
+        self.gpu_hardware_var.set(tr("settings.gpu_detecting"))
+        self.gpu_backend_var.set(tr("settings.gpu_detecting"))
+        self.gpu_reason_var.set(tr("settings.gpu_reason_detecting"))
 
-    def _remove_selected(self) -> None:
-        self._remove_selected_rules("prefix")
-
-    def _restore_defaults(self) -> None:
-        self._refresh_prefix_list(list(DEFAULT_SCAN_IGNORE_PREFIXES), select_value=DEFAULT_SCAN_IGNORE_PREFIXES[0])
-
-    def _start_gpu_status_refresh(self) -> None:
         def _worker() -> None:
-            status = detect_gpu_backend()
+            status = detect_gpu_backend(force_refresh=force_refresh)
 
             def _finish() -> None:
                 if not self.winfo_exists():
                     return
-                hardware = status.hardware_name if status.hardware_detected else "未检测到 GPU 硬件"
+                self._last_gpu_status = status
+                hardware = status.hardware_name if status.hardware_detected else status.hardware_name
                 if status.driver_version:
-                    hardware = f"{hardware}（驱动 {status.driver_version}）"
-                backend = status.backend_name if status.available else "未检测到可用后端"
+                    hardware = f"{hardware} ({status.driver_version})"
                 self.gpu_hardware_var.set(hardware)
-                self.gpu_backend_var.set(backend)
-                self.gpu_reason_var.set(status.reason)
+                self.gpu_backend_var.set(status.backend_name if status.available else tr("settings.gpu_cpu"))
+                if status.available:
+                    self.gpu_reason_var.set(tr("settings.gpu_available"))
+                    self.gpu_next_step_var.set(tr("settings.gpu_available"))
+                elif status.hardware_detected:
+                    self.gpu_reason_var.set(tr("settings.gpu_hw_no_backend"))
+                    self.gpu_next_step_var.set(tr("settings.gpu_hw_no_backend"))
+                else:
+                    self.gpu_reason_var.set(tr("settings.gpu_cpu"))
+                    self.gpu_next_step_var.set(tr("settings.gpu_cpu"))
 
             self.after(0, _finish)
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _copy_gpu_diagnostics(self) -> None:
+        status = self._last_gpu_status or detect_gpu_backend()
+        text = (
+            f"ShapeYourPhoto GPU diagnostics\n"
+            f"hardware_detected={status.hardware_detected}\n"
+            f"hardware_name={status.hardware_name}\n"
+            f"driver_version={status.driver_version}\n"
+            f"backend_name={status.backend_name}\n"
+            f"available={status.available}\n"
+            f"active={status.active}\n"
+            f"reason={status.reason}\n"
+            f"backend_reasons={' | '.join(status.backend_reasons)}"
+        )
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self._save_status_var.set(tr("settings.copied"))
+        except Exception as exc:
+            messagebox.showwarning(tr("settings.gpu_copy"), str(exc), parent=self)
+
+    def _open_gpu_help(self) -> None:
+        url = "https://helloalp.top/tools/shapeyourphoto/articles/faq.html#gpu"
+        try:
+            if not webbrowser.open(url):
+                raise RuntimeError("open failed")
+        except Exception:
+            try:
+                self.clipboard_clear()
+                self.clipboard_append(url)
+                self._save_status_var.set(tr("settings.copied"))
+            except Exception:
+                messagebox.showinfo(tr("settings.gpu_help"), url, parent=self)
+
+    def _refresh_language_texts(self) -> None:
+        self.title(app_window_title(tr("settings.app")))
+        self.header_label.configure(text=tr("settings.app"))
+        for notebook, tab, key in self._notebook_tab_labels:
+            try:
+                notebook.tab(tab, text=tr(key))
+            except tk.TclError:
+                pass
+        for widget, key in self._text_widgets:
+            try:
+                widget.configure(text=tr(key))
+            except tk.TclError:
+                pass
+        for key, (_listbox, _value_var, add_button) in self._scan_rule_widgets.items():
+            add_button.configure(text=f"{tr('settings.rule.add')} {tr(f'settings.rule.{key}')}")
+        self.cancel_button.configure(text=tr("settings.cancel"))
+        self.save_button.configure(text=tr("settings.save"))
+        self.version_var.set(f"{APP_NAME} v{APP_VERSION}\n{tr('settings.version_id').format(id=APP_VERSION_ID)}")
+        if self.announcement_status_var.get() in {"暂无公告。", "No announcements.", "お知らせはありません。"}:
+            self.announcement_status_var.set(tr("settings.no_announcements"))
+            self._set_announcement_text(tr("settings.no_announcements"))
+        if self._save_status_var.get():
+            self._save_status_var.set(tr("settings.saved_keep_open"))
+        self._refresh_option_labels()
+        self._update_concurrency_hint()
+
     def _confirm(self) -> None:
         prefixes = self._current_prefixes()
-        suffixes = self._current_suffixes()
-        contains = self._current_contains()
         if not prefixes:
-            messagebox.showwarning("提示", "至少需要保留一个目录忽略前缀。", parent=self)
+            messagebox.showwarning(tr("settings.app"), tr("settings.need_prefix"), parent=self)
             return
-
-        scan_mode = normalize_default_scan_mode(self._scan_mode_label_to_value.get(self.scan_mode_var.get()))
-        summary_filter = normalize_repair_summary_filter(self._summary_filter_label_to_value.get(self.summary_filter_var.get()))
-        concurrency_mode = normalize_analysis_concurrency_mode(self._concurrency_label_to_value.get(self.concurrency_var.get()))
+        language = normalize_language(self.language_var.get())
         custom_workers = normalize_analysis_custom_workers(self.custom_workers_var.get())
-        gpu_mode = normalize_gpu_acceleration_mode(self._gpu_label_to_value.get(self.gpu_mode_var.get()))
-        console_time_mode = normalize_console_time_mode(self._console_time_label_to_value.get(self.console_time_var.get()))
-        theme_id = normalize_theme_id(self._theme_label_to_value.get(self.theme_var.get()))
-        ui_density = normalize_ui_density(self._density_label_to_value.get(self.density_var.get()))
-        language = normalize_language(self._language_label_to_value.get(self.language_var.get()))
+        limit = max_analysis_workers()
+        if custom_workers > limit:
+            custom_workers = limit
+            self.custom_workers_var.set(str(limit))
         self.result = AppSettings(
             scan_ignore_prefixes=prefixes,
-            scan_ignore_suffixes=suffixes,
-            scan_ignore_contains=contains,
-            default_scan_mode=scan_mode,
-            repair_summary_default_filter=summary_filter,
-            analysis_concurrency_mode=concurrency_mode,
+            scan_ignore_suffixes=self._current_suffixes(),
+            scan_ignore_contains=self._current_contains(),
+            default_scan_mode=normalize_default_scan_mode(self.scan_mode_var.get()),
+            repair_summary_default_filter=normalize_repair_summary_filter(self.summary_filter_var.get()),
+            analysis_concurrency_mode=normalize_analysis_concurrency_mode(self.concurrency_var.get()),
             analysis_custom_workers=custom_workers,
-            gpu_acceleration_mode=gpu_mode,
-            console_time_mode=console_time_mode,
-            theme_id=theme_id,
-            ui_density=ui_density,
+            gpu_acceleration_mode=normalize_gpu_acceleration_mode(self.gpu_mode_var.get()),
+            console_time_mode=normalize_console_time_mode(self.console_time_var.get()),
+            theme_id=normalize_theme_id(self.theme_var.get()),
+            ui_density=normalize_ui_density(self.density_var.get()),
             language=language,
             auto_check_updates=True,
         )
+        if self._apply_callback is not None:
+            try:
+                applied = bool(self._apply_callback(self.result))
+            except Exception as exc:
+                messagebox.showerror(
+                    tr("settings.save_failed_title"),
+                    tr("settings.save_failed_body").format(error=exc),
+                    parent=self,
+                )
+                self._save_status_var.set(tr("settings.save_failed"))
+                return
+            if not applied:
+                self._save_status_var.set(tr("settings.save_failed"))
+                return
+            language_changed = language != self._initial_language
+            self._initial_language = language
+            self._save_status_var.set(tr("settings.saved_keep_open"))
+            if language_changed:
+                set_current_language(language)
+                self._refresh_language_texts()
+            return
         if language != self._initial_language:
             set_current_language(language)
-            messagebox.showinfo("语言设置", "界面语言已更改。部分文案可能需要重启应用后才会完全生效。", parent=self)
+            self._refresh_language_texts()
         self.destroy()
 
     def _cancel(self) -> None:
@@ -534,7 +608,7 @@ class AppSettingsDialog(tk.Toplevel):
 
     def _check_updates_now(self) -> None:
         if self._update_check_callback is None:
-            messagebox.showinfo("检查更新", "当前无法从设置窗口发起检查。", parent=self)
+            messagebox.showinfo(tr("settings.check_updates"), tr("settings.check_unavailable"), parent=self)
             return
         try:
             self._update_check_callback(self)
@@ -555,8 +629,8 @@ class AppSettingsDialog(tk.Toplevel):
         self.announcement_text.config(state="disabled")
 
     def _refresh_announcements_now(self) -> None:
-        self.announcement_status_var.set("正在刷新公告...")
-        self._set_announcement_text("正在获取公告。")
+        self.announcement_status_var.set(tr("settings.refreshing_announcements"))
+        self._set_announcement_text(tr("settings.fetching_announcements"))
         self._log("cloud message manual refresh requested from settings")
 
         def _worker() -> None:
@@ -566,8 +640,8 @@ class AppSettingsDialog(tk.Toplevel):
                 if not self.winfo_exists():
                     return
                 if not result.ok or result.payload is None:
-                    self.announcement_status_var.set("暂时没有获取到公告。")
-                    self._set_announcement_text("稍后可以再试一次。")
+                    self.announcement_status_var.set(tr("settings.announcement_failed"))
+                    self._set_announcement_text(tr("settings.announcement_retry"))
                     self._log(f"cloud message manual refresh failed: {result.error}")
                     return
                 messages = result.payload.get("messages", [])
@@ -577,19 +651,19 @@ class AppSettingsDialog(tk.Toplevel):
                     messages = []
                 enabled_messages = [item for item in messages if isinstance(item, dict) and item.get("enabled", True)]
                 if not enabled_messages:
-                    self.announcement_status_var.set("暂无公告。")
-                    self._set_announcement_text("暂无公告。")
+                    self.announcement_status_var.set(tr("settings.no_announcements"))
+                    self._set_announcement_text(tr("settings.no_announcements"))
                     self._log("cloud message manual refresh completed: empty")
                     return
                 lines: list[str] = []
                 for item in enabled_messages[:5]:
-                    title = str(item.get("title") or "公告")
+                    title = str(item.get("title") or tr("settings.section.announcements"))
                     body = str(item.get("body") or "").strip()
                     lines.append(title)
                     if body:
                         lines.append(body)
                     lines.append("")
-                self.announcement_status_var.set(f"已获取 {len(enabled_messages)} 条公告。")
+                self.announcement_status_var.set(tr("settings.announcement_count").format(count=len(enabled_messages)))
                 self._set_announcement_text("\n".join(lines).strip())
                 self._log(f"cloud message manual refresh completed: count={len(enabled_messages)}")
 
@@ -598,7 +672,21 @@ class AppSettingsDialog(tk.Toplevel):
         threading.Thread(target=_worker, daemon=True).start()
 
 
-def show_app_settings_dialog(parent: tk.Widget, settings: AppSettings, update_check_callback=None, log_callback=None) -> AppSettings | None:
-    dialog = AppSettingsDialog(parent, settings, update_check_callback=update_check_callback, log_callback=log_callback)
+def show_app_settings_dialog(
+    parent: tk.Widget,
+    settings: AppSettings,
+    update_check_callback=None,
+    log_callback=None,
+    apply_callback=None,
+    initial_tab: str | None = None,
+) -> AppSettings | None:
+    dialog = AppSettingsDialog(
+        parent,
+        settings,
+        update_check_callback=update_check_callback,
+        log_callback=log_callback,
+        apply_callback=apply_callback,
+        initial_tab=initial_tab,
+    )
     dialog.wait_window()
     return dialog.result

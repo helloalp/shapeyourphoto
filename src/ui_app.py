@@ -6,6 +6,7 @@ import tkinter as tk
 import webbrowser
 from pathlib import Path
 from tkinter import messagebox, ttk
+from urllib.parse import quote
 
 from app_settings import AppSettings, load_app_settings, save_app_settings
 from app_console import AppConsole
@@ -21,18 +22,31 @@ from progress_dialog import TaskProgressController
 from settings_dialog import show_app_settings_dialog
 from stats_dialog import show_stats_dialog
 from stats_store import load_stats
-from ui.language import set_current_language, tr
+from ui.language import get_current_language, set_current_language, tr
+from ui.display_names import display_name
 from ui.themes import get_theme
 from ui.hidpi import configure_fonts
 from ui.cloud_actions import UiCloudActionsMixin
 from ui.splash import SplashScreen
 from ui_analysis_actions import UiAnalysisActionsMixin
-from ui_constants import FILTER_OPTIONS
 from ui_file_list import UiFileListMixin
 from ui_repair_actions import UiRepairActionsMixin
 from ui_review_actions import UiReviewActionsMixin
 from ui_scan_actions import UiScanActionsMixin
 from ui_task_console import UiTaskConsoleMixin
+
+
+FILTER_ISSUE_CODES = [
+    "overexposed",
+    "underexposed",
+    "low_contrast",
+    "muted_colors",
+    "over_saturated",
+    "out_of_focus",
+    "high_noise",
+    "color_cast",
+    "portrait_out_of_focus",
+]
 
 
 class PhotoAnalyzerApp(
@@ -90,6 +104,8 @@ class PhotoAnalyzerApp(
         self._settings_warnings: list[str] = []
         self.settings: AppSettings = load_app_settings(report_warning=self._settings_warnings.append, create_if_missing=True)
         set_current_language(self.settings.language)
+        if self.status_var.get() == "请选择图片文件夹开始分析。":
+            self.status_var.set(tr("status.ready"))
         self.console.set_time_mode(self.settings.console_time_mode)
         self.drop_target = None
         self.sort_column = "name"
@@ -123,6 +139,10 @@ class PhotoAnalyzerApp(
         self._pin_icon_on: tk.PhotoImage | None = None
         self._large_preview_image: tk.PhotoImage | None = None
         self._current_preview_path: Path | None = None
+        self._large_preview_render_key: tuple[str, int, int, int] | None = None
+        self._large_preview_pending_key: tuple[str, int, int, int] | None = None
+        self._large_preview_after_id: str | None = None
+        self._large_preview_run_id = 0
         self._last_repair_summary_payload = None
 
         self._configure_style()
@@ -222,7 +242,7 @@ class PhotoAnalyzerApp(
             return
         self._topmost_button.configure(
             image=self._pin_icon_on if self._always_on_top else self._pin_icon_off,
-            text="已置顶" if self._always_on_top else "置顶",
+            text=tr("action.topmost_on") if self._always_on_top else tr("action.topmost_off"),
             style="TopmostOn.TButton" if self._always_on_top else "Topmost.TButton",
         )
 
@@ -239,7 +259,115 @@ class PhotoAnalyzerApp(
         self._apply_topmost_state()
         self._refresh_topmost_button()
 
-    def _build_ui(self) -> None:
+    def _localized_filter_options(self) -> list[tuple[str, str]]:
+        options = [(tr("filter.all"), "all"), (tr("filter.problem"), "problem")]
+        options.extend((display_name("issue", code), code) for code in FILTER_ISSUE_CODES)
+        return options
+
+    def _selected_filter_token(self) -> str:
+        label = self.filter_var.get()
+        current_map = getattr(self, "_filter_label_to_token", {})
+        if label in current_map:
+            return str(current_map[label])
+        legacy = {
+            "全部": "all",
+            "仅问题图": "problem",
+            "过曝": "overexposed",
+            "欠曝": "underexposed",
+            "低对比": "low_contrast",
+            "色彩寡淡": "muted_colors",
+            "过饱和": "over_saturated",
+            "虚焦": "out_of_focus",
+            "噪点偏高": "high_noise",
+            "色偏": "color_cast",
+            "人像主体虚焦": "portrait_out_of_focus",
+        }
+        return legacy.get(label, "all")
+
+    def _refresh_filter_options(self) -> None:
+        token = self._selected_filter_token()
+        options = self._localized_filter_options()
+        self._filter_label_to_token = {label: value for label, value in options}
+        self._filter_token_to_label = {value: label for label, value in options}
+        labels = [label for label, _value in options]
+        if hasattr(self, "filter_box"):
+            self.filter_box.configure(values=labels)
+        self.filter_var.set(self._filter_token_to_label.get(token, labels[0]))
+
+    def _refresh_language_texts(self) -> None:
+        self._build_menu()
+        self._refresh_topmost_button()
+        for attr, key in [
+            ("subtitle_label", "app.subtitle"),
+            ("filter_label", "filter.label"),
+            ("list_title_label", "list.title"),
+            ("list_action_hint_label", "list.action_hint"),
+            ("cleanup_description_label", "cleanup.description"),
+            ("right_title_label", "right.title"),
+        ]:
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.configure(text=tr(key))
+        for attr, key in [
+            ("choose_folder_button", "action.choose_folder"),
+            ("choose_image_button", "action.choose_image"),
+            ("analyze_all_button", "action.analyze_all"),
+            ("analyze_selected_button", "action.analyze_selected"),
+            ("repair_current_button", "action.repair_current"),
+            ("repair_checked_button", "action.repair_checked"),
+            ("stats_button", "action.stats"),
+            ("history_button", "action.history"),
+            ("cleanup_button", "action.cleanup_checked"),
+            ("website_button", "action.website"),
+            ("task_cancel_button", "action.cancel_task"),
+            ("scan_summary_button", "view.scan_summary"),
+            ("select_current_button", "action.select_current"),
+            ("unselect_current_button", "action.unselect_current"),
+            ("select_problem_button", "action.select_problem_items"),
+            ("unselect_all_button", "action.unselect_all"),
+            ("refresh_list_button", "action.refresh_list"),
+            ("cleanup_delete_button", "action.cleanup_delete"),
+            ("cleanup_select_current_button", "action.cleanup_select_current"),
+            ("cleanup_toggle_selected_button", "action.cleanup_toggle_selected"),
+            ("cleanup_select_all_button", "action.select_all"),
+            ("cleanup_unselect_all_button", "action.unselect_all_short"),
+            ("meta_edit_button", "meta.edit"),
+        ]:
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.configure(text=tr(key))
+        for attr, key in [("auto_check", "filter.only_problem"), ("debug_open_check", "filter.debug_compare")]:
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.configure(text=tr(key))
+        if hasattr(self, "progress_panel"):
+            self.progress_panel.configure(text=tr("progress.title"))
+        if hasattr(self, "tree"):
+            self.tree.heading("#0", text=tr("tree.preview_name"))
+            self.tree.heading("pick", text=tr("tree.pick"))
+            self.tree.heading("status", text=tr("tree.status"))
+            self.tree.heading("risk", text=tr("tree.risk"))
+            self.tree.heading("tags", text=tr("tree.tags"))
+        if self.list_menu is not None:
+            self.list_menu.entryconfigure(0, label=tr("list.menu.toggle_pick"))
+            self.list_menu.entryconfigure(1, label=tr("list.menu.select_all"))
+            self.list_menu.entryconfigure(2, label=tr("list.menu.invert"))
+            self.list_menu.entryconfigure(3, label=tr("list.menu.clear"))
+            self.list_menu.entryconfigure(5, label=tr("list.menu.remove"))
+        if hasattr(self, "cleanup_frame"):
+            self.cleanup_frame.configure(text=tr("cleanup.title"))
+        if hasattr(self, "cleanup_tree"):
+            self.cleanup_tree.heading("#0", text=tr("cleanup.tree_name"))
+            self.cleanup_tree.heading("pick", text=tr("cleanup.state"))
+            self.cleanup_tree.heading("severity", text=tr("cleanup.severity"))
+            self.cleanup_tree.heading("confidence", text=tr("cleanup.confidence"))
+            self.cleanup_tree.heading("reason", text=tr("cleanup.reason"))
+        if hasattr(self, "right_info_book"):
+            for tab, key in getattr(self, "_right_info_tabs", []):
+                self.right_info_book.tab(tab, text=tr(key))
+        self._refresh_filter_options()
+
+    def _build_menu(self) -> None:
         menu_bar = tk.Menu(self.root)
         review_menu = tk.Menu(menu_bar, tearoff=False)
         review_menu.add_command(label=tr("view.cleanup"), command=self.open_cleanup_review_window)
@@ -250,10 +378,20 @@ class PhotoAnalyzerApp(
         settings_menu = tk.Menu(menu_bar, tearoff=False)
         settings_menu.add_command(label=tr("settings.app"), command=self.open_settings_panel)
         menu_bar.add_cascade(label=tr("menu.settings"), menu=settings_menu)
+        if get_current_language() != "en_US":
+            menu_bar.add_command(label=tr("menu.language_quick"), command=lambda: self.open_settings_panel(initial_tab="language"))
         help_menu = tk.Menu(menu_bar, tearoff=False)
         help_menu.add_command(label=tr("menu.help_website"), command=self.show_help_website_info)
+        help_menu.add_command(label=tr("menu.contact_author"), command=self.show_contact_author_window)
         menu_bar.add_cascade(label=tr("menu.help"), menu=help_menu)
         self.root.configure(menu=menu_bar)
+        self.menu_bar = menu_bar
+        self.review_menu = review_menu
+        self.settings_menu = settings_menu
+        self.help_menu = help_menu
+
+    def _build_ui(self) -> None:
+        self._build_menu()
 
         outer = ttk.Frame(self.root, padding=10)
         outer.pack(fill="both", expand=True)
@@ -269,8 +407,8 @@ class PhotoAnalyzerApp(
         title_area = ttk.Frame(header, style="TopCard.TFrame")
         title_area.grid(row=0, column=0, sticky="ew")
         ttk.Label(title_area, text=f"{APP_NAME} v{APP_VERSION}", style="Header.TLabel").pack(anchor="w")
-        subtitle = "逐张实时分析、缩略图预览、条图诊断、自动修复与批量清理。"
-        ttk.Label(title_area, text=subtitle, style="Sub.TLabel").pack(anchor="w", pady=(2, 6))
+        self.subtitle_label = ttk.Label(title_area, text=tr("app.subtitle"), style="Sub.TLabel")
+        self.subtitle_label.pack(anchor="w", pady=(2, 6))
         self._topmost_button = ttk.Button(
             header,
             text="置顶",
@@ -290,30 +428,30 @@ class PhotoAnalyzerApp(
         path_entry = ttk.Entry(controls, textvariable=self.folder_var, font=("Consolas", 11))
         path_entry.grid(row=0, column=0, columnspan=6, sticky="ew", padx=(0, 10), pady=(0, 5))
 
-        choose_folder_button = ttk.Button(controls, text="选择文件夹", command=self.choose_folder)
-        choose_image_button = ttk.Button(controls, text="选择图片", command=self.choose_image)
-        analyze_all_button = ttk.Button(controls, text="分析全部", command=self.analyze_all)
-        analyze_selected_button = ttk.Button(controls, text="分析选中", command=self.analyze_selected)
-        repair_current_button = ttk.Button(controls, text="修复当前", command=self.repair_current)
-        repair_checked_button = ttk.Button(controls, text="批量修复勾选", command=self.repair_checked)
-        stats_button = ttk.Button(controls, text="统计", command=self.show_stats)
-        history_button = ttk.Button(controls, text="更新历史", command=lambda: show_history_dialog(self.root))
-        cleanup_button = ttk.Button(controls, text="清理勾选项", command=self.cleanup_selected)
-        website_button = ttk.Button(controls, text="官网", command=self.open_author_website)
+        self.choose_folder_button = ttk.Button(controls, text=tr("action.choose_folder"), command=self.choose_folder)
+        self.choose_image_button = ttk.Button(controls, text=tr("action.choose_image"), command=self.choose_image)
+        self.analyze_all_button = ttk.Button(controls, text=tr("action.analyze_all"), command=self.analyze_all)
+        self.analyze_selected_button = ttk.Button(controls, text=tr("action.analyze_selected"), command=self.analyze_selected)
+        self.repair_current_button = ttk.Button(controls, text=tr("action.repair_current"), command=self.repair_current)
+        self.repair_checked_button = ttk.Button(controls, text=tr("action.repair_checked"), command=self.repair_checked)
+        self.stats_button = ttk.Button(controls, text=tr("action.stats"), command=self.show_stats)
+        self.history_button = ttk.Button(controls, text=tr("action.history"), command=lambda: show_history_dialog(self.root))
+        self.cleanup_button = ttk.Button(controls, text=tr("action.cleanup_checked"), command=self.cleanup_selected)
+        self.website_button = ttk.Button(controls, text=tr("action.website"), command=self.open_author_website)
 
         button_specs: list[ttk.Button] = []
-        button_specs.append(choose_folder_button)
+        button_specs.append(self.choose_folder_button)
         button_specs.extend(
             [
-                choose_image_button,
-                analyze_all_button,
-                analyze_selected_button,
-                repair_current_button,
-                repair_checked_button,
-                stats_button,
-                history_button,
-                cleanup_button,
-                website_button,
+                self.choose_image_button,
+                self.analyze_all_button,
+                self.analyze_selected_button,
+                self.repair_current_button,
+                self.repair_checked_button,
+                self.stats_button,
+                self.history_button,
+                self.cleanup_button,
+                self.website_button,
             ]
         )
         button_columns = 5
@@ -328,44 +466,45 @@ class PhotoAnalyzerApp(
 
         toolbar = ttk.Frame(top_shell, padding=(0, 6), style="TopCard.TFrame")
         toolbar.pack(fill="x")
-        ttk.Label(toolbar, text="筛选：").pack(side="left")
-        filter_box = ttk.Combobox(toolbar, textvariable=self.filter_var, state="readonly", values=FILTER_OPTIONS, width=14)
-        filter_box.pack(side="left", padx=(0, 12))
-        filter_box.bind("<<ComboboxSelected>>", lambda _: self.refresh_tree())
-        auto_check = ttk.Checkbutton(toolbar, text="默认勾选问题图", variable=self.only_problem_var)
-        auto_check.pack(side="left")
-        debug_open_check = ttk.Checkbutton(
+        self.filter_label = ttk.Label(toolbar, text=tr("filter.label"))
+        self.filter_label.pack(side="left")
+        self.filter_box = ttk.Combobox(toolbar, textvariable=self.filter_var, state="readonly", width=22)
+        self._refresh_filter_options()
+        self.filter_box.pack(side="left", padx=(0, 12))
+        self.filter_box.bind("<<ComboboxSelected>>", lambda _: self.refresh_tree())
+        self.auto_check = ttk.Checkbutton(toolbar, text=tr("filter.only_problem"), variable=self.only_problem_var)
+        self.auto_check.pack(side="left")
+        self.debug_open_check = ttk.Checkbutton(
             toolbar,
-            text="调试模式：修复后选择打开前后对比",
+            text=tr("filter.debug_compare"),
             variable=self.debug_open_after_repair_var,
         )
-        debug_open_check.pack(side="left", padx=(12, 0))
+        self.debug_open_check.pack(side="left", padx=(12, 0))
+        self.control_widgets.extend([self.filter_box, self.auto_check, self.debug_open_check])
+
+        self.progress_panel = ttk.LabelFrame(top_shell, text=tr("progress.title"), padding=8)
+        self.progress_panel.pack(fill="x", pady=(2, 6))
+        self.progress_panel.columnconfigure(1, weight=1)
+        ttk.Label(self.progress_panel, textvariable=self.progress_text_var, style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(self.progress_panel, textvariable=self.progress_detail_var, style="Sub.TLabel").grid(
+            row=0, column=1, sticky="ew", padx=(10, 8)
+        )
         self.scan_summary_button = ttk.Button(
-            toolbar,
-            text="最近扫描摘要",
+            self.progress_panel,
+            text=tr("view.scan_summary"),
             command=self.show_last_scan_summary,
             state="disabled",
         )
-        self.scan_summary_button.pack(side="right", padx=(8, 0))
-        ttk.Label(toolbar, text="支持文件夹/图片拖入，分栏边界可拖动调整。", style="Sub.TLabel").pack(side="right")
-        self.control_widgets.extend([filter_box, auto_check, debug_open_check])
-
-        progress_panel = ttk.LabelFrame(top_shell, text="任务进度", padding=8)
-        progress_panel.pack(fill="x", pady=(2, 6))
-        progress_panel.columnconfigure(1, weight=1)
-        ttk.Label(progress_panel, textvariable=self.progress_text_var, style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(progress_panel, textvariable=self.progress_detail_var, style="Sub.TLabel", wraplength=1020).grid(
-            row=0, column=1, sticky="ew", padx=(10, 8)
-        )
+        self.scan_summary_button.grid(row=0, column=2, sticky="e", padx=(0, 8))
         self.task_cancel_button = ttk.Button(
-            progress_panel,
-            text="取消任务",
+            self.progress_panel,
+            text=tr("action.cancel_task"),
             command=self.cancel_current_task,
             state="disabled",
         )
-        self.task_cancel_button.grid(row=0, column=2, sticky="e")
-        self.progress_bar = ttk.Progressbar(progress_panel, mode="determinate", maximum=1, variable=self.progress_value)
-        self.progress_bar.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self.task_cancel_button.grid(row=0, column=3, sticky="e")
+        self.progress_bar = ttk.Progressbar(self.progress_panel, mode="determinate", maximum=1, variable=self.progress_value)
+        self.progress_bar.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(6, 0))
 
         main = ttk.PanedWindow(body_shell, orient="horizontal")
         main.pack(fill="both", expand=True)
@@ -383,8 +522,9 @@ class PhotoAnalyzerApp(
 
         list_header = ttk.Frame(left, style="Panel.TFrame")
         list_header.pack(fill="x", pady=(0, 4))
-        ttk.Label(list_header, text="文件列表", style="PanelTitle.TLabel").pack(side="left")
-        self.list_stats_var = tk.StringVar(value="未导入图片")
+        self.list_title_label = ttk.Label(list_header, text=tr("list.title"), style="PanelTitle.TLabel")
+        self.list_title_label.pack(side="left")
+        self.list_stats_var = tk.StringVar(value=tr("list.empty_stats"))
         ttk.Label(list_header, textvariable=self.list_stats_var, style="Sub.TLabel").pack(side="right")
         tree_frame = ttk.Frame(left, style="Panel.TFrame")
         tree_frame.pack(fill="both", expand=True)
@@ -397,13 +537,13 @@ class PhotoAnalyzerApp(
             show=("tree", "headings"),
             selectmode="extended",
         )
-        self.tree.heading("#0", text="预览 / 文件名", command=lambda: self._toggle_sort("name"))
+        self.tree.heading("#0", text=tr("tree.preview_name"), command=lambda: self._toggle_sort("name"))
         self.tree.column("#0", width=370, anchor="w")
-        self.tree.heading("pick", text="处理状态")
+        self.tree.heading("pick", text=tr("tree.pick"))
         self.tree.column("pick", width=92, anchor="center")
-        self.tree.heading("status", text="状态", command=lambda: self._toggle_sort("status"))
-        self.tree.heading("risk", text="风险值", command=lambda: self._toggle_sort("risk"))
-        self.tree.heading("tags", text="识别结果", command=lambda: self._toggle_sort("tags"))
+        self.tree.heading("status", text=tr("tree.status"), command=lambda: self._toggle_sort("status"))
+        self.tree.heading("risk", text=tr("tree.risk"), command=lambda: self._toggle_sort("risk"))
+        self.tree.heading("tags", text=tr("tree.tags"), command=lambda: self._toggle_sort("tags"))
         self.tree.column("status", width=90, anchor="center")
         self.tree.column("risk", width=90, anchor="center")
         self.tree.column("tags", width=340, anchor="w")
@@ -424,33 +564,40 @@ class PhotoAnalyzerApp(
         self.tree.bind("<Delete>", self.remove_selected_from_list)
 
         self.list_menu = tk.Menu(self.root, tearoff=False)
-        self.list_menu.add_command(label="切换处理状态", command=self.toggle_cleanup_flag)
-        self.list_menu.add_command(label="全选列表", command=self.select_all_list_items)
-        self.list_menu.add_command(label="反选列表", command=self.invert_list_selection)
-        self.list_menu.add_command(label="清除列表选择", command=self.clear_list_selection)
+        self.list_menu.add_command(label=tr("list.menu.toggle_pick"), command=self.toggle_cleanup_flag)
+        self.list_menu.add_command(label=tr("list.menu.select_all"), command=self.select_all_list_items)
+        self.list_menu.add_command(label=tr("list.menu.invert"), command=self.invert_list_selection)
+        self.list_menu.add_command(label=tr("list.menu.clear"), command=self.clear_list_selection)
         self.list_menu.add_separator()
-        self.list_menu.add_command(label="移出选中项", command=self.remove_selected_from_list)
+        self.list_menu.add_command(label=tr("list.menu.remove"), command=self.remove_selected_from_list)
 
         action_bar = ttk.Frame(left)
         action_bar.pack(fill="x", pady=(6, 0))
-        ttk.Button(action_bar, text="选中当前", command=self.select_current).pack(side="left")
-        ttk.Button(action_bar, text="取消当前", command=self.unselect_current).pack(side="left", padx=6)
-        ttk.Button(action_bar, text="全选问题图", command=self.select_problem_items).pack(side="left")
-        ttk.Button(action_bar, text="取消全部勾选", command=self.unselect_all).pack(side="left", padx=6)
-        ttk.Button(action_bar, text="刷新列表", command=self.refresh_tree).pack(side="left")
-        ttk.Label(action_bar, text="单击处理状态可切换，右键可移出列表。").pack(side="right")
+        self.select_current_button = ttk.Button(action_bar, text=tr("action.select_current"), command=self.select_current)
+        self.select_current_button.pack(side="left")
+        self.unselect_current_button = ttk.Button(action_bar, text=tr("action.unselect_current"), command=self.unselect_current)
+        self.unselect_current_button.pack(side="left", padx=6)
+        self.select_problem_button = ttk.Button(action_bar, text=tr("action.select_problem_items"), command=self.select_problem_items)
+        self.select_problem_button.pack(side="left")
+        self.unselect_all_button = ttk.Button(action_bar, text=tr("action.unselect_all"), command=self.unselect_all)
+        self.unselect_all_button.pack(side="left", padx=6)
+        self.refresh_list_button = ttk.Button(action_bar, text=tr("action.refresh_list"), command=self.refresh_tree)
+        self.refresh_list_button.pack(side="left")
+        self.list_action_hint_label = ttk.Label(action_bar, text=tr("list.action_hint"))
+        self.list_action_hint_label.pack(side="right")
 
-        cleanup_frame = ttk.LabelFrame(left, text="不适合保留的图片", padding=10)
-        cleanup_frame.pack(fill="both", expand=False, pady=(8, 0))
-        cleanup_frame.columnconfigure(0, weight=1)
-        cleanup_frame.rowconfigure(1, weight=1)
-        ttk.Label(
-            cleanup_frame,
-            text="分析完成后会在这里汇总可能不适合继续保留的图片。请核对后再选择是否删除。",
+        self.cleanup_frame = ttk.LabelFrame(left, text=tr("cleanup.title"), padding=10)
+        self.cleanup_frame.pack(fill="both", expand=False, pady=(8, 0))
+        self.cleanup_frame.columnconfigure(0, weight=1)
+        self.cleanup_frame.rowconfigure(1, weight=1)
+        self.cleanup_description_label = ttk.Label(
+            self.cleanup_frame,
+            text=tr("cleanup.description"),
             style="Sub.TLabel",
-        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        )
+        self.cleanup_description_label.grid(row=0, column=0, sticky="w", pady=(0, 8))
 
-        cleanup_tree_frame = ttk.Frame(cleanup_frame, style="Panel.TFrame")
+        cleanup_tree_frame = ttk.Frame(self.cleanup_frame, style="Panel.TFrame")
         cleanup_tree_frame.grid(row=1, column=0, sticky="nsew")
         cleanup_tree_frame.columnconfigure(0, weight=1)
         cleanup_tree_frame.rowconfigure(0, weight=1)
@@ -462,15 +609,15 @@ class PhotoAnalyzerApp(
             selectmode="extended",
             height=5,
         )
-        self.cleanup_tree.heading("#0", text="缩略图 / 文件名")
+        self.cleanup_tree.heading("#0", text=tr("cleanup.tree_name"))
         self.cleanup_tree.column("#0", width=260, anchor="w")
-        self.cleanup_tree.heading("pick", text="状态")
+        self.cleanup_tree.heading("pick", text=tr("cleanup.state"))
         self.cleanup_tree.column("pick", width=72, anchor="center")
-        self.cleanup_tree.heading("severity", text="严重度")
+        self.cleanup_tree.heading("severity", text=tr("cleanup.severity"))
         self.cleanup_tree.column("severity", width=72, anchor="center")
-        self.cleanup_tree.heading("confidence", text="置信度")
+        self.cleanup_tree.heading("confidence", text=tr("cleanup.confidence"))
         self.cleanup_tree.column("confidence", width=72, anchor="center")
-        self.cleanup_tree.heading("reason", text="主要原因")
+        self.cleanup_tree.heading("reason", text=tr("cleanup.reason"))
         self.cleanup_tree.column("reason", width=360, anchor="w")
         cleanup_scroll = ttk.Scrollbar(cleanup_tree_frame, orient="vertical", command=self.cleanup_tree.yview)
         self.cleanup_tree.configure(yscrollcommand=cleanup_scroll.set)
@@ -479,31 +626,48 @@ class PhotoAnalyzerApp(
         self.cleanup_tree.bind("<<TreeviewSelect>>", self.on_cleanup_tree_select)
         self.cleanup_tree.bind("<Button-1>", self.on_cleanup_tree_click, add="+")
 
-        cleanup_action_bar = ttk.Frame(cleanup_frame)
+        cleanup_action_bar = ttk.Frame(self.cleanup_frame)
         cleanup_action_bar.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         self.cleanup_delete_button = ttk.Button(
             cleanup_action_bar,
-            text="删除选择的图片",
+            text=tr("action.cleanup_delete"),
             command=self.cleanup_selected_candidates,
             state="disabled",
         )
         self.cleanup_delete_button.pack(side="left")
-        ttk.Button(cleanup_action_bar, text="勾选当前", command=self.select_cleanup_current).pack(side="left", padx=(6, 0))
-        ttk.Button(cleanup_action_bar, text="切换所选", command=self.toggle_selected_cleanup_candidates).pack(side="left", padx=6)
-        ttk.Button(cleanup_action_bar, text="全选", command=self.select_all_cleanup_candidates).pack(side="left")
-        ttk.Button(cleanup_action_bar, text="取消全选", command=self.unselect_all_cleanup_candidates).pack(side="left", padx=6)
-        self.cleanup_hint_var = tk.StringVar(value="当前没有选择图片。")
+        self.cleanup_select_current_button = ttk.Button(
+            cleanup_action_bar,
+            text=tr("action.cleanup_select_current"),
+            command=self.select_cleanup_current,
+        )
+        self.cleanup_select_current_button.pack(side="left", padx=(6, 0))
+        self.cleanup_toggle_selected_button = ttk.Button(
+            cleanup_action_bar,
+            text=tr("action.cleanup_toggle_selected"),
+            command=self.toggle_selected_cleanup_candidates,
+        )
+        self.cleanup_toggle_selected_button.pack(side="left", padx=6)
+        self.cleanup_select_all_button = ttk.Button(cleanup_action_bar, text=tr("action.select_all"), command=self.select_all_cleanup_candidates)
+        self.cleanup_select_all_button.pack(side="left")
+        self.cleanup_unselect_all_button = ttk.Button(
+            cleanup_action_bar,
+            text=tr("action.unselect_all_short"),
+            command=self.unselect_all_cleanup_candidates,
+        )
+        self.cleanup_unselect_all_button.pack(side="left", padx=6)
+        self.cleanup_hint_var = tk.StringVar(value=tr("cleanup.no_selection"))
         ttk.Label(cleanup_action_bar, textvariable=self.cleanup_hint_var, style="Sub.TLabel").pack(side="right")
 
-        ttk.Label(right, text=tr("right.title"), style="PanelTitle.TLabel").pack(anchor="w", pady=(0, 8))
+        self.right_title_label = ttk.Label(right, text=tr("right.title"), style="PanelTitle.TLabel")
+        self.right_title_label.pack(anchor="w", pady=(0, 8))
         right_book = ttk.Notebook(right)
         right_book.pack(fill="both", expand=True)
         self.right_info_book = right_book
 
-        diagnosis_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=8)
-        preview_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=8)
-        meta_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=8)
-        console_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=8)
+        diagnosis_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=(0, 8, 0, 0))
+        preview_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=(0, 8, 0, 0))
+        meta_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=(0, 8, 0, 0))
+        console_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=(0, 8, 0, 0))
 
         diagnosis_tab.columnconfigure(0, weight=1)
         diagnosis_tab.rowconfigure(0, weight=0, minsize=310)
@@ -545,7 +709,7 @@ class PhotoAnalyzerApp(
         self.summary_text.configure(yscrollcommand=summary_scroll.set)
         self.summary_text.grid(row=0, column=0, sticky="nsew")
         summary_scroll.grid(row=0, column=1, sticky="ns")
-        self.summary_text.insert("1.0", "右下区域会显示当前图片的诊断说明、建议和推荐修复方法。")
+        self.summary_text.insert("1.0", tr("summary.empty"))
         self.summary_text.config(state="disabled")
 
         meta_tab.columnconfigure(0, weight=1)
@@ -553,14 +717,14 @@ class PhotoAnalyzerApp(
         meta_toolbar = ttk.Frame(meta_tab)
         meta_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         meta_toolbar.columnconfigure(0, weight=1)
-        self.meta_edit_button = ttk.Button(meta_toolbar, text="编辑", command=self.edit_current_metadata, state="disabled")
+        self.meta_edit_button = ttk.Button(meta_toolbar, text=tr("meta.edit"), command=self.edit_current_metadata, state="disabled")
         self.meta_edit_button.grid(row=0, column=1, sticky="e")
         self.meta_text = tk.Text(meta_tab, wrap="word", font=("Microsoft YaHei UI", 10), bg="#f8fbf8", relief="flat", padx=10, pady=10)
         meta_scroll = ttk.Scrollbar(meta_tab, orient="vertical", command=self.meta_text.yview)
         self.meta_text.configure(yscrollcommand=meta_scroll.set)
         self.meta_text.grid(row=1, column=0, sticky="nsew")
         meta_scroll.grid(row=1, column=1, sticky="ns")
-        self.meta_text.insert("1.0", "这里会显示 EXIF、DPI、ICC、XMP 等属性信息。")
+        self.meta_text.insert("1.0", tr("meta.empty"))
         self.meta_text.config(state="disabled")
 
         console_tab.columnconfigure(0, weight=1)
@@ -578,14 +742,20 @@ class PhotoAnalyzerApp(
         self.large_preview_label = ttk.Label(preview_tab, text=tr("preview.empty"), anchor="center")
         self.large_preview_label.grid(row=0, column=0, sticky="nsew")
         preview_tab.bind("<Configure>", lambda _event: self._refresh_large_preview())
+        right_book.bind("<<NotebookTabChanged>>", lambda _event: self._refresh_large_preview(), add="+")
 
-        right_book.add(diagnosis_tab, text=tr("right.diagnosis"))
-        right_book.add(preview_tab, text=tr("right.preview"))
-        right_book.add(meta_tab, text=tr("right.properties"))
-        right_book.add(console_tab, text=tr("right.console"))
+        self._right_info_tabs = [
+            (diagnosis_tab, "right.diagnosis"),
+            (preview_tab, "right.preview"),
+            (meta_tab, "right.properties"),
+            (console_tab, "right.console"),
+        ]
+        for tab, key in self._right_info_tabs:
+            right_book.add(tab, text=tr(key))
 
         status = ttk.Label(body_shell, textvariable=self.status_var, anchor="w")
         status.pack(fill="x", pady=(10, 0))
+        self._refresh_language_texts()
 
     def _apply_initial_layout(self) -> None:
         try:
@@ -640,10 +810,10 @@ class PhotoAnalyzerApp(
             try:
                 self.root.clipboard_clear()
                 self.root.clipboard_append(url)
-                copied = "\n链接已复制到剪贴板。"
+                copied = f"\n{tr('contact.copied')}"
             except Exception:
                 copied = ""
-            messagebox.showerror("无法打开作者官网", f"请手动打开：\n{url}\n\n错误：{exc}{copied}", parent=self.root)
+            messagebox.showerror(tr("dialog.help_title"), f"{url}{copied}", parent=self.root)
 
     def show_help_website_info(self) -> None:
         dialog = tk.Toplevel(self.root)
@@ -657,7 +827,88 @@ class PhotoAnalyzerApp(
         buttons = ttk.Frame(outer)
         buttons.pack(fill="x", pady=(16, 0))
         ttk.Button(buttons, text=tr("action.open_website"), command=lambda: (dialog.destroy(), self.open_author_website())).pack(side="left")
+        ttk.Button(buttons, text=tr("help.faq"), command=lambda: (dialog.destroy(), self.open_faq_page())).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text=tr("help.contact"), command=lambda: (dialog.destroy(), self.show_contact_author_window())).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text=tr("action.close"), command=dialog.destroy).pack(side="right")
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + max(40, (self.root.winfo_width() - dialog.winfo_width()) // 2)
+        y = self.root.winfo_rooty() + max(40, (self.root.winfo_height() - dialog.winfo_height()) // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+    def open_faq_page(self) -> None:
+        url = "https://helloalp.top/tools/shapeyourphoto/articles/faq.html"
+        try:
+            if not webbrowser.open(url):
+                raise RuntimeError("system browser returned false")
+        except Exception:
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(url)
+                messagebox.showinfo(tr("help.faq"), tr("contact.copied"), parent=self.root)
+            except Exception:
+                messagebox.showinfo(tr("help.faq"), url, parent=self.root)
+
+    def show_contact_author_window(self) -> None:
+        email = "hello@helloalp.top"
+        dialog = tk.Toplevel(self.root)
+        dialog.title(tr("contact.title"))
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(True, True)
+        dialog.minsize(640, 520)
+        outer = ttk.Frame(dialog, padding=16)
+        outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(4, weight=1)
+        ttk.Label(outer, text=tr("contact.title"), font=("Microsoft YaHei UI", 12, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(outer, text=tr("contact.intro"), wraplength=580, justify="left").grid(row=1, column=0, sticky="w", pady=(6, 10))
+        ttk.Label(outer, text=f"{tr('contact.email')}: {email}").grid(row=2, column=0, sticky="w")
+        ttk.Label(outer, text=tr("contact.template"), font=("Microsoft YaHei UI", 10, "bold")).grid(row=3, column=0, sticky="w", pady=(12, 4))
+        text_frame = ttk.Frame(outer)
+        text_frame.grid(row=4, column=0, sticky="nsew")
+        text_frame.columnconfigure(0, weight=1)
+        text_frame.rowconfigure(0, weight=1)
+        template_text = tk.Text(text_frame, height=10, wrap="word", font=("Microsoft YaHei UI", 10), padx=8, pady=8)
+        template_scroll = ttk.Scrollbar(text_frame, orient="vertical", command=template_text.yview)
+        template_text.configure(yscrollcommand=template_scroll.set)
+        template_text.grid(row=0, column=0, sticky="nsew")
+        template_scroll.grid(row=0, column=1, sticky="ns")
+        template_text.insert("1.0", tr("contact.template_body"))
+        ttk.Label(outer, text=tr("contact.extra"), font=("Microsoft YaHei UI", 10, "bold")).grid(row=5, column=0, sticky="w", pady=(12, 4))
+        extra_text = tk.Text(outer, height=5, wrap="word", font=("Microsoft YaHei UI", 10), padx=8, pady=8)
+        extra_text.grid(row=6, column=0, sticky="ew")
+        extra_text.insert("1.0", tr("contact.extra_placeholder"))
+        status_var = tk.StringVar(value="")
+        ttk.Label(outer, textvariable=status_var).grid(row=7, column=0, sticky="w", pady=(8, 0))
+
+        def composed_body() -> str:
+            template = template_text.get("1.0", "end").strip()
+            extra = extra_text.get("1.0", "end").strip()
+            if extra and extra != tr("contact.extra_placeholder"):
+                return f"{template}\n\n{tr('contact.extra')}:\n{extra}"
+            return template
+
+        def copy_text(value: str) -> None:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(value)
+            status_var.set(tr("contact.copied"))
+
+        def send_mail() -> None:
+            subject = quote("ShapeYourPhoto feedback")
+            body = quote(composed_body())
+            url = f"mailto:{email}?subject={subject}&body={body}"
+            try:
+                if not webbrowser.open(url):
+                    raise RuntimeError("open failed")
+            except Exception:
+                status_var.set(tr("contact.open_failed"))
+
+        actions = ttk.Frame(outer)
+        actions.grid(row=8, column=0, sticky="ew", pady=(12, 0))
+        ttk.Button(actions, text=tr("contact.send"), command=send_mail).pack(side="left")
+        ttk.Button(actions, text=tr("contact.copy_template"), command=lambda: copy_text(composed_body())).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text=tr("contact.copy_email"), command=lambda: copy_text(email)).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text=tr("action.close"), command=dialog.destroy).pack(side="right")
         dialog.update_idletasks()
         x = self.root.winfo_rootx() + max(40, (self.root.winfo_width() - dialog.winfo_width()) // 2)
         y = self.root.winfo_rooty() + max(40, (self.root.winfo_height() - dialog.winfo_height()) // 2)
@@ -666,30 +917,43 @@ class PhotoAnalyzerApp(
     def show_stats(self) -> None:
         show_stats_dialog(self.root, self.stats)
 
-    def open_settings_panel(self) -> None:
-        settings = show_app_settings_dialog(self.root, self.settings, update_check_callback=self.check_updates_now)
-        if settings is None:
-            return
-        try:
-            save_app_settings(settings, report_warning=lambda message: self._log_console(message))
-        except Exception as exc:
-            messagebox.showerror("保存失败", f"应用设置保存失败：\n{exc}")
-            self._log_console(f"settings save failed: {exc}")
-            return
-        self.settings = settings
-        set_current_language(self.settings.language)
-        self.console.set_time_mode(self.settings.console_time_mode)
-        self._configure_style()
-        self.status_var.set("应用设置已保存，新的扫描和修复详情窗口会立即使用最新配置。")
-        self._log_console(
-            "settings updated: "
-            f"prefix={','.join(self.settings.scan_ignore_prefixes)} | "
-            f"suffix={','.join(self.settings.scan_ignore_suffixes)} | "
-            f"contains={','.join(self.settings.scan_ignore_contains)} | "
-            f"default_scan={self.settings.default_scan_mode} | "
-            f"repair_summary_filter={self.settings.repair_summary_default_filter} | "
-            f"analysis_concurrency={self.settings.analysis_concurrency_mode}:{self.settings.analysis_custom_workers or 'auto'} | "
-            f"gpu={self.settings.gpu_acceleration_mode} | "
-            f"console_time={self.settings.console_time_mode} | theme={self.settings.theme_id} | "
-            f"density={self.settings.ui_density} | language={self.settings.language}"
+    def open_settings_panel(self, initial_tab: str | None = None) -> None:
+        def _apply_settings(settings: AppSettings) -> bool:
+            try:
+                save_app_settings(settings, report_warning=lambda message: self._log_console(message))
+            except Exception as exc:
+                messagebox.showerror("保存失败", f"应用设置保存失败：\n{exc}")
+                self._log_console(f"settings save failed: {exc}")
+                return False
+            self.settings = settings
+            set_current_language(self.settings.language)
+            self.console.set_time_mode(self.settings.console_time_mode)
+            self._configure_style()
+            self._refresh_language_texts()
+            if self.image_paths:
+                current_path = self._current_path()
+                self.refresh_tree()
+                if current_path is not None:
+                    self._select_path(current_path)
+            self.status_var.set(tr("settings.saved_keep_open"))
+            self._log_console(
+                "settings updated: "
+                f"prefix={','.join(self.settings.scan_ignore_prefixes)} | "
+                f"suffix={','.join(self.settings.scan_ignore_suffixes)} | "
+                f"contains={','.join(self.settings.scan_ignore_contains)} | "
+                f"default_scan={self.settings.default_scan_mode} | "
+                f"repair_summary_filter={self.settings.repair_summary_default_filter} | "
+                f"analysis_concurrency={self.settings.analysis_concurrency_mode}:{self.settings.analysis_custom_workers or 'auto'} | "
+                f"gpu={self.settings.gpu_acceleration_mode} | "
+                f"console_time={self.settings.console_time_mode} | theme={self.settings.theme_id} | "
+                f"density={self.settings.ui_density} | language={self.settings.language}"
+            )
+            return True
+
+        show_app_settings_dialog(
+            self.root,
+            self.settings,
+            update_check_callback=self.check_updates_now,
+            apply_callback=_apply_settings,
+            initial_tab=initial_tab,
         )
