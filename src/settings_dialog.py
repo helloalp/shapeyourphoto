@@ -10,9 +10,12 @@ from app_settings import (
     AppSettings,
     CONSOLE_TIME_MODE_OPTIONS,
     DEFAULT_SCAN_IGNORE_PREFIXES,
+    DEFAULT_SCAN_IGNORE_SUFFIXES,
+    DEFAULT_SCAN_IGNORE_CONTAINS,
     GPU_ACCELERATION_OPTIONS,
     REPAIR_SUMMARY_FILTER_OPTIONS,
     SCAN_MODE_OPTIONS,
+    UI_DENSITY_OPTIONS,
     normalize_analysis_concurrency_mode,
     normalize_analysis_custom_workers,
     normalize_default_scan_mode,
@@ -20,6 +23,9 @@ from app_settings import (
     normalize_console_time_mode,
     normalize_repair_summary_filter,
     normalize_scan_ignore_prefixes,
+    normalize_scan_ignore_suffixes,
+    normalize_scan_ignore_contains,
+    normalize_ui_density,
     validate_settings_payload,
 )
 from cloud_client import fetch_cloud_messages
@@ -57,6 +63,8 @@ class AppSettingsDialog(tk.Toplevel):
         self._console_time_label_to_value = {label: value for value, label in CONSOLE_TIME_MODE_OPTIONS}
         self._theme_value_to_label = dict(THEME_OPTIONS)
         self._theme_label_to_value = {label: value for value, label in THEME_OPTIONS}
+        self._density_value_to_label = dict(UI_DENSITY_OPTIONS)
+        self._density_label_to_value = {label: value for value, label in UI_DENSITY_OPTIONS}
         self._language_value_to_label = dict(LANGUAGE_OPTIONS)
         self._language_label_to_value = {label: value for value, label in LANGUAGE_OPTIONS}
 
@@ -72,42 +80,41 @@ class AppSettingsDialog(tk.Toplevel):
 
         scan_tab = ttk.Frame(notebook, padding=14)
         scan_tab.columnconfigure(0, weight=1)
-        scan_tab.rowconfigure(3, weight=1)
+        scan_tab.rowconfigure(2, weight=1)
         notebook.add(scan_tab, text="扫描")
 
-        ttk.Label(scan_tab, text="扫描忽略文件夹前缀", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(scan_tab, text="扫描忽略规则", font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(
             scan_tab,
-            text="名称以这些内容开头的文件夹会被跳过，包括它里面的图片。",
+            text="这些规则只作用于文件夹名称。命中的文件夹和里面的图片会被跳过；_repair 会始终保留，避免修复输出被重新扫入。",
             wraplength=680,
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(8, 10))
 
-        add_row = ttk.Frame(scan_tab)
-        add_row.grid(row=2, column=0, sticky="ew")
-        add_row.columnconfigure(0, weight=1)
-        self.prefix_var = tk.StringVar()
-        entry = ttk.Entry(add_row, textvariable=self.prefix_var)
-        entry.grid(row=0, column=0, sticky="ew")
-        entry.bind("<Return>", lambda _event: self._add_prefix())
-        ttk.Button(add_row, text="添加前缀", command=self._add_prefix).grid(row=0, column=1, padx=(8, 0))
-
-        list_frame = ttk.Frame(scan_tab)
-        list_frame.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
-        list_frame.columnconfigure(0, weight=1)
-        list_frame.rowconfigure(0, weight=1)
-        self.prefix_list = tk.Listbox(list_frame, activestyle="none", font=("Consolas", 11), exportselection=False)
-        prefix_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.prefix_list.yview)
-        self.prefix_list.configure(yscrollcommand=prefix_scroll.set)
-        self.prefix_list.grid(row=0, column=0, sticky="nsew")
-        prefix_scroll.grid(row=0, column=1, sticky="ns")
-        for prefix in normalized.scan_ignore_prefixes:
-            self.prefix_list.insert("end", prefix)
-
-        prefix_actions = ttk.Frame(scan_tab)
-        prefix_actions.grid(row=4, column=0, sticky="ew", pady=(10, 0))
-        ttk.Button(prefix_actions, text="删除选中", command=self._remove_selected).pack(side="left")
-        ttk.Button(prefix_actions, text="恢复默认", command=self._restore_defaults).pack(side="left", padx=(8, 0))
+        rule_book = ttk.Notebook(scan_tab)
+        rule_book.grid(row=2, column=0, sticky="nsew")
+        self._scan_rule_widgets: dict[str, tuple[tk.Listbox, tk.StringVar]] = {}
+        self._build_scan_rule_page(
+            rule_book,
+            key="prefix",
+            title="前缀",
+            description="文件夹名称以规则开头时跳过，例如 _repair、_old。",
+            values=normalized.scan_ignore_prefixes,
+        )
+        self._build_scan_rule_page(
+            rule_book,
+            key="suffix",
+            title="后缀",
+            description="文件夹名称以规则结尾时跳过，例如 _backup、_old。",
+            values=normalized.scan_ignore_suffixes,
+        )
+        self._build_scan_rule_page(
+            rule_book,
+            key="contains",
+            title="包含",
+            description="文件夹名称中包含规则文字时跳过。请谨慎添加，避免误跳过正常相册。",
+            values=normalized.scan_ignore_contains,
+        )
 
         behavior_tab = ttk.Frame(notebook, padding=14)
         behavior_tab.columnconfigure(1, weight=1)
@@ -198,16 +205,20 @@ class AppSettingsDialog(tk.Toplevel):
             width=28,
         ).grid(row=6, column=1, sticky="w")
 
-        backend_status = detect_gpu_backend()
-        backend_label = backend_status.backend_name if backend_status.available else "未检测到"
-        ttk.Label(performance_tab, text="加速状态：").grid(row=7, column=0, sticky="w", pady=(12, 0))
-        ttk.Label(performance_tab, text=backend_label).grid(row=7, column=1, sticky="w", pady=(12, 0))
+        self.gpu_hardware_var = tk.StringVar(value="正在检测...")
+        self.gpu_backend_var = tk.StringVar(value="正在检测...")
+        self.gpu_reason_var = tk.StringVar(value="正在后台检测 GPU 硬件和可用后端，设置窗口可以继续使用。")
+        ttk.Label(performance_tab, text="硬件状态：").grid(row=7, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(performance_tab, textvariable=self.gpu_hardware_var).grid(row=7, column=1, sticky="w", pady=(12, 0))
+        ttk.Label(performance_tab, text="加速状态：").grid(row=8, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(performance_tab, textvariable=self.gpu_backend_var).grid(row=8, column=1, sticky="w", pady=(8, 0))
         ttk.Label(
             performance_tab,
-            text=backend_status.reason,
+            textvariable=self.gpu_reason_var,
             wraplength=680,
             justify="left",
-        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self._start_gpu_status_refresh()
 
         console_tab = ttk.Frame(notebook, padding=14)
         console_tab.columnconfigure(1, weight=1)
@@ -255,6 +266,21 @@ class AppSettingsDialog(tk.Toplevel):
             width=28,
         )
         theme_box.grid(row=2, column=1, sticky="w")
+        ttk.Label(appearance_tab, text="界面清晰度 / 密度：").grid(row=3, column=0, sticky="w", pady=(14, 0))
+        self.density_var = tk.StringVar(value=self._density_value_to_label[normalized.ui_density])
+        ttk.Combobox(
+            appearance_tab,
+            textvariable=self.density_var,
+            state="readonly",
+            values=[label for _value, label in UI_DENSITY_OPTIONS],
+            width=28,
+        ).grid(row=3, column=1, sticky="w", pady=(14, 0))
+        ttk.Label(
+            appearance_tab,
+            text="高清细节会略微提高字体、行高和按钮留白，适合 2K/4K 或高缩放屏幕。",
+            wraplength=680,
+            justify="left",
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
         language_tab = ttk.Frame(notebook, padding=14)
         language_tab.columnconfigure(1, weight=1)
         notebook.add(language_tab, text="语言")
@@ -320,44 +346,155 @@ class AppSettingsDialog(tk.Toplevel):
         bind_minimum_size_notice(self, self._size_notice_var, 760, 560)
         center_window(self, 820, 620)
 
-    def _current_prefixes(self) -> list[str]:
-        values = [self.prefix_list.get(index) for index in range(self.prefix_list.size())]
-        return normalize_scan_ignore_prefixes(values)
+    def _normalize_rule_values(self, key: str, values: list[str]) -> list[str]:
+        if key == "prefix":
+            return normalize_scan_ignore_prefixes(values)
+        if key == "suffix":
+            return normalize_scan_ignore_suffixes(values)
+        return normalize_scan_ignore_contains(values)
 
-    def _refresh_prefix_list(self, prefixes: list[str], *, select_value: str | None = None) -> None:
-        self.prefix_list.delete(0, "end")
-        for prefix in normalize_scan_ignore_prefixes(prefixes):
-            self.prefix_list.insert("end", prefix)
+    def _build_scan_rule_page(
+        self,
+        notebook: ttk.Notebook,
+        *,
+        key: str,
+        title: str,
+        description: str,
+        values: list[str],
+    ) -> None:
+        page = ttk.Frame(notebook, padding=12)
+        page.columnconfigure(0, weight=1)
+        page.rowconfigure(3, weight=1)
+        notebook.add(page, text=title)
+        ttk.Label(page, text=description, wraplength=640, justify="left").grid(row=0, column=0, sticky="w")
+
+        add_row = ttk.Frame(page)
+        add_row.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        add_row.columnconfigure(0, weight=1)
+        value_var = tk.StringVar()
+        entry = ttk.Entry(add_row, textvariable=value_var)
+        entry.grid(row=0, column=0, sticky="ew")
+        entry.bind("<Return>", lambda _event, k=key: self._add_rule(k))
+        ttk.Button(add_row, text=f"添加{title}", command=lambda k=key: self._add_rule(k)).grid(row=0, column=1, padx=(8, 0))
+
+        hint = "列表支持按 Ctrl 或 Shift 多选后一次删除。"
+        ttk.Label(page, text=hint).grid(row=2, column=0, sticky="w", pady=(8, 0))
+
+        list_frame = ttk.Frame(page)
+        list_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        listbox = tk.Listbox(
+            list_frame,
+            activestyle="none",
+            font=("Consolas", 11),
+            exportselection=False,
+            selectmode="extended",
+        )
+        scroll = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+        listbox.configure(yscrollcommand=scroll.set)
+        listbox.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        self._scan_rule_widgets[key] = (listbox, value_var)
+        self._refresh_rule_list(key, values)
+
+        actions = ttk.Frame(page)
+        actions.grid(row=4, column=0, sticky="ew", pady=(10, 0))
+        ttk.Button(actions, text="删除选中", command=lambda k=key: self._remove_selected_rules(k)).pack(side="left")
+        ttk.Button(actions, text="恢复默认", command=lambda k=key: self._restore_default_rules(k)).pack(side="left", padx=(8, 0))
+
+    def _current_rules(self, key: str) -> list[str]:
+        listbox, _value_var = self._scan_rule_widgets[key]
+        values = [listbox.get(index).split(". ", 1)[-1] for index in range(listbox.size())]
+        return self._normalize_rule_values(key, values)
+
+    def _refresh_rule_list(self, key: str, values: list[str], *, select_value: str | None = None) -> None:
+        listbox, _value_var = self._scan_rule_widgets[key]
+        normalized_values = self._normalize_rule_values(key, values)
+        listbox.delete(0, "end")
+        for index, value in enumerate(normalized_values, start=1):
+            listbox.insert("end", f"{index}. {value}")
         if select_value is not None:
-            for index in range(self.prefix_list.size()):
-                if self.prefix_list.get(index).casefold() == select_value.casefold():
-                    self.prefix_list.selection_clear(0, "end")
-                    self.prefix_list.selection_set(index)
-                    self.prefix_list.see(index)
+            for index in range(listbox.size()):
+                if listbox.get(index).split(". ", 1)[-1].casefold() == select_value.casefold():
+                    listbox.selection_clear(0, "end")
+                    listbox.selection_set(index)
+                    listbox.see(index)
                     break
 
-    def _add_prefix(self) -> None:
-        raw_value = self.prefix_var.get().strip()
+    def _add_rule(self, key: str) -> None:
+        _listbox, value_var = self._scan_rule_widgets[key]
+        raw_value = value_var.get().strip()
         if not raw_value:
             return
-        prefixes = self._current_prefixes()
-        merged = normalize_scan_ignore_prefixes(prefixes + [raw_value])
-        self._refresh_prefix_list(merged, select_value=raw_value)
-        self.prefix_var.set("")
+        merged = self._current_rules(key) + [raw_value]
+        self._refresh_rule_list(key, merged, select_value=raw_value)
+        value_var.set("")
 
-    def _remove_selected(self) -> None:
-        selection = self.prefix_list.curselection()
+    def _remove_selected_rules(self, key: str) -> None:
+        listbox, _value_var = self._scan_rule_widgets[key]
+        selection = set(listbox.curselection())
         if not selection:
             return
-        remove_indexes = set(selection)
-        prefixes = [self.prefix_list.get(index) for index in range(self.prefix_list.size()) if index not in remove_indexes]
-        self._refresh_prefix_list(prefixes)
+        values = [
+            listbox.get(index).split(". ", 1)[-1]
+            for index in range(listbox.size())
+            if index not in selection
+        ]
+        self._refresh_rule_list(key, values)
+
+    def _restore_default_rules(self, key: str) -> None:
+        defaults = {
+            "prefix": list(DEFAULT_SCAN_IGNORE_PREFIXES),
+            "suffix": list(DEFAULT_SCAN_IGNORE_SUFFIXES),
+            "contains": list(DEFAULT_SCAN_IGNORE_CONTAINS),
+        }[key]
+        self._refresh_rule_list(key, defaults, select_value=defaults[0] if defaults else None)
+
+    def _current_prefixes(self) -> list[str]:
+        return self._current_rules("prefix")
+
+    def _current_suffixes(self) -> list[str]:
+        return self._current_rules("suffix")
+
+    def _current_contains(self) -> list[str]:
+        return self._current_rules("contains")
+
+    def _refresh_prefix_list(self, prefixes: list[str], *, select_value: str | None = None) -> None:
+        self._refresh_rule_list("prefix", prefixes, select_value=select_value)
+
+    def _add_prefix(self) -> None:
+        self._add_rule("prefix")
+
+    def _remove_selected(self) -> None:
+        self._remove_selected_rules("prefix")
 
     def _restore_defaults(self) -> None:
         self._refresh_prefix_list(list(DEFAULT_SCAN_IGNORE_PREFIXES), select_value=DEFAULT_SCAN_IGNORE_PREFIXES[0])
 
+    def _start_gpu_status_refresh(self) -> None:
+        def _worker() -> None:
+            status = detect_gpu_backend()
+
+            def _finish() -> None:
+                if not self.winfo_exists():
+                    return
+                hardware = status.hardware_name if status.hardware_detected else "未检测到 GPU 硬件"
+                if status.driver_version:
+                    hardware = f"{hardware}（驱动 {status.driver_version}）"
+                backend = status.backend_name if status.available else "未检测到可用后端"
+                self.gpu_hardware_var.set(hardware)
+                self.gpu_backend_var.set(backend)
+                self.gpu_reason_var.set(status.reason)
+
+            self.after(0, _finish)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
     def _confirm(self) -> None:
         prefixes = self._current_prefixes()
+        suffixes = self._current_suffixes()
+        contains = self._current_contains()
         if not prefixes:
             messagebox.showwarning("提示", "至少需要保留一个目录忽略前缀。", parent=self)
             return
@@ -369,9 +506,12 @@ class AppSettingsDialog(tk.Toplevel):
         gpu_mode = normalize_gpu_acceleration_mode(self._gpu_label_to_value.get(self.gpu_mode_var.get()))
         console_time_mode = normalize_console_time_mode(self._console_time_label_to_value.get(self.console_time_var.get()))
         theme_id = normalize_theme_id(self._theme_label_to_value.get(self.theme_var.get()))
+        ui_density = normalize_ui_density(self._density_label_to_value.get(self.density_var.get()))
         language = normalize_language(self._language_label_to_value.get(self.language_var.get()))
         self.result = AppSettings(
             scan_ignore_prefixes=prefixes,
+            scan_ignore_suffixes=suffixes,
+            scan_ignore_contains=contains,
             default_scan_mode=scan_mode,
             repair_summary_default_filter=summary_filter,
             analysis_concurrency_mode=concurrency_mode,
@@ -379,6 +519,7 @@ class AppSettingsDialog(tk.Toplevel):
             gpu_acceleration_mode=gpu_mode,
             console_time_mode=console_time_mode,
             theme_id=theme_id,
+            ui_density=ui_density,
             language=language,
             auto_check_updates=True,
         )

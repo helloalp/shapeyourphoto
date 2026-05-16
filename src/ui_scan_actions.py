@@ -6,6 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
+from analyzer import is_supported_image
 from app_settings import scan_mode_label
 from file_actions import ScanResult, scan_image_paths_with_progress
 from scan_dialogs import SCAN_MODE_ALL, show_scan_mode_dialog
@@ -35,27 +36,31 @@ class UiScanActionsMixin:
     def _handle_dropped_paths(self, dropped: list[Path]) -> None:
         image_paths: list[Path] = []
         scan_requests: list[tuple[Path, str]] = []
+        invalid_count = 0
         for item in dropped:
             if item.is_dir():
                 plan = self._resolve_scan_plan(item)
                 if plan is None:
                     continue
                 scan_requests.append((item, plan))
-            elif item.is_file():
+            elif item.is_file() and is_supported_image(item):
                 image_paths.append(item)
+            else:
+                invalid_count += 1
         if scan_requests:
             self.folder_var.set(str(scan_requests[0][0]))
             self._start_directory_scans(scan_requests, initial_paths=image_paths, origin="drag_drop")
             return
         if not image_paths:
-            self._log_console("drag drop ignored: no supported image or scan canceled")
+            self.status_var.set("拖入的内容里没有可读取的图片。")
+            self._log_console(f"drag drop ignored: no supported image or scan canceled | invalid={invalid_count}")
             return
         self._merge_paths(image_paths)
         self.folder_var.set(str(dropped[0]))
-        self.thumb_cache.clear()
         self.refresh_tree()
         self._select_path(image_paths[0])
-        self._log_console(f"drag drop added: {len(image_paths)} image(s)")
+        self.status_var.set(f"已加入 {len(image_paths)} 张图片。")
+        self._log_console(f"drag drop added: {len(image_paths)} image(s) invalid={invalid_count}")
 
     def load_single_image(self, path: Path) -> None:
         if self.is_busy:
@@ -66,7 +71,6 @@ class UiScanActionsMixin:
             return
 
         self.folder_var.set(str(path))
-        self.thumb_cache.clear()
         self._merge_paths([path])
         self.selected_flags.setdefault(path, tk.BooleanVar(value=False))
         self.selected_flags[path].set(True)
@@ -97,6 +101,11 @@ class UiScanActionsMixin:
             self._auto_analyze_after_scan = False
             messagebox.showerror("错误", "文件夹不存在，请重新选择。")
             return
+        if not root.is_dir():
+            self._auto_analyze_after_scan = False
+            messagebox.showwarning("提示", "请选择文件夹后再开始扫描。")
+            self._log_console(f"scan rejected: not a folder | {root}")
+            return
 
         scan_mode = self._resolve_scan_plan(root)
         if scan_mode is None:
@@ -112,12 +121,22 @@ class UiScanActionsMixin:
         show_scan_summary_dialog(self.root, self._last_scan_results)
 
     def _resolve_scan_plan(self, root: Path) -> str | None:
-        has_subdirs = any(child.is_dir() for child in root.iterdir())
+        try:
+            has_subdirs = any(child.is_dir() for child in root.iterdir())
+        except OSError as exc:
+            self._log_console(f"scan plan fallback: {root} | {exc}")
+            return SCAN_MODE_ALL
         if not has_subdirs:
             return SCAN_MODE_ALL
         if self.settings.default_scan_mode != "ask":
             return self.settings.default_scan_mode
-        return show_scan_mode_dialog(self.root, root, self.settings.scan_ignore_prefixes)
+        return show_scan_mode_dialog(
+            self.root,
+            root,
+            self.settings.scan_ignore_prefixes,
+            self.settings.scan_ignore_suffixes,
+            self.settings.scan_ignore_contains,
+        )
 
     def _scan_mode_label(self, mode: str) -> str:
         return scan_mode_label(mode)
@@ -129,7 +148,7 @@ class UiScanActionsMixin:
         initial_paths: list[Path] | None = None,
         origin: str,
     ) -> None:
-        requests = [(root, mode) for root, mode in scan_requests if root.exists()]
+        requests = [(root, mode) for root, mode in scan_requests if root.exists() and root.is_dir()]
         initial = [path for path in (initial_paths or []) if path.exists()]
         if not requests and initial:
             self._merge_paths(initial)
@@ -142,17 +161,25 @@ class UiScanActionsMixin:
             return
 
         self._last_scan_update = 0.0
+        self._scan_run_id = getattr(self, "_scan_run_id", 0) + 1
+        run_id = self._scan_run_id
+        cancel_event = threading.Event()
+        self._scan_cancel_event = cancel_event
+        self._scan_started_at = time.perf_counter()
         self._begin_task(
             1,
-            "正在扫描文件夹 0/0",
-            f"正在扫描文件夹：{requests[0][0]}",
-            show_dialog=True,
-            dialog_title="文件夹扫描中",
-            dialog_header="正在扫描文件夹 / 加载图片",
+            "正在扫描文件夹",
+            f"正在扫描：{requests[0][0]}",
+            show_dialog=False,
+            cancel_callback=lambda rid=run_id: self.cancel_scan(rid),
+            cancel_text="取消扫描",
         )
         for root, mode in requests:
             self._log_console(
-                f"scan started: root={root} mode={self._scan_mode_label(mode)} ignore={','.join(self.settings.scan_ignore_prefixes)} origin={origin}"
+                f"scan started: root={root} mode={self._scan_mode_label(mode)} "
+                f"prefix={','.join(self.settings.scan_ignore_prefixes)} "
+                f"suffix={','.join(self.settings.scan_ignore_suffixes)} "
+                f"contains={','.join(self.settings.scan_ignore_contains)} origin={origin}"
             )
 
         def worker() -> None:
@@ -177,35 +204,59 @@ class UiScanActionsMixin:
                         progress_callback,
                         mode=mode,
                         ignored_dir_prefixes=self.settings.scan_ignore_prefixes,
+                        ignored_dir_suffixes=self.settings.scan_ignore_suffixes,
+                        ignored_dir_contains=self.settings.scan_ignore_contains,
+                        cancel_event=cancel_event,
                     )
                     merged_paths.extend(scan_result.paths)
                     scan_results.append(scan_result)
                     self._log_scan_console_summary(scan_result)
+                    if cancel_event.is_set():
+                        break
             except Exception as exc:
-                self._dispatch_ui(lambda: self._scan_failed(str(exc)))
+                self._dispatch_ui(lambda rid=run_id: self._scan_failed(str(exc), rid))
                 return
-            self._dispatch_ui(lambda paths=merged_paths, results=scan_results: self._scan_finished(paths, results))
+            if cancel_event.is_set():
+                self._dispatch_ui(lambda paths=merged_paths, results=scan_results, rid=run_id: self._scan_canceled(paths, results, rid))
+                return
+            self._dispatch_ui(lambda paths=merged_paths, results=scan_results, rid=run_id: self._scan_finished(paths, results, rid))
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def cancel_scan(self, run_id: int | None = None) -> None:
+        if run_id is not None and run_id != getattr(self, "_scan_run_id", 0):
+            return
+        cancel_event = getattr(self, "_scan_cancel_event", None)
+        if cancel_event is not None:
+            cancel_event.set()
+        detail = "正在取消扫描，已找到的图片会保留在列表中。"
+        self.progress_controller.update(
+            done=self.progress_controller.state.done,
+            total=self.progress_controller.state.total,
+            title="正在取消扫描",
+            detail=detail,
+            status=detail,
+        )
+        self._log_console(f"scan cancel requested: run={getattr(self, '_scan_run_id', 0)}")
+
     def _format_scan_summary(self, scan_result: ScanResult) -> str:
         summary = scan_result.summary
-        prefix_counts = summary.skipped_prefix_counts
-        prefix_text = "；".join(f"{prefix}：{count} 个" for prefix, count in prefix_counts.items()) if prefix_counts else "无"
+        rule_counts = summary.skipped_prefix_counts
+        rule_text = "；".join(f"{rule}：{count} 个" for rule, count in rule_counts.items()) if rule_counts else "无"
         return (
             f"[{summary.root.name}] 扫描模式：{self._scan_mode_label(summary.mode)} | "
             f"跳过文件夹 {summary.skipped_directory_count} 个 | "
             f"导入图片 {summary.imported_count} 张 | "
-            f"命中前缀：{prefix_text}"
+            f"命中规则：{rule_text}"
         )
 
     def _log_scan_console_summary(self, scan_result: ScanResult) -> None:
         summary = scan_result.summary
-        prefix_counts = summary.skipped_prefix_counts
-        if prefix_counts:
-            prefix_text = "；".join(f"{prefix}:{count}" for prefix, count in prefix_counts.items())
+        rule_counts = summary.skipped_prefix_counts
+        if rule_counts:
+            rule_text = "；".join(f"{rule}:{count}" for rule, count in rule_counts.items())
             self._log_console(
-                f"scan skipped summary: root={summary.root} skipped={summary.skipped_directory_count} prefixes={prefix_text}"
+                f"scan skipped summary: root={summary.root} skipped={summary.skipped_directory_count} rules={rule_text}"
             )
             self._log_console(f"跳过的文件夹明细已收进“最近扫描摘要”，共 {summary.skipped_directory_count} 个。")
         else:
@@ -223,11 +274,11 @@ class UiScanActionsMixin:
             title=f"正在扫描文件夹 {done}/{total}",
             detail=f"已发现 {found} 张图片，当前：{current_label}",
             status=f"扫描文件夹 {done}/{total}，已发现 {found} 张图片",
-            dialog_title="文件夹扫描中",
-            dialog_header="正在扫描文件夹 / 加载图片",
         )
 
-    def _scan_finished(self, paths: list[Path], scan_results: list[ScanResult]) -> None:
+    def _scan_finished(self, paths: list[Path], scan_results: list[ScanResult], run_id: int) -> None:
+        if run_id != getattr(self, "_scan_run_id", 0):
+            return
         total_paths = len(paths)
         self.progress_controller.update(
             done=0,
@@ -235,14 +286,13 @@ class UiScanActionsMixin:
             title="正在加载图片",
             detail=f"扫描完成，正在导入 {total_paths} 张图片到结果列表。",
             status=f"正在加载图片，已导入 0/{total_paths}",
-            dialog_title="文件夹扫描中",
-            dialog_header="正在扫描文件夹 / 加载图片",
         )
-        self.root.after(20, lambda p=paths, r=scan_results: self._finish_scan_loading(p, r))
+        self.root.after(20, lambda p=paths, r=scan_results, rid=run_id: self._finish_scan_loading(p, r, rid))
 
-    def _finish_scan_loading(self, paths: list[Path], scan_results: list[ScanResult]) -> None:
+    def _finish_scan_loading(self, paths: list[Path], scan_results: list[ScanResult], run_id: int | None = None) -> None:
+        if run_id is not None and run_id != getattr(self, "_scan_run_id", 0):
+            return
         self._merge_paths(paths)
-        self.thumb_cache.clear()
         self.progress_bar.configure(maximum=max(1, len(self.image_paths)))
         self.progress_value.set(0.0)
         self._last_scan_results = list(scan_results)
@@ -252,9 +302,17 @@ class UiScanActionsMixin:
         for line in summary_lines:
             self._log_console(f"scan summary: {line}")
         self._log_console(f"scan finished: new={len(paths)} total={len(self.image_paths)}")
+        scan_wall_ms = (time.perf_counter() - getattr(self, "_scan_started_at", time.perf_counter())) * 1000.0
+        visited = sum(result.summary.visited_files for result in scan_results)
+        skipped = sum(result.summary.skipped_directory_count for result in scan_results)
+        self._log_console(
+            f"scan timing: total_wall_time={self._format_ms(scan_wall_ms)} | visited_files={visited} | "
+            f"imported={len(paths)} | skipped_dirs={skipped}"
+        )
         detail = f"当前列表共 {len(self.image_paths)} 张图片，本次新读取 {len(paths)} 张。"
         if self._last_scan_summary:
-            detail = f"{detail}\n{self._last_scan_summary}\n可点击“查看最近扫描摘要”查看跳过的文件夹明细。"
+            skipped_count = sum(result.summary.skipped_directory_count for result in scan_results)
+            detail = f"{detail} 跳过文件夹 {skipped_count} 个，可点击“查看最近扫描摘要”查看明细。"
         self._finish_task("文件夹扫描和加载完成", detail)
         self.refresh_tree()
         if self.image_paths:
@@ -264,9 +322,29 @@ class UiScanActionsMixin:
             self._run_analysis(self.image_paths)
         else:
             self._auto_analyze_after_scan = False
+        self._scan_cancel_event = None
 
-    def _scan_failed(self, error: str) -> None:
+    def _scan_canceled(self, paths: list[Path], scan_results: list[ScanResult], run_id: int) -> None:
+        if run_id != getattr(self, "_scan_run_id", 0):
+            return
+        self._auto_analyze_after_scan = False
+        if paths:
+            self._merge_paths(paths)
+            self.refresh_tree()
+            self._select_path(paths[0])
+        self._last_scan_results = list(scan_results)
+        self.scan_summary_button.configure(state="normal" if self._last_scan_results else "disabled")
+        detail = f"扫描已取消，已将找到的 {len(paths)} 张图片加入列表。"
+        self._finish_task("扫描已取消", detail)
+        scan_wall_ms = (time.perf_counter() - getattr(self, "_scan_started_at", time.perf_counter())) * 1000.0
+        self._log_console(f"scan canceled: imported_partial={len(paths)} | total_wall_time={self._format_ms(scan_wall_ms)}")
+        self._scan_cancel_event = None
+
+    def _scan_failed(self, error: str, run_id: int | None = None) -> None:
+        if run_id is not None and run_id != getattr(self, "_scan_run_id", 0):
+            return
         self._auto_analyze_after_scan = False
         self._log_console(f"scan failed: {error}")
         self._finish_task("文件夹读取失败", error)
+        self._scan_cancel_event = None
         messagebox.showerror("读取失败", f"扫描文件夹时发生错误：\n{error}")

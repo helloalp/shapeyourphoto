@@ -23,15 +23,19 @@ class UiTaskConsoleMixin:
         self._ui_queue.put(callback)
 
     def _drain_ui_queue(self) -> None:
+        drained = 0
+        started_at = time.perf_counter()
         try:
-            while True:
+            while drained < 80 and (time.perf_counter() - started_at) < 0.012:
                 callback = self._ui_queue.get_nowait()
                 callback()
+                drained += 1
         except queue.Empty:
             pass
         finally:
             if self.root.winfo_exists():
-                self.root.after(25, self._drain_ui_queue)
+                delay = 1 if drained >= 80 else 25
+                self.root.after(delay, self._drain_ui_queue)
 
     def _log_console(self, message: str) -> None:
         self.console.log(message)
@@ -115,6 +119,12 @@ class UiTaskConsoleMixin:
         self._last_repair_phase_update = 0.0
         self.is_busy = True
         self._set_controls_enabled(False)
+        self._active_task_cancel_callback = cancel_callback
+        if hasattr(self, "task_cancel_button"):
+            if cancel_callback is None:
+                self.task_cancel_button.configure(state="disabled")
+            else:
+                self.task_cancel_button.configure(state="normal", text=cancel_text)
         self.progress_controller.begin(
             total=max(1, total),
             title=title,
@@ -130,8 +140,19 @@ class UiTaskConsoleMixin:
     def _finish_task(self, title: str, detail: str) -> None:
         self.is_busy = False
         self._set_controls_enabled(True)
+        self._active_task_cancel_callback = None
+        if hasattr(self, "task_cancel_button"):
+            self.task_cancel_button.configure(state="disabled", text="取消任务")
         self.progress_controller.finish(title=title, detail=detail, status=detail, close_dialog=True)
         self._flush_console()
+
+    def cancel_current_task(self) -> None:
+        callback = getattr(self, "_active_task_cancel_callback", None)
+        if callback is None:
+            return
+        if hasattr(self, "task_cancel_button"):
+            self.task_cancel_button.configure(state="disabled")
+        callback()
 
     def _elapsed_task_text(self) -> str:
         seconds = max(0, int(time.monotonic() - self._task_started_at)) if self._task_started_at else 0

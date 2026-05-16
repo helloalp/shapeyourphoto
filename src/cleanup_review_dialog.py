@@ -35,7 +35,7 @@ class CleanupReviewDialog(tk.Toplevel):
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
-        self.minsize(860, 520)
+        self.minsize(980, 640)
         self.protocol("WM_DELETE_WINDOW", self._skip)
 
         self.result: CleanupReviewResult | None = None
@@ -137,7 +137,7 @@ class CleanupReviewDialog(tk.Toplevel):
         ttk.Button(button_row, text="取消", command=self._skip).pack(side="right")
 
         bind_minimum_size_notice(self, self._size_notice_var, 860, 520)
-        center_window(self, 980, 620)
+        center_window(self, 1120, 780)
 
     def _reason_summary(self, entry: CleanupReviewEntry) -> str:
         label = display_name("cleanup_reason", entry.reason_code)

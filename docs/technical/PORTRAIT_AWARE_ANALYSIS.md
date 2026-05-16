@@ -1,56 +1,27 @@
-﻿# Portrait-Aware Analysis
+# 人像感知与分析机制
 
-本文记录当前人像感知分析的维护口径。1.1.3/1.1.4 的历史演进详见 `docs/updates/`；当前以 1.1.6 说明和代码为准。
+本文记录当前系统对人像增强处理与分析的维护口径与接口规范。
 
-## 目标
+> [!NOTE]
+> 人像分析底层的 `raw_face_candidates` 到 `validated_face_boxes` 的精确分层算法、分类校验阈值、以及“真实人脸”、“背景背身人物”等具体的场景组合决策树，属于核心图像处理机密，已统一归档于 `private_docs/for_developai/03_DATA_MODELS_AND_CORE_LOGIC.md` 中。公开文档仅记录模块职责。
 
-- 降低闪光灯人像、毕业照、合影和背光人物被误判为普通欠曝/过曝的概率。
-- 区分真实正面/近正面人脸、背身或侧背身人物、画作/海报脸和纹理误检。
-- 只做质量分析和修复策略保护，不做人脸身份识别，不做复杂美颜。
+## 目标与能力范围
 
-## 模块分工
+系统提供增强的人像感知能力，以实现更精准的局部优化与整体测光：
+- **场景感知保护**：通过对闪光灯人像、毕业照、合影及背光人物进行结构性检测，降低被误判为常规欠曝/过曝的概率。
+- **干扰抑制**：过滤掉背景中的海报、油画、肤色近似纹理等非目标对象，避免触发无效的增强动作。
+- **边界**：当前设计仅专注于基础的图片质量分析与安全修复策略计算，不涉及复杂的生物特征提取、不进行身份识别，也未集成改变五官特征的强滤镜美颜。
 
-- [src/analysis/portrait.py](/E:/aitools/shapeyourphoto/src/analysis/portrait.py)：候选检测、验证、分类和区域构建。
-- [src/analysis/core.py](/E:/aitools/shapeyourphoto/src/analysis/core.py)：消费人像结果，生成 issues、场景字段、诊断说明和 cleanup candidate meta。
-- [src/repair_planner.py](/E:/aitools/shapeyourphoto/src/repair_planner.py)：根据 portrait policy 限制修复方法和强度。
-- [src/repair_ops.py](/E:/aitools/shapeyourphoto/src/repair_ops.py)：执行局部增强、背景保护和场景化降噪。
-- [src/repair_engine.py](/E:/aitools/shapeyourphoto/src/repair_engine.py)：候选评分、回退和保存决策。
+## 模块分工职责
 
-## 候选分层
+分析阶段涉及以下模块协同流转：
+- **`src/analysis/portrait.py`**：执行底层的候选特征提取、区域分类与边界框计算。
+- **`src/analysis/core.py`**：集成并消费人像子结果，据此生成综合问题反馈 (issues)、修正场景属性并进行清理候选（不适合保留图片）的基础筛查。
+- **`src/repair_planner.py`**：根据获取到的有效人像策略（portrait policy），对后续的自动化修复力度及选用方法作出限制性规划。
+- **`src/repair_ops.py`** 与 **`src/repair_engine.py`**：在执行局部细节修复（如面部对比度平衡、背景光保护）时，依赖之前生成的人像结构进行安全系数验证和评分。
 
-- `raw_face_candidates`：宽松候选，用于排查来源。
-- `face_candidates`：包含 classification、accepted、is_real_face、is_frontal、rejection_reasons 的明细。
-- `validated_face_boxes`：通过验证的真实正面/近正面人脸，才可进入真人 portrait policy、真人虚焦判断和真人相关 cleanup candidate。
+## 性能表现与计时规范
 
-维护时不要把 raw candidate 直接当作真实人脸使用。
-
-## 当前分类
-
-- `real_frontal_face` / `real_near_frontal_face`：可进入真人 portrait policy。
-- `artwork_face`：画作、海报、印刷品中的脸，不触发真人虚焦删除。
-- `non_frontal_face_candidate`：非正面候选，不进入 frontal portrait blur。
-- `back_view_proxy`：背身或侧背身人物上下文，不触发真人脸部虚焦。
-- `texture_false_positive`：肤色相近纹理或边缘误检。
-
-## 场景与修复联动
-
-- `portrait_type` 表示人像类型，如 `real_frontal_portrait`、`real_multi_portrait`、`artwork_face_context`、`back_view_person_context`。
-- `portrait_scene_type` 表示人像曝光场景，如暗背景、高调背景、背光等。
-- 主体曝光正常时，不应仅因背景偏暗强行全局提亮。
-- 高调背景或白墙/天空场景，不应默认强压高光导致背景发灰。
-- 降噪在人像场景中必须保护脸部和皮肤纹理。
-
-## cleanup candidate 边界
-
-真人虚焦 cleanup candidate 只能来自 validated real face / subject 判断。背身人物、画作脸和低置信 raw candidate 不得触发“真实正面人像脸部严重虚焦，建议删除”。
-
-当前已知高风险回归：
-
-- 背身/侧背身人物被误判为真实正面脸。
-- 画作或海报脸触发真人虚焦删除。
-- 暗背景人像被当作普通欠曝强提亮。
-- 高调背景人像被过度压暗。
-
-## 性能与计时
-
-人像检测和区域构建可能是慢阶段。新增耗时应写入 `perf_timings`，如 `face_detect`、`portrait_region_build`、`mask_build`、`mask_feather`。用户可读提示写入 `perf_notes`。
+由于引入高粒度的人像和区域分割分析，相应的流水线环节可能成为计算瓶颈：
+- 任何新增的特征层或计算步骤其耗时统计必须标准地回写至 `perf_timings`。
+- 面向用户的性能提醒摘要，仅通过 `perf_notes` 格式化传递，禁止在终端直接打印带有底层算法代号的时间节点。

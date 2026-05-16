@@ -36,7 +36,7 @@ class RepairCompletionDialog(tk.Toplevel):
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
-        self.minsize(920, 640)
+        self.minsize(1040, 720)
         self._entries = entries
         self._label_to_filter = {label: value for value, label in REPAIR_SUMMARY_FILTER_OPTIONS}
         self._filter_to_label = dict(REPAIR_SUMMARY_FILTER_OPTIONS)
@@ -135,8 +135,8 @@ class RepairCompletionDialog(tk.Toplevel):
 
         self._item_to_entry: dict[str, RepairCompletionEntry] = {}
         self._populate_tree()
-        bind_minimum_size_notice(self, self._size_notice_var, 920, 640)
-        center_window(self, 1180, 820)
+        bind_minimum_size_notice(self, self._size_notice_var, 1040, 720)
+        center_window(self, 1320, 900)
 
     def _current_filter(self) -> str:
         return normalize_repair_summary_filter(self._label_to_filter.get(self.filter_var.get()))

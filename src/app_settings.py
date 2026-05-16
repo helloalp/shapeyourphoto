@@ -11,8 +11,10 @@ from paths import migrate_legacy_file
 from ui.language import DEFAULT_LANGUAGE, normalize_language
 
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 5
+SETTINGS_SCHEMA_VERSION = 6
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
+DEFAULT_SCAN_IGNORE_SUFFIXES: list[str] = []
+DEFAULT_SCAN_IGNORE_CONTAINS: list[str] = []
 FIXED_UPDATE_MANIFEST_URL = "https://helloalp.top/shapeyourphoto/updates/manifest.json"
 FIXED_CLOUD_MESSAGES_URL = "https://helloalp.top/shapeyourphoto/updates/messages.json"
 DEFAULT_UPDATE_MANIFEST_URL = FIXED_UPDATE_MANIFEST_URL
@@ -62,6 +64,17 @@ CONSOLE_TIME_MODE_OPTIONS: list[tuple[str, str]] = [
 ]
 CONSOLE_TIME_MODE_LABELS = {value: label for value, label in CONSOLE_TIME_MODE_OPTIONS}
 
+UI_DENSITY_STANDARD = "standard"
+UI_DENSITY_COMFORTABLE = "comfortable"
+UI_DENSITY_HIGH_DETAIL = "high_detail"
+
+UI_DENSITY_OPTIONS: list[tuple[str, str]] = [
+    (UI_DENSITY_STANDARD, "标准"),
+    (UI_DENSITY_COMFORTABLE, "舒展"),
+    (UI_DENSITY_HIGH_DETAIL, "高清细节"),
+]
+UI_DENSITY_LABELS = {value: label for value, label in UI_DENSITY_OPTIONS}
+
 SCAN_MODE_OPTIONS: list[tuple[str, str]] = [
     (SCAN_MODE_ASK, "每次询问"),
     (SCAN_MODE_ALL, "扫描全部，包含子文件夹"),
@@ -103,12 +116,12 @@ def repair_summary_filter_label(filter_id: str) -> str:
     )
 
 
-def normalize_scan_ignore_prefixes(prefixes: list[str] | tuple[str, ...] | None) -> list[str]:
+def _normalize_rule_list(values: list[str] | tuple[str, ...] | None) -> list[str]:
     ordered: list[str] = []
     seen: set[str] = set()
-    if prefixes is None or not isinstance(prefixes, (list, tuple)):
-        prefixes = []
-    for raw_value in list(prefixes):
+    if values is None or not isinstance(values, (list, tuple)):
+        values = []
+    for raw_value in list(values):
         value = str(raw_value).strip()
         if not value:
             continue
@@ -117,9 +130,23 @@ def normalize_scan_ignore_prefixes(prefixes: list[str] | tuple[str, ...] | None)
             continue
         seen.add(lowered)
         ordered.append(value)
+    return ordered
+
+
+def normalize_scan_ignore_prefixes(prefixes: list[str] | tuple[str, ...] | None) -> list[str]:
+    ordered = _normalize_rule_list(prefixes)
+    seen = {value.casefold() for value in ordered}
     if "_repair".casefold() not in seen:
         ordered.insert(0, "_repair")
     return ordered or list(DEFAULT_SCAN_IGNORE_PREFIXES)
+
+
+def normalize_scan_ignore_suffixes(suffixes: list[str] | tuple[str, ...] | None) -> list[str]:
+    return _normalize_rule_list(suffixes)
+
+
+def normalize_scan_ignore_contains(values: list[str] | tuple[str, ...] | None) -> list[str]:
+    return _normalize_rule_list(values)
 
 
 def normalize_default_scan_mode(mode: str | None) -> str:
@@ -215,6 +242,12 @@ def normalize_theme_id(value: object) -> str:
     return _normalize_theme_id(value)
 
 
+def normalize_ui_density(value: object) -> str:
+    normalized = str(value or UI_DENSITY_STANDARD).strip().lower()
+    allowed = {value for value, _label in UI_DENSITY_OPTIONS}
+    return normalized if normalized in allowed else UI_DENSITY_STANDARD
+
+
 def normalize_settings_schema_version(value: object) -> int:
     try:
         version = int(value)
@@ -227,6 +260,8 @@ def normalize_settings_schema_version(value: object) -> int:
 class AppSettings:
     settings_schema_version: int = SETTINGS_SCHEMA_VERSION
     scan_ignore_prefixes: list[str] = field(default_factory=lambda: list(DEFAULT_SCAN_IGNORE_PREFIXES))
+    scan_ignore_suffixes: list[str] = field(default_factory=lambda: list(DEFAULT_SCAN_IGNORE_SUFFIXES))
+    scan_ignore_contains: list[str] = field(default_factory=lambda: list(DEFAULT_SCAN_IGNORE_CONTAINS))
     default_scan_mode: str = SCAN_MODE_ASK
     repair_summary_default_filter: str = REPAIR_SUMMARY_FILTER_ALL
     analysis_concurrency_mode: str = ANALYSIS_CONCURRENCY_AUTO
@@ -234,6 +269,7 @@ class AppSettings:
     gpu_acceleration_mode: str = GPU_ACCELERATION_OFF
     console_time_mode: str = CONSOLE_TIME_24H
     theme_id: str = "classic_green"
+    ui_density: str = UI_DENSITY_STANDARD
     language: str = DEFAULT_LANGUAGE
     auto_check_updates: bool = True
 
@@ -256,6 +292,10 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
         migrated.pop("cloud_messages_url", None)
     if old_version < 5:
         migrated.setdefault("language", DEFAULT_LANGUAGE)
+    if old_version < 6:
+        migrated.setdefault("scan_ignore_suffixes", list(DEFAULT_SCAN_IGNORE_SUFFIXES))
+        migrated.setdefault("scan_ignore_contains", list(DEFAULT_SCAN_IGNORE_CONTAINS))
+        migrated.setdefault("ui_density", UI_DENSITY_STANDARD)
     return migrated
 
 
@@ -267,6 +307,12 @@ def validate_settings_payload(payload: object) -> AppSettings:
     return AppSettings(
         settings_schema_version=SETTINGS_SCHEMA_VERSION,
         scan_ignore_prefixes=normalize_scan_ignore_prefixes(payload.get("scan_ignore_prefixes", DEFAULT_SCAN_IGNORE_PREFIXES)),
+        scan_ignore_suffixes=normalize_scan_ignore_suffixes(
+            payload.get("scan_ignore_suffixes", DEFAULT_SCAN_IGNORE_SUFFIXES)
+        ),
+        scan_ignore_contains=normalize_scan_ignore_contains(
+            payload.get("scan_ignore_contains", DEFAULT_SCAN_IGNORE_CONTAINS)
+        ),
         default_scan_mode=normalize_default_scan_mode(payload.get("default_scan_mode", SCAN_MODE_ASK)),
         repair_summary_default_filter=normalize_repair_summary_filter(
             payload.get("repair_summary_default_filter", REPAIR_SUMMARY_FILTER_ALL)
@@ -278,6 +324,7 @@ def validate_settings_payload(payload: object) -> AppSettings:
         gpu_acceleration_mode=normalize_gpu_acceleration_mode(payload.get("gpu_acceleration_mode", GPU_ACCELERATION_OFF)),
         console_time_mode=normalize_console_time_mode(payload.get("console_time_mode", CONSOLE_TIME_24H)),
         theme_id=normalize_theme_id(payload.get("theme_id", "classic_green")),
+        ui_density=normalize_ui_density(payload.get("ui_density", UI_DENSITY_STANDARD)),
         language=normalize_language(payload.get("language", DEFAULT_LANGUAGE)),
         auto_check_updates=True,
     )

@@ -11,8 +11,9 @@ from app_settings import AppSettings, load_app_settings, save_app_settings
 from app_console import AppConsole
 from app_metadata import APP_NAME, APP_VERSION
 from diagnostics_chart import DiagnosticsChart
-from drag_drop import TkinterDnDFileDropTarget, WindowsFileDropTarget
+from dnd_support import install_drop_target
 from file_actions import ScanResult
+from gpu_accel import detect_gpu_backend
 from history_dialog import show_history_dialog
 from models import AnalysisResult, SimilarImageGroup
 from preview_cache import ThumbnailCache
@@ -20,7 +21,7 @@ from progress_dialog import TaskProgressController
 from settings_dialog import show_app_settings_dialog
 from stats_dialog import show_stats_dialog
 from stats_store import load_stats
-from ui.language import set_current_language
+from ui.language import set_current_language, tr
 from ui.themes import get_theme
 from ui.hidpi import configure_fonts
 from ui.cloud_actions import UiCloudActionsMixin
@@ -45,8 +46,14 @@ class PhotoAnalyzerApp(
 ):
     def __init__(self, root: tk.Misc) -> None:
         self.root = root
-        self.root.geometry("1700x1020")
-        self.root.minsize(1380, 880)
+        screen_w = max(1280, self.root.winfo_screenwidth())
+        screen_h = max(760, self.root.winfo_screenheight())
+        initial_w = min(max(1600, int(screen_w * 0.96)), screen_w - 16)
+        initial_h = min(max(980, int(screen_h * 0.94)), screen_h - 48)
+        min_w = min(1460, max(1220, screen_w - 60))
+        min_h = min(900, max(740, screen_h - 96))
+        self.root.geometry(f"{initial_w}x{initial_h}")
+        self.root.minsize(min_w, min_h)
 
         self.folder_var = tk.StringVar()
         self.status_var = tk.StringVar(value="请选择图片文件夹开始分析。")
@@ -84,11 +91,14 @@ class PhotoAnalyzerApp(
         self.settings: AppSettings = load_app_settings(report_warning=self._settings_warnings.append, create_if_missing=True)
         set_current_language(self.settings.language)
         self.console.set_time_mode(self.settings.console_time_mode)
-        self.drop_target: WindowsFileDropTarget | TkinterDnDFileDropTarget | None = None
+        self.drop_target = None
         self.sort_column = "name"
         self.sort_reverse = False
         self.analysis_phase_progress: dict[Path, int] = {}
         self._last_scan_update = 0.0
+        self._scan_run_id = 0
+        self._scan_cancel_event: threading.Event | None = None
+        self._scan_started_at = 0.0
         self._ui_queue: queue.SimpleQueue = queue.SimpleQueue()
         self._last_analysis_targets: list[Path] = []
         self._analysis_run_id = 0
@@ -111,6 +121,9 @@ class PhotoAnalyzerApp(
         self._topmost_button: ttk.Button | None = None
         self._pin_icon_off: tk.PhotoImage | None = None
         self._pin_icon_on: tk.PhotoImage | None = None
+        self._large_preview_image: tk.PhotoImage | None = None
+        self._current_preview_path: Path | None = None
+        self._last_repair_summary_payload = None
 
         self._configure_style()
         self._build_ui()
@@ -129,10 +142,25 @@ class PhotoAnalyzerApp(
         self.root.bind("<Map>", lambda _event: self._apply_topmost_state(), add="+")
         self.root.bind("<FocusIn>", lambda _event: self._apply_topmost_state(), add="+")
         self.root.after_idle(self._apply_initial_layout)
+        self.root.after(800, self._start_background_gpu_probe)
         self.root.after(1600, self._run_startup_cloud_checks)
         for warning in self._settings_warnings:
             self._log_console(warning)
-        self._log_console(f"scan ignore prefixes: {', '.join(self.settings.scan_ignore_prefixes)}")
+        self._log_console(
+            "scan ignore rules: "
+            f"prefix={', '.join(self.settings.scan_ignore_prefixes)} | "
+            f"suffix={', '.join(self.settings.scan_ignore_suffixes)} | "
+            f"contains={', '.join(self.settings.scan_ignore_contains)}"
+        )
+
+    def _start_background_gpu_probe(self) -> None:
+        def worker() -> None:
+            status = detect_gpu_backend()
+            hardware = status.hardware_name if status.hardware_detected else "not detected"
+            backend = status.backend_name if status.available else "none"
+            self._log_console(f"gpu probe: hardware={hardware} backend={backend} active={status.active}")
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _configure_style(self) -> None:
         style = ttk.Style()
@@ -143,8 +171,11 @@ class PhotoAnalyzerApp(
 
         theme = get_theme(getattr(self.settings, "theme_id", "classic_green"))
         self._theme = theme
-        configure_fonts(self.root, delta=theme.font_delta)
-        base_size = 11 + theme.font_delta
+        density = getattr(self.settings, "ui_density", "standard")
+        density_delta = 1 if density in {"comfortable", "high_detail"} else 0
+        spacing_delta = 2 if density == "high_detail" else 1 if density == "comfortable" else 0
+        configure_fonts(self.root, delta=theme.font_delta + density_delta)
+        base_size = 11 + theme.font_delta + density_delta
         self.root.configure(bg=theme.background)
         style.configure("TFrame", background=theme.background)
         style.configure("Panel.TFrame", background=theme.panel)
@@ -155,11 +186,11 @@ class PhotoAnalyzerApp(
         style.configure("PanelTitle.TLabel", background=theme.panel, foreground=theme.text, font=("Microsoft YaHei UI", base_size, "bold"))
         style.configure("HudTitle.TLabel", background=theme.panel_alt, foreground=theme.primary, font=("Microsoft YaHei UI", base_size, "bold"))
         style.configure("HudValue.TLabel", background=theme.panel_alt, foreground=theme.muted_text, font=("Microsoft YaHei UI", max(9, base_size - 2)))
-        style.configure("Treeview", font=("Microsoft YaHei UI", max(10, base_size - 1)), rowheight=90 + theme.spacing * 4)
+        style.configure("Treeview", font=("Microsoft YaHei UI", max(10, base_size - 1)), rowheight=90 + theme.spacing * 4 + spacing_delta * 8)
         style.configure("Treeview.Heading", font=("Microsoft YaHei UI", max(10, base_size - 1), "bold"))
         style.map("Treeview", background=[("selected", theme.selection)], foreground=[("selected", theme.text)])
-        style.configure("Accent.TButton", font=("Microsoft YaHei UI", base_size, "bold"), padding=(10 + theme.spacing, 7 + theme.spacing))
-        style.configure("Soft.TButton", font=("Microsoft YaHei UI", base_size), padding=(10 + theme.spacing, 7 + theme.spacing))
+        style.configure("Accent.TButton", font=("Microsoft YaHei UI", base_size, "bold"), padding=(10 + theme.spacing + spacing_delta, 7 + theme.spacing + spacing_delta))
+        style.configure("Soft.TButton", font=("Microsoft YaHei UI", base_size), padding=(10 + theme.spacing + spacing_delta, 7 + theme.spacing + spacing_delta))
         style.configure("Topmost.TButton", font=("Microsoft YaHei UI", max(9, base_size - 2)), padding=(8, 4))
         style.configure("TopmostOn.TButton", font=("Microsoft YaHei UI", max(9, base_size - 2), "bold"), padding=(8, 4))
         style.configure("TLabelframe", background=theme.panel, bordercolor=theme.selection)
@@ -211,21 +242,25 @@ class PhotoAnalyzerApp(
     def _build_ui(self) -> None:
         menu_bar = tk.Menu(self.root)
         review_menu = tk.Menu(menu_bar, tearoff=False)
-        review_menu.add_command(label="打开不适合保留的图片", command=self.open_cleanup_review_window)
-        review_menu.add_command(label="打开相似图片组", command=self.open_similar_group_window)
-        review_menu.add_command(label="最近扫描摘要", command=self.show_last_scan_summary)
-        menu_bar.add_cascade(label="查看", menu=review_menu)
+        review_menu.add_command(label=tr("view.cleanup"), command=self.open_cleanup_review_window)
+        review_menu.add_command(label=tr("view.similar"), command=self.open_similar_group_window)
+        review_menu.add_command(label=tr("view.scan_summary"), command=self.show_last_scan_summary)
+        review_menu.add_command(label=tr("view.repair_summary"), command=self.show_last_repair_summary)
+        menu_bar.add_cascade(label=tr("menu.view"), menu=review_menu)
         settings_menu = tk.Menu(menu_bar, tearoff=False)
-        settings_menu.add_command(label="应用设置", command=self.open_settings_panel)
-        menu_bar.add_cascade(label="设置", menu=settings_menu)
+        settings_menu.add_command(label=tr("settings.app"), command=self.open_settings_panel)
+        menu_bar.add_cascade(label=tr("menu.settings"), menu=settings_menu)
+        help_menu = tk.Menu(menu_bar, tearoff=False)
+        help_menu.add_command(label=tr("menu.help_website"), command=self.show_help_website_info)
+        menu_bar.add_cascade(label=tr("menu.help"), menu=help_menu)
         self.root.configure(menu=menu_bar)
 
-        outer = ttk.Frame(self.root, padding=18)
+        outer = ttk.Frame(self.root, padding=10)
         outer.pack(fill="both", expand=True)
 
-        top_shell = ttk.Frame(outer, style="TopCard.TFrame", padding=14)
+        top_shell = ttk.Frame(outer, style="TopCard.TFrame", padding=10)
         top_shell.pack(fill="x")
-        body_shell = ttk.Frame(outer, style="Panel.TFrame", padding=(0, 12, 0, 0))
+        body_shell = ttk.Frame(outer, style="Panel.TFrame", padding=(0, 6, 0, 0))
         body_shell.pack(fill="both", expand=True)
 
         header = ttk.Frame(top_shell, style="TopCard.TFrame")
@@ -235,7 +270,7 @@ class PhotoAnalyzerApp(
         title_area.grid(row=0, column=0, sticky="ew")
         ttk.Label(title_area, text=f"{APP_NAME} v{APP_VERSION}", style="Header.TLabel").pack(anchor="w")
         subtitle = "逐张实时分析、缩略图预览、条图诊断、自动修复与批量清理。"
-        ttk.Label(title_area, text=subtitle, style="Sub.TLabel").pack(anchor="w", pady=(4, 12))
+        ttk.Label(title_area, text=subtitle, style="Sub.TLabel").pack(anchor="w", pady=(2, 6))
         self._topmost_button = ttk.Button(
             header,
             text="置顶",
@@ -248,12 +283,12 @@ class PhotoAnalyzerApp(
         self._topmost_button.grid(row=0, column=1, sticky="ne", padx=(12, 0))
         self._refresh_topmost_button()
 
-        controls = ttk.Frame(top_shell, style="Panel.TFrame", padding=14)
+        controls = ttk.Frame(top_shell, style="Panel.TFrame", padding=8)
         controls.pack(fill="x")
         controls.columnconfigure(0, weight=1)
 
         path_entry = ttk.Entry(controls, textvariable=self.folder_var, font=("Consolas", 11))
-        path_entry.grid(row=0, column=0, columnspan=6, sticky="ew", padx=(0, 12), pady=(0, 8))
+        path_entry.grid(row=0, column=0, columnspan=6, sticky="ew", padx=(0, 10), pady=(0, 5))
 
         choose_folder_button = ttk.Button(controls, text="选择文件夹", command=self.choose_folder)
         choose_image_button = ttk.Button(controls, text="选择图片", command=self.choose_image)
@@ -287,11 +322,11 @@ class PhotoAnalyzerApp(
         for index, button in enumerate(button_specs):
             row = 1 + index // button_columns
             column = 1 + (index % button_columns)
-            button.grid(row=row, column=column, sticky="ew", padx=4, pady=4)
+            button.grid(row=row, column=column, sticky="ew", padx=4, pady=3)
 
         self.control_widgets.extend(button_specs)
 
-        toolbar = ttk.Frame(top_shell, padding=(0, 10), style="TopCard.TFrame")
+        toolbar = ttk.Frame(top_shell, padding=(0, 6), style="TopCard.TFrame")
         toolbar.pack(fill="x")
         ttk.Label(toolbar, text="筛选：").pack(side="left")
         filter_box = ttk.Combobox(toolbar, textvariable=self.filter_var, state="readonly", values=FILTER_OPTIONS, width=14)
@@ -315,20 +350,39 @@ class PhotoAnalyzerApp(
         ttk.Label(toolbar, text="支持文件夹/图片拖入，分栏边界可拖动调整。", style="Sub.TLabel").pack(side="right")
         self.control_widgets.extend([filter_box, auto_check, debug_open_check])
 
-        progress_panel = ttk.LabelFrame(top_shell, text="任务进度", padding=14)
+        progress_panel = ttk.LabelFrame(top_shell, text="任务进度", padding=8)
+        progress_panel.pack(fill="x", pady=(2, 6))
+        progress_panel.columnconfigure(1, weight=1)
+        ttk.Label(progress_panel, textvariable=self.progress_text_var, style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(progress_panel, textvariable=self.progress_detail_var, style="Sub.TLabel", wraplength=1020).grid(
+            row=0, column=1, sticky="ew", padx=(10, 8)
+        )
+        self.task_cancel_button = ttk.Button(
+            progress_panel,
+            text="取消任务",
+            command=self.cancel_current_task,
+            state="disabled",
+        )
+        self.task_cancel_button.grid(row=0, column=2, sticky="e")
         self.progress_bar = ttk.Progressbar(progress_panel, mode="determinate", maximum=1, variable=self.progress_value)
+        self.progress_bar.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
 
         main = ttk.PanedWindow(body_shell, orient="horizontal")
         main.pack(fill="both", expand=True)
         self.main_pane = main
 
-        left = ttk.Frame(main, style="Panel.TFrame", padding=12)
-        right = ttk.Frame(main, style="Panel.TFrame", padding=12)
-        main.add(left, weight=2)
-        main.add(right, weight=3)
+        left = ttk.Frame(main, style="Panel.TFrame", padding=8)
+        right = ttk.Frame(main, style="Panel.TFrame", padding=8)
+        main.add(left, weight=3)
+        main.add(right, weight=2)
+        try:
+            main.paneconfigure(left, minsize=560)
+            main.paneconfigure(right, minsize=480)
+        except tk.TclError:
+            pass
 
         list_header = ttk.Frame(left, style="Panel.TFrame")
-        list_header.pack(fill="x", pady=(0, 8))
+        list_header.pack(fill="x", pady=(0, 4))
         ttk.Label(list_header, text="文件列表", style="PanelTitle.TLabel").pack(side="left")
         self.list_stats_var = tk.StringVar(value="未导入图片")
         ttk.Label(list_header, textvariable=self.list_stats_var, style="Sub.TLabel").pack(side="right")
@@ -365,14 +419,20 @@ class PhotoAnalyzerApp(
         self.tree.bind("<Double-1>", self.toggle_cleanup_flag)
         self.tree.bind("<Button-1>", self.on_tree_click, add="+")
         self.tree.bind("<Button-3>", self.open_context_menu)
+        self.tree.bind("<Control-a>", self.select_all_list_items)
+        self.tree.bind("<Control-A>", self.select_all_list_items)
+        self.tree.bind("<Delete>", self.remove_selected_from_list)
 
         self.list_menu = tk.Menu(self.root, tearoff=False)
         self.list_menu.add_command(label="切换处理状态", command=self.toggle_cleanup_flag)
+        self.list_menu.add_command(label="全选列表", command=self.select_all_list_items)
+        self.list_menu.add_command(label="反选列表", command=self.invert_list_selection)
+        self.list_menu.add_command(label="清除列表选择", command=self.clear_list_selection)
         self.list_menu.add_separator()
-        self.list_menu.add_command(label="移出此列表", command=self.remove_current_from_list)
+        self.list_menu.add_command(label="移出选中项", command=self.remove_selected_from_list)
 
         action_bar = ttk.Frame(left)
-        action_bar.pack(fill="x", pady=(10, 0))
+        action_bar.pack(fill="x", pady=(6, 0))
         ttk.Button(action_bar, text="选中当前", command=self.select_current).pack(side="left")
         ttk.Button(action_bar, text="取消当前", command=self.unselect_current).pack(side="left", padx=6)
         ttk.Button(action_bar, text="全选问题图", command=self.select_problem_items).pack(side="left")
@@ -381,7 +441,7 @@ class PhotoAnalyzerApp(
         ttk.Label(action_bar, text="单击处理状态可切换，右键可移出列表。").pack(side="right")
 
         cleanup_frame = ttk.LabelFrame(left, text="不适合保留的图片", padding=10)
-        cleanup_frame.pack(fill="both", expand=False, pady=(12, 0))
+        cleanup_frame.pack(fill="both", expand=False, pady=(8, 0))
         cleanup_frame.columnconfigure(0, weight=1)
         cleanup_frame.rowconfigure(1, weight=1)
         ttk.Label(
@@ -435,25 +495,30 @@ class PhotoAnalyzerApp(
         self.cleanup_hint_var = tk.StringVar(value="当前没有选择图片。")
         ttk.Label(cleanup_action_bar, textvariable=self.cleanup_hint_var, style="Sub.TLabel").pack(side="right")
 
-        ttk.Label(right, text="预览、指标、诊断与信息", style="PanelTitle.TLabel").pack(anchor="w", pady=(0, 8))
-        self.right_stack_pane = ttk.PanedWindow(right, orient="vertical")
-        self.right_stack_pane.pack(fill="both", expand=True)
+        ttk.Label(right, text=tr("right.title"), style="PanelTitle.TLabel").pack(anchor="w", pady=(0, 8))
+        right_book = ttk.Notebook(right)
+        right_book.pack(fill="both", expand=True)
+        self.right_info_book = right_book
 
-        self.bottom_right_pane = ttk.PanedWindow(self.right_stack_pane, orient="horizontal")
-        chart_frame = ttk.Frame(self.right_stack_pane, style="Panel.TFrame", padding=10)
-        summary_frame = ttk.Frame(self.bottom_right_pane, style="Panel.TFrame", padding=10)
-        info_frame = ttk.Frame(self.bottom_right_pane, style="Panel.TFrame", padding=10)
-        self.right_stack_pane.add(chart_frame, weight=5)
-        self.right_stack_pane.add(self.bottom_right_pane, weight=3)
-        self.bottom_right_pane.add(summary_frame, weight=3)
-        self.bottom_right_pane.add(info_frame, weight=2)
+        diagnosis_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=8)
+        preview_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=8)
+        meta_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=8)
+        console_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=8)
+
+        diagnosis_tab.columnconfigure(0, weight=1)
+        diagnosis_tab.rowconfigure(0, weight=0, minsize=310)
+        diagnosis_tab.rowconfigure(1, weight=1)
+        chart_frame = ttk.Frame(diagnosis_tab, style="Panel.TFrame")
+        chart_frame.grid(row=0, column=0, sticky="nsew")
+        summary_frame = ttk.Frame(diagnosis_tab, style="Panel.TFrame")
+        summary_frame.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
 
         chart_frame.columnconfigure(0, weight=1)
         chart_frame.columnconfigure(1, minsize=118)
-        chart_frame.rowconfigure(1, weight=1)
+        chart_frame.rowconfigure(1, weight=1, minsize=220)
 
-        hud_frame = ttk.Frame(chart_frame, style="TopCard.TFrame", padding=(10, 8))
-        hud_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        hud_frame = ttk.Frame(chart_frame, style="TopCard.TFrame", padding=(8, 6))
+        hud_frame.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         hud_frame.columnconfigure(0, weight=3)
         hud_frame.columnconfigure(1, minsize=138)
         ttk.Label(hud_frame, textvariable=self.hud_name_var, style="HudTitle.TLabel", wraplength=520).grid(row=0, column=0, sticky="ew")
@@ -463,6 +528,7 @@ class PhotoAnalyzerApp(
 
         self.chart = DiagnosticsChart(chart_frame)
         self.chart.grid(row=1, column=0, sticky="nsew")
+        self.chart.canvas.configure(height=220)
 
         summary_frame.columnconfigure(0, weight=1)
         summary_frame.rowconfigure(0, weight=1)
@@ -482,12 +548,6 @@ class PhotoAnalyzerApp(
         self.summary_text.insert("1.0", "右下区域会显示当前图片的诊断说明、建议和推荐修复方法。")
         self.summary_text.config(state="disabled")
 
-        info_frame.columnconfigure(0, weight=1)
-        info_frame.rowconfigure(0, weight=1)
-        info_book = ttk.Notebook(info_frame)
-        info_book.grid(row=0, column=0, sticky="nsew")
-
-        meta_tab = ttk.Frame(info_book)
         meta_tab.columnconfigure(0, weight=1)
         meta_tab.rowconfigure(1, weight=1)
         meta_toolbar = ttk.Frame(meta_tab)
@@ -503,7 +563,6 @@ class PhotoAnalyzerApp(
         self.meta_text.insert("1.0", "这里会显示 EXIF、DPI、ICC、XMP 等属性信息。")
         self.meta_text.config(state="disabled")
 
-        console_tab = ttk.Frame(info_book)
         console_tab.columnconfigure(0, weight=1)
         console_tab.rowconfigure(0, weight=1)
         self.console_text = tk.Text(console_tab, wrap="word", font=("Consolas", 9), bg="#f8fbf8", relief="flat", padx=10, pady=10)
@@ -514,27 +573,34 @@ class PhotoAnalyzerApp(
         self.console_text.insert("1.0", self.console.dump())
         self.console_text.config(state="disabled")
 
-        info_book.add(meta_tab, text="属性 / EXIF")
-        info_book.add(console_tab, text="Console")
+        preview_tab.columnconfigure(0, weight=1)
+        preview_tab.rowconfigure(0, weight=1)
+        self.large_preview_label = ttk.Label(preview_tab, text=tr("preview.empty"), anchor="center")
+        self.large_preview_label.grid(row=0, column=0, sticky="nsew")
+        preview_tab.bind("<Configure>", lambda _event: self._refresh_large_preview())
+
+        right_book.add(diagnosis_tab, text=tr("right.diagnosis"))
+        right_book.add(preview_tab, text=tr("right.preview"))
+        right_book.add(meta_tab, text=tr("right.properties"))
+        right_book.add(console_tab, text=tr("right.console"))
 
         status = ttk.Label(body_shell, textvariable=self.status_var, anchor="w")
         status.pack(fill="x", pady=(10, 0))
 
     def _apply_initial_layout(self) -> None:
         try:
-            self.main_pane.sashpos(0, 620)
-            self.bottom_right_pane.sashpos(0, 610)
-            self.right_stack_pane.sashpos(0, 660)
+            width = self.main_pane.winfo_width()
+            if width < 1100:
+                self.root.after(80, self._apply_initial_layout)
+                return
+            sash = min(max(620, int(width * 0.56)), max(620, width - 520))
+            self.main_pane.sashpos(0, sash)
         except Exception:
             pass
 
     def _install_drag_drop(self) -> None:
         try:
-            if hasattr(self.root, "drop_target_register"):
-                self.drop_target = TkinterDnDFileDropTarget(self.root, self._handle_dropped_paths)
-            else:
-                self.drop_target = WindowsFileDropTarget(self.root, self._handle_dropped_paths)
-            self.root.after(100, self.drop_target.install)
+            self.drop_target = install_drop_target(self.root, self._handle_dropped_paths)
             self._log_console("drag and drop ready")
         except Exception as exc:
             self._log_console(f"drag and drop init failed: {exc}")
@@ -579,6 +645,24 @@ class PhotoAnalyzerApp(
                 copied = ""
             messagebox.showerror("无法打开作者官网", f"请手动打开：\n{url}\n\n错误：{exc}{copied}", parent=self.root)
 
+    def show_help_website_info(self) -> None:
+        dialog = tk.Toplevel(self.root)
+        dialog.title(tr("dialog.help_title"))
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        outer = ttk.Frame(dialog, padding=18)
+        outer.pack(fill="both", expand=True)
+        ttk.Label(outer, text=tr("dialog.help_body"), wraplength=360, justify="left").pack(anchor="w")
+        buttons = ttk.Frame(outer)
+        buttons.pack(fill="x", pady=(16, 0))
+        ttk.Button(buttons, text=tr("action.open_website"), command=lambda: (dialog.destroy(), self.open_author_website())).pack(side="left")
+        ttk.Button(buttons, text=tr("action.close"), command=dialog.destroy).pack(side="right")
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + max(40, (self.root.winfo_width() - dialog.winfo_width()) // 2)
+        y = self.root.winfo_rooty() + max(40, (self.root.winfo_height() - dialog.winfo_height()) // 2)
+        dialog.geometry(f"+{x}+{y}")
+
     def show_stats(self) -> None:
         show_stats_dialog(self.root, self.stats)
 
@@ -599,10 +683,13 @@ class PhotoAnalyzerApp(
         self.status_var.set("应用设置已保存，新的扫描和修复详情窗口会立即使用最新配置。")
         self._log_console(
             "settings updated: "
-            f"ignore={','.join(self.settings.scan_ignore_prefixes)} | "
+            f"prefix={','.join(self.settings.scan_ignore_prefixes)} | "
+            f"suffix={','.join(self.settings.scan_ignore_suffixes)} | "
+            f"contains={','.join(self.settings.scan_ignore_contains)} | "
             f"default_scan={self.settings.default_scan_mode} | "
             f"repair_summary_filter={self.settings.repair_summary_default_filter} | "
             f"analysis_concurrency={self.settings.analysis_concurrency_mode}:{self.settings.analysis_custom_workers or 'auto'} | "
             f"gpu={self.settings.gpu_acceleration_mode} | "
-            f"console_time={self.settings.console_time_mode} | theme={self.settings.theme_id} | language={self.settings.language}"
+            f"console_time={self.settings.console_time_mode} | theme={self.settings.theme_id} | "
+            f"density={self.settings.ui_density} | language={self.settings.language}"
         )

@@ -25,6 +25,9 @@ REQUIRED_IMPORTS = [
 if sys.platform != "win32" and sys.version_info < (3, 14):
     REQUIRED_IMPORTS.append(("tkinterdnd2", "tkinterdnd2"))
 
+if str(PACKAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_DIR))
+
 
 def stage(cn: str, en: str) -> None:
     print(f"\n== {cn} / {en} ==")
@@ -74,6 +77,32 @@ def launch_app() -> None:
     subprocess.Popen([sys.executable, str(APP_PY)], cwd=str(ROOT), env=env, close_fds=True)
 
 
+def organize_legacy_files() -> None:
+    try:
+        from legacy_cleanup import quarantine_legacy_files
+
+        report = quarantine_legacy_files(ROOT)
+    except Exception as exc:
+        info(
+            f"旧文件整理未完成：{exc}",
+            f"Legacy file organization did not finish: {exc}",
+        )
+        return
+    if not report.moved and not report.skipped:
+        info("未发现需要整理的旧版本文件。", "No legacy files need to be organized.")
+        return
+    if report.moved:
+        info(
+            f"已整理旧版本文件 {len(report.moved)} 项，清单：{report.manifest_path}",
+            f"Organized {len(report.moved)} legacy item(s), report: {report.manifest_path}",
+        )
+    if report.skipped:
+        info(
+            f"保留受保护项目 {len(report.skipped)} 项。",
+            f"Kept {len(report.skipped)} protected item(s).",
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--install-only", action="store_true")
@@ -104,6 +133,9 @@ def main() -> int:
     if args.install_only:
         info("依赖已准备完成。", "Dependencies are ready.")
         return 0
+
+    stage("正在整理旧版本文件", "Organizing legacy files")
+    organize_legacy_files()
 
     stage("正在启动应用", "Starting ShapeYourPhoto")
     launch_app()

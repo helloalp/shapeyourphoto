@@ -161,7 +161,6 @@ class TaskProgressDialog:
         self.detail_var.set(_compact_progress_text(state.detail))
         self.elapsed_var.set(_format_elapsed(time.monotonic() - self._started_at))
         self.accent_line.configure(bg=state.accent)
-        self.window.update_idletasks()
 
     def close(self) -> None:
         if self.window.winfo_exists():

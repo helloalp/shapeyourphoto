@@ -56,7 +56,7 @@ class UiAnalysisActionsMixin:
         self._last_analysis_targets = list(targets)
         worker_plan = self._analysis_worker_plan(total)
         worker_count = worker_plan.actual_workers
-        gpu_status = resolve_gpu_status(getattr(self.settings, "gpu_acceleration_mode", GPU_ACCELERATION_OFF))
+        gpu_status = resolve_gpu_status(getattr(self.settings, "gpu_acceleration_mode", GPU_ACCELERATION_OFF), allow_probe=False)
         self._console_flush_total_ms = 0.0
         self._console_flush_count = 0
 
@@ -239,6 +239,9 @@ class UiAnalysisActionsMixin:
         )
         self.is_busy = False
         self._set_controls_enabled(True)
+        self._active_task_cancel_callback = None
+        if hasattr(self, "task_cancel_button"):
+            self.task_cancel_button.configure(state="disabled", text="取消任务")
         self.progress_controller.finish(title="分析已取消", detail=detail, status=detail, close_dialog=True)
         self._flush_console()
         self.refresh_tree()

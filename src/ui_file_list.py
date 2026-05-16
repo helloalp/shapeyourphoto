@@ -4,7 +4,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageTk
 
 from developer_mode import developer_session
 from file_actions import export_cleanup_list
@@ -32,6 +32,9 @@ class UiFileListMixin:
             if path is not None:
                 paths.append(path)
         return paths
+
+    def _visible_tree_item_ids(self) -> list[str]:
+        return list(self.tree.get_children(""))
 
     def _prune_missing_paths(self) -> None:
         missing = [path for path in self.image_paths if not path.exists()]
@@ -392,16 +395,21 @@ class UiFileListMixin:
         item_id = self.tree.identify_row(event.y)
         if not item_id or self.list_menu is None:
             return
-        self.tree.selection_set(item_id)
+        if item_id not in self.tree.selection():
+            self.tree.selection_set(item_id)
         self.list_menu.tk_popup(event.x_root, event.y_root)
 
     def remove_current_from_list(self) -> None:
+        self.remove_selected_from_list()
+
+    def remove_selected_from_list(self, _event=None) -> str:
         selection = self.tree.selection()
         if not selection:
-            return
+            return "break"
         paths = [self.item_lookup[item_id] for item_id in selection if item_id in self.item_lookup]
         if not paths:
-            return
+            return "break"
+        removed_count = len(paths)
         for path in paths:
             self._remove_path_from_list(path, refresh=False)
         self.refresh_tree()
@@ -409,16 +417,53 @@ class UiFileListMixin:
             self._select_path(self.image_paths[0])
         else:
             self._clear_hud_and_summary()
+        self._log_console(f"list batch removed: {removed_count} image(s)")
+        return "break"
+
+    def select_all_list_items(self, _event=None) -> str:
+        item_ids = self._visible_tree_item_ids()
+        if item_ids:
+            self.tree.selection_set(*item_ids)
+            self.tree.focus(item_ids[0])
+            self.tree.see(item_ids[0])
+            self._show_selection_summary(self._selected_tree_paths())
+        self._log_console(f"list selected all visible: {len(item_ids)} image(s)")
+        return "break"
+
+    def clear_list_selection(self, _event=None) -> str:
+        self.tree.selection_remove(self.tree.selection())
+        self._clear_hud_and_summary()
+        self._log_console("list selection cleared")
+        return "break"
+
+    def invert_list_selection(self, _event=None) -> str:
+        visible = self._visible_tree_item_ids()
+        selected = set(self.tree.selection())
+        new_selection = [item_id for item_id in visible if item_id not in selected]
+        if new_selection:
+            self.tree.selection_set(*new_selection)
+            self.tree.focus(new_selection[0])
+            self.tree.see(new_selection[0])
+            self._show_selection_summary(self._selected_tree_paths())
+        else:
+            self.tree.selection_remove(self.tree.selection())
+            self._clear_hud_and_summary()
+        self._log_console(f"list selection inverted: {len(new_selection)} image(s)")
+        return "break"
 
     def _merge_paths(self, paths: list[Path]) -> None:
         existing = set(self.image_paths)
+        added = 0
         for path in paths:
             if path not in existing:
                 self.image_paths.append(path)
                 existing.add(path)
                 self.selected_flags[path] = tk.BooleanVar(value=True)
+                added += 1
             else:
                 self.selected_flags.setdefault(path, tk.BooleanVar(value=False))
+        if paths:
+            self._log_console(f"list merge: added={added} duplicate={len(paths) - added} total={len(self.image_paths)}")
 
     def _remove_path_from_list(self, path: Path, refresh: bool = True) -> None:
         if path in self.image_paths:
@@ -439,6 +484,10 @@ class UiFileListMixin:
 
     def _clear_hud_and_summary(self) -> None:
         self.chart.update_result(None)
+        self._current_preview_path = None
+        self._large_preview_image = None
+        if hasattr(self, "large_preview_label"):
+            self.large_preview_label.configure(image="", text="选择图片后，这里会显示更大的预览图。")
         self.hud_name_var.set("未选择图片")
         self.hud_risk_var.set("风险值 --")
         self.hud_tags_var.set("识别结果：等待分析")
@@ -499,6 +548,7 @@ class UiFileListMixin:
     def show_preview(self, path: Path) -> None:
         result = self.results.get(path)
         error = self.errors.get(path)
+        self._current_preview_path = path
 
         try:
             with Image.open(path) as img:
@@ -508,8 +558,12 @@ class UiFileListMixin:
             self._set_summary(f"无法加载预览：{exc}")
             self._set_meta_summary(f"文件：{path.name}\n\n读取失败：{exc}")
             self._update_hud(path, None, None, str(exc))
+            self._large_preview_image = None
+            if hasattr(self, "large_preview_label"):
+                self.large_preview_label.configure(image="", text="无法加载预览图。")
             return
         self.chart.update_result(result)
+        self._update_large_preview_image(image)
         self._update_hud(path, image, result, error)
         meta_summary = summarize_image_metadata(path)
         if hasattr(self, "meta_edit_button"):
@@ -666,6 +720,27 @@ class UiFileListMixin:
         self.summary_text.delete("1.0", "end")
         self.summary_text.insert("1.0", text)
         self.summary_text.config(state="disabled")
+
+    def _refresh_large_preview(self) -> None:
+        path = getattr(self, "_current_preview_path", None)
+        if path is None or not Path(path).exists() or not hasattr(self, "large_preview_label"):
+            return
+        try:
+            with Image.open(path) as img:
+                image = ImageOps.exif_transpose(img).convert("RGB")
+        except Exception:
+            return
+        self._update_large_preview_image(image)
+
+    def _update_large_preview_image(self, image: Image.Image) -> None:
+        if not hasattr(self, "large_preview_label"):
+            return
+        width = max(320, self.large_preview_label.winfo_width() - 24)
+        height = max(240, self.large_preview_label.winfo_height() - 24)
+        preview = image.copy()
+        preview.thumbnail((width, height), Image.Resampling.LANCZOS)
+        self._large_preview_image = ImageTk.PhotoImage(preview)
+        self.large_preview_label.configure(image=self._large_preview_image, text="")
 
     def edit_current_metadata(self) -> None:
         path = self._current_path()

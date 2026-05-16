@@ -1,4 +1,4 @@
-﻿# Preservation Rules
+# Preservation Rules
 
 这是 ShapeYourPhoto 的正式文档保留规则。它本身也属于不可删除文档。
 
@@ -16,7 +16,7 @@
 
 - 修正文档中的过时或错误内容。
 - 把重复内容迁移到更合适的专题文档。
-- 在旧版本说明前补充“历史说明，以当前文档为准”。
+- 在旧版本说明前补充"历史说明，以当前文档为准"。
 - 新增技术专题文档。
 - 在更新文档中追加补充记录。
 
@@ -25,8 +25,8 @@
 当文档之间出现冲突时，按以下顺序判断：
 
 1. 当前代码。
-2. 1.1.6 的 `docs/` 和 `docs/technical/` 文档。
-3. [docs/updates/1.1.6.md](/E:/aitools/shapeyourphoto/docs/updates/1.1.6.md)。
+2. 1.2.5 的 `docs/` 和 `docs/technical/` 文档（本文档及 MAINTENANCE_GUIDE.md 等）。
+3. [docs/updates/1.2.5.md](/E:/aitools/shapeyourphoto/docs/updates/1.2.5.md)。
 4. 较早版本的 `docs/updates/` 历史说明。
 
 旧版本文档应保留历史背景，但不应覆盖当前维护规则。
@@ -44,6 +44,7 @@
 - 根 `CHANGELOG.md` 与 `docs/updates/<version>.md` 默认必须使用中文，并与 `app_metadata.CHANGELOG` 同步同一批事实。
 - 英文只用于技术标识原文，例如文件名、函数名、模块名、环境变量、协议字段、第三方库名、内部 code/enum/storage value。
 - 不得把整条英文 release note 直接放进 `app_metadata.CHANGELOG` 作为正式版本记录。
+
 # 1.1.8 Public / Private Documentation Rule
 
 Starting with 1.1.8, public docs must remain useful but should not contain private server operation details, signing private-key handling, internal release scripts, commercial maintenance strategy or deep private AI-agent prompts. Those belong in ignored `private_docs/for_developer/` and `private_docs/for_developai/`.

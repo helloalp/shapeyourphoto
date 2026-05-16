@@ -1,6 +1,6 @@
-﻿# Module Reference
+# Module Reference
 
-本文记录 1.2.5 当前真实模块职责。旧版本提到的独立单图窗口、孤立去噪按钮、普通 `messagebox` 长修复详情，以及“先运行 setup 再运行 start_app”的启动方式均不是当前主路径。
+本文记录 1.2.6 当前真实模块职责。旧版本提到的独立单图窗口、孤立去噪按钮、普通 `messagebox` 长修复详情，以及"先运行 setup 再运行 start_app"的启动方式均不是当前主路径。
 
 ## 启动与布局
 
@@ -32,7 +32,7 @@ UI 基础设施包，包含窗口标题、语言状态、display mapping、主�
 
 ### [src/analysis/](/E:/aitools/shapeyourphoto/src/analysis)
 
-分析流水线包。`core.py` 承载主分析流程，`portrait.py` 承载人像候选和验证，`discard.py` 生成 cleanup candidates，`common.py` 提供共享统计、掩膜和计时工具。
+分析流水线包。`core.py` 承载主分析流程，`portrait.py` 承载人像候选和验证，`discard.py` 生成不适合保留候选（cleanup candidates），`common.py` 提供共享统计、掩膜和计时工具。
 
 ### [src/analyzer.py](/E:/aitools/shapeyourphoto/src/analyzer.py)
 
@@ -48,7 +48,15 @@ UI 基础设施包，包含窗口标题、语言状态、display mapping、主�
 
 ### [src/file_actions.py](/E:/aitools/shapeyourphoto/src/file_actions.py)
 
-目录扫描、安全清理和输出路径生成。扫描必须遵守忽略前缀；安全清理必须优先回收站，失败时移入 `_cleanup_candidates`。
+目录扫描、安全清理和输出路径生成。扫描必须遵守前缀、后缀、包含三类文件夹名称忽略规则，支持进度回调和取消事件；安全清理必须优先回收站，失败时移入 `_cleanup_candidates`。
+
+### [src/legacy_cleanup.py](/E:/aitools/shapeyourphoto/src/legacy_cleanup.py)
+
+启动准备阶段的旧版本残留整理模块。只识别旧根目录模块、旧入口和旧运行缓存，命中项移入 `data/update_quarantine/legacy_cleanup/` 并生成清单；受保护目录、用户数据、样张、私有文档和仓库文件必须跳过。
+
+### [src/gpu_accel.py](/E:/aitools/shapeyourphoto/src/gpu_accel.py)
+
+GPU 状态探测与保守回退。负责识别显卡硬件、可用运行后端和当前任务使用状态；缺少 CUDA、CuPy、OpenCV CUDA 或 torch CUDA 时不得影响分析、修复或设置页打开。
 
 ### [src/stats_store.py](/E:/aitools/shapeyourphoto/src/stats_store.py)
 
@@ -66,7 +74,7 @@ UI 基础设施包，包含窗口标题、语言状态、display mapping、主�
 
 ### [tools/benchmark/benchmark_test_images.py](/E:/aitools/shapeyourphoto/tools/benchmark/benchmark_test_images.py)
 
-本地 `test/` 真实图片 benchmark。输出 wall time、worker cumulative、queue/wait、慢图、慢阶段、相似检测耗时、问题图和 cleanup candidate 数量。`test/` 为空时跳过；报告写入被忽略的 `benchmark_reports/`。
+本地 `test/` 真实图片 benchmark。输出 wall time、worker cumulative、queue/wait、慢图、慢阶段、相似检测耗时、问题图和不适合保留候选数量。`test/` 为空时跳过；报告写入被忽略的 `benchmark_reports/`。
 
 ### [build/](/E:/aitools/shapeyourphoto/build)
 
@@ -74,6 +82,6 @@ PyInstaller、Inno Setup 和 dmg 构建配置。`build/shapeyourphoto.spec` 仍�
 
 ## 已废弃但需记住的旧入口
 
-- 独立 `single_image_window.py` 和“单图模式”不是当前主路径；单张图片通过主列表导入。
-- 孤立“去噪当前”按钮不是当前主路径；降噪由分析、修复规划和修复执行链统一处理。
+- 独立 `single_image_window.py` 和"单图模式"不是当前主路径；单张图片通过主列表导入。
+- 孤立"去噪当前"按钮不是当前主路径；降噪由分析、修复规划和修复执行链统一处理。
 - 批量修复长详情不应回退到普通 `messagebox`；应继续使用 `repair_completion_dialog.py`。

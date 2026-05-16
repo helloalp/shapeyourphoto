@@ -44,15 +44,15 @@ class ScanSummaryDialog(tk.Toplevel):
 
         self.tree = ttk.Treeview(
             detail_frame,
-            columns=("root", "prefix", "location", "reason"),
+            columns=("root", "rule", "location", "reason"),
             show=("tree", "headings"),
         )
         self.tree.heading("#0", text="文件夹路径")
         self.tree.column("#0", width=420, anchor="w")
         self.tree.heading("root", text="扫描根文件夹")
         self.tree.column("root", width=200, anchor="w")
-        self.tree.heading("prefix", text="命中前缀")
-        self.tree.column("prefix", width=110, anchor="center")
+        self.tree.heading("rule", text="命中规则")
+        self.tree.column("rule", width=150, anchor="center")
         self.tree.heading("location", text="位置")
         self.tree.column("location", width=120, anchor="center")
         self.tree.heading("reason", text="跳过原因")
@@ -91,7 +91,7 @@ class ScanSummaryDialog(tk.Toplevel):
             prefix_text = "；".join(f"{prefix}：{count} 个文件夹" for prefix, count in prefix_counts.items())
             lines.append(f"命中忽略前缀统计：{prefix_text}")
         else:
-            lines.append("命中忽略前缀统计：本次没有跳过文件夹。")
+            lines.append("命中忽略规则统计：本次没有跳过文件夹。")
 
         for result in self._scan_results:
             prefix_text = "；".join(
@@ -99,7 +99,7 @@ class ScanSummaryDialog(tk.Toplevel):
             ) or "无"
             lines.append(
                 f"[{result.summary.root.name}] 模式：{result.summary.mode_label} | 导入 {result.summary.imported_count} 张 | "
-                f"跳过 {result.summary.skipped_directory_count} 个 | 前缀命中：{prefix_text}"
+                f"跳过 {result.summary.skipped_directory_count} 个 | 规则命中：{prefix_text}"
             )
         return lines
 
@@ -119,7 +119,7 @@ class ScanSummaryDialog(tk.Toplevel):
                 "",
                 "end",
                 text=display_path,
-                values=(str(entry.root), entry.matched_prefix, _location_label(entry.location), entry.reason),
+                values=(str(entry.root), f"{entry.rule_kind}:{entry.matched_rule}", _location_label(entry.location), entry.reason),
             )
 
     def _copy(self) -> None:
@@ -129,7 +129,7 @@ class ScanSummaryDialog(tk.Toplevel):
         else:
             for entry in self._skipped_entries:
                 lines.append(
-                    f"{entry.path} | 命中前缀：{entry.matched_prefix} | 位置：{_location_label(entry.location)} | 原因：{entry.reason}"
+                    f"{entry.path} | 命中规则：{entry.rule_kind}:{entry.matched_rule} | 位置：{_location_label(entry.location)} | 原因：{entry.reason}"
                 )
         try:
             self.clipboard_clear()

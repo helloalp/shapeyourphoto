@@ -4,12 +4,20 @@ import ctypes
 import os
 import shutil
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 from analyzer import is_supported_image
-from app_settings import DEFAULT_SCAN_IGNORE_PREFIXES, normalize_scan_ignore_prefixes, scan_mode_label
+from app_settings import (
+    DEFAULT_SCAN_IGNORE_CONTAINS,
+    DEFAULT_SCAN_IGNORE_PREFIXES,
+    DEFAULT_SCAN_IGNORE_SUFFIXES,
+    normalize_scan_ignore_contains,
+    normalize_scan_ignore_prefixes,
+    normalize_scan_ignore_suffixes,
+    scan_mode_label,
+)
 
 
 _OUTPUT_PATH_LOCK = threading.Lock()
@@ -31,6 +39,9 @@ class ScanSummary:
     skipped_details: list["SkippedDirectoryDetail"]
     visited_files: int
     ignored_prefixes: list[str]
+    ignored_suffixes: list[str] = field(default_factory=list)
+    ignored_contains: list[str] = field(default_factory=list)
+    canceled: bool = False
 
     @property
     def skipped_directory_count(self) -> int:
@@ -44,7 +55,7 @@ class ScanSummary:
     def skipped_prefix_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
         for detail in self.skipped_details:
-            counts[detail.matched_prefix] = counts.get(detail.matched_prefix, 0) + 1
+            counts[detail.matched_rule] = counts.get(detail.matched_rule, 0) + 1
         return counts
 
     @property
@@ -56,9 +67,11 @@ class ScanSummary:
 class SkippedDirectoryDetail:
     root: Path
     path: Path
-    matched_prefix: str
     reason: str
     location: str
+    matched_prefix: str = ""
+    rule_kind: str = "prefix"
+    matched_rule: str = ""
 
 
 @dataclass
@@ -74,8 +87,13 @@ def _normalized_scan_mode(mode: str) -> str:
     return normalized
 
 
-def _should_ignore_directory(name: str, ignored_prefixes: list[str]) -> bool:
-    return _matched_ignored_prefix(name, ignored_prefixes) is not None
+def _should_ignore_directory(
+    name: str,
+    ignored_prefixes: list[str],
+    ignored_suffixes: list[str] | None = None,
+    ignored_contains: list[str] | None = None,
+) -> bool:
+    return _matched_ignore_rule(name, ignored_prefixes, ignored_suffixes or [], ignored_contains or []) is not None
 
 
 def _matched_ignored_prefix(name: str, ignored_prefixes: list[str]) -> str | None:
@@ -86,15 +104,47 @@ def _matched_ignored_prefix(name: str, ignored_prefixes: list[str]) -> str | Non
     return None
 
 
+def _matched_ignore_rule(
+    name: str,
+    ignored_prefixes: list[str],
+    ignored_suffixes: list[str],
+    ignored_contains: list[str],
+) -> tuple[str, str] | None:
+    lowered = name.casefold()
+    for prefix in ignored_prefixes:
+        if lowered.startswith(prefix.casefold()):
+            return "prefix", prefix
+    for suffix in ignored_suffixes:
+        if lowered.endswith(suffix.casefold()):
+            return "suffix", suffix
+    for token in ignored_contains:
+        if token.casefold() in lowered:
+            return "contains", token
+    return None
+
+
+def _rule_kind_label(kind: str) -> str:
+    if kind == "suffix":
+        return "后缀"
+    if kind == "contains":
+        return "包含"
+    return "前缀"
+
+
 def _iter_scanned_paths(
     root: Path,
     *,
     mode: str,
     ignored_prefixes: list[str],
+    ignored_suffixes: list[str] | None = None,
+    ignored_contains: list[str] | None = None,
     progress_callback: Callable[[int, int, int, Path | None], None] | None = None,
     skip_callback: Callable[[SkippedDirectoryDetail], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> ScanResult:
     normalized_mode = _normalized_scan_mode(mode)
+    ignored_suffixes = normalize_scan_ignore_suffixes(ignored_suffixes or DEFAULT_SCAN_IGNORE_SUFFIXES)
+    ignored_contains = normalize_scan_ignore_contains(ignored_contains or DEFAULT_SCAN_IGNORE_CONTAINS)
     supported: list[Path] = []
     skipped_details: list[SkippedDirectoryDetail] = []
     seen_skipped: set[Path] = set()
@@ -105,18 +155,24 @@ def _iter_scanned_paths(
         if progress_callback is not None:
             progress_callback(processed_files, max(processed_files, discovered_files), len(supported), current)
 
-    def register_skip(path: Path, matched_prefix: str) -> None:
+    def canceled() -> bool:
+        return bool(cancel_event is not None and cancel_event.is_set())
+
+    def register_skip(path: Path, rule_kind: str, matched_rule: str) -> None:
         resolved = path.resolve()
         if resolved in seen_skipped:
             return
         seen_skipped.add(resolved)
         location = "root_child" if path.parent == root else "nested"
+        kind_label = _rule_kind_label(rule_kind)
         detail = SkippedDirectoryDetail(
             root=root,
             path=path,
-            matched_prefix=matched_prefix,
-            reason=f"名称符合忽略前缀“{matched_prefix}”，已跳过该文件夹和里面的图片。",
             location=location,
+            matched_prefix=matched_rule if rule_kind == "prefix" else "",
+            rule_kind=rule_kind,
+            matched_rule=matched_rule,
+            reason=f"名称符合忽略{kind_label}“{matched_rule}”，已跳过该文件夹和里面的图片。",
         )
         skipped_details.append(detail)
         if skip_callback is not None:
@@ -126,10 +182,12 @@ def _iter_scanned_paths(
 
     if normalized_mode == "current_only":
         for child in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+            if canceled():
+                break
             if child.is_dir():
-                matched_prefix = _matched_ignored_prefix(child.name, ignored_prefixes)
-                if matched_prefix is not None:
-                    register_skip(child, matched_prefix)
+                matched_rule = _matched_ignore_rule(child.name, ignored_prefixes, ignored_suffixes, ignored_contains)
+                if matched_rule is not None:
+                    register_skip(child, matched_rule[0], matched_rule[1])
                 continue
             if not child.is_file():
                 continue
@@ -140,19 +198,24 @@ def _iter_scanned_paths(
             report_progress(child)
     else:
         for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+            if canceled():
+                dirnames[:] = []
+                break
             current_dir = Path(dirpath)
             kept_dirs: list[str] = []
             for dirname in sorted(dirnames, key=str.casefold):
                 child_dir = current_dir / dirname
-                matched_prefix = _matched_ignored_prefix(dirname, ignored_prefixes)
-                if matched_prefix is not None:
-                    register_skip(child_dir, matched_prefix)
+                matched_rule = _matched_ignore_rule(dirname, ignored_prefixes, ignored_suffixes, ignored_contains)
+                if matched_rule is not None:
+                    register_skip(child_dir, matched_rule[0], matched_rule[1])
                 else:
                     kept_dirs.append(dirname)
             dirnames[:] = kept_dirs
 
             scan_files_here = not (normalized_mode == "subdirs_only" and current_dir == root)
             for filename in sorted(filenames, key=str.casefold):
+                if canceled():
+                    break
                 child = current_dir / filename
                 if not child.is_file():
                     continue
@@ -174,6 +237,9 @@ def _iter_scanned_paths(
             skipped_details=skipped_details,
             visited_files=processed_files,
             ignored_prefixes=list(ignored_prefixes),
+            ignored_suffixes=list(ignored_suffixes),
+            ignored_contains=list(ignored_contains),
+            canceled=canceled(),
         ),
     )
 
@@ -183,14 +249,20 @@ def scan_image_paths(
     *,
     mode: str = "all",
     ignored_dir_prefixes: list[str] | tuple[str, ...] | None = None,
+    ignored_dir_suffixes: list[str] | tuple[str, ...] | None = None,
+    ignored_dir_contains: list[str] | tuple[str, ...] | None = None,
     skip_callback: Callable[[SkippedDirectoryDetail], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> list[Path]:
     root = Path(folder)
     result = _iter_scanned_paths(
         root,
         mode=mode,
         ignored_prefixes=normalize_scan_ignore_prefixes(list(ignored_dir_prefixes or DEFAULT_SCAN_IGNORE_PREFIXES)),
+        ignored_suffixes=normalize_scan_ignore_suffixes(list(ignored_dir_suffixes or DEFAULT_SCAN_IGNORE_SUFFIXES)),
+        ignored_contains=normalize_scan_ignore_contains(list(ignored_dir_contains or DEFAULT_SCAN_IGNORE_CONTAINS)),
         skip_callback=skip_callback,
+        cancel_event=cancel_event,
     )
     return result.paths
 
@@ -201,15 +273,21 @@ def scan_image_paths_with_progress(
     *,
     mode: str = "all",
     ignored_dir_prefixes: list[str] | tuple[str, ...] | None = None,
+    ignored_dir_suffixes: list[str] | tuple[str, ...] | None = None,
+    ignored_dir_contains: list[str] | tuple[str, ...] | None = None,
     skip_callback: Callable[[SkippedDirectoryDetail], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> ScanResult:
     root = Path(folder)
     return _iter_scanned_paths(
         root,
         mode=mode,
         ignored_prefixes=normalize_scan_ignore_prefixes(list(ignored_dir_prefixes or DEFAULT_SCAN_IGNORE_PREFIXES)),
+        ignored_suffixes=normalize_scan_ignore_suffixes(list(ignored_dir_suffixes or DEFAULT_SCAN_IGNORE_SUFFIXES)),
+        ignored_contains=normalize_scan_ignore_contains(list(ignored_dir_contains or DEFAULT_SCAN_IGNORE_CONTAINS)),
         progress_callback=progress_callback,
         skip_callback=skip_callback,
+        cancel_event=cancel_event,
     )
 
 

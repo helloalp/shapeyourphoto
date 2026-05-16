@@ -1,4 +1,4 @@
-﻿# Maintenance Guide
+# Maintenance Guide
 
 本文是 1.2.5 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
 
@@ -31,7 +31,7 @@
 ## UI 主类拆分规则
 
 - `src/ui_app.py` 只负责主窗口状态、控件装配和高层协调。
-- 扫描/导入、分析任务、修复任务、主列表、Console/perf、cleanup/similar 复核分别维护在 `src/ui_scan_actions.py`、`src/ui_analysis_actions.py`、`src/ui_repair_actions.py`、`src/ui_file_list.py`、`src/ui_task_console.py`、`src/ui_review_actions.py`。
+- 扫描/导入、分析任务、修复任务、主列表、Console/perf、不适合保留候选/相似组复核分别维护在 `src/ui_scan_actions.py`、`src/ui_analysis_actions.py`、`src/ui_repair_actions.py`、`src/ui_file_list.py`、`src/ui_task_console.py`、`src/ui_review_actions.py`。
 - `src/ui/` 包承载窗口标题、display mapping、主题、HiDPI、Splash 和 EXIF 安全编辑等共享 UI 基础设施。
 - 新增 UI 行为时优先放入对应 mixin 或 `src/ui/` 包；只有布局装配、菜单 wiring 和根窗口生命周期适合留在 `src/ui_app.py`。
 - mixin 模块不得 import `ui_app.py`，共享常量放在 `ui_constants.py`，避免循环依赖。
@@ -41,11 +41,11 @@
 
 - 每轮批量分析都应有唯一 run_id。
 - 取消分析通过 cancel_event 表达。
-- 后台任务写回结果、进度、cleanup prompt、similar prompt 或最终摘要前必须校验 run_id 和 cancel_event。
-- 取消后保留文件列表，清空本轮目标已写入的结果、错误、进度、cleanup 标记和相似组标记。
+- 后台任务写回结果、进度、不适合保留提示、相似图提示或最终摘要前必须校验 run_id 和 cancel_event。
+- 取消后保留文件列表，清空本轮目标已写入的结果、错误、进度、不适合保留标记和相似组标记。
 - 已取消 worker 可以完成 CPU 工作，但结果必须丢弃。
 - 每轮批量修复也应有唯一 run_id 和 cancel_event。
-- 取消修复不得清空修复前已经存在的分析结果、错误、cleanup/similar 状态或修复建议；如修复流程补分析了缺失图片，取消时必须按修复前快照恢复。
+- 取消修复不得清空修复前已经存在的分析结果、错误、不适合保留/相似图状态或修复建议；如修复流程补分析了缺失图片，取消时必须按修复前快照恢复。
 - 修复取消后不得保留已取消批次的完成统计、调试打开列表或修复完成详情。
 - 已写出的非覆盖修复输出必须删除；删除失败时移入 `_repair_canceled_outputs` 隔离目录并提示。
 - 覆盖原文件修复需要先创建 `_repair_cancel_backups` 备份，取消时恢复备份，正常完成后清理备份。
@@ -55,11 +55,11 @@
 - 分析和修复耗时统一写入 `perf_timings`。
 - 面向维护者的轻量瓶颈提示写入 `perf_notes`。
 - 不要新建平行计时体系。
-- 分析建议记录读取、EXIF 转正、working image、基础统计、曝光、锐度、色彩、噪声、人像、cleanup candidate、相似图检测等阶段。
+- 分析建议记录读取、EXIF 转正、working image、基础统计、曝光、锐度、色彩、噪声、人像、不适合保留候选、相似图检测等阶段。
 - 修复建议记录 planner、读取、各 op、候选生成/评分、安全检查、保存输出和元数据保留。
 - Console 以 `total_wall_time` 为主；`worker_cumulative_time` 是并发 worker 累计工作量，不是用户等待时间。
 - 如果同时显示平均耗时，必须区分 `average_wall_time_per_image` 和 `average_worker_time_per_image`。
-- 不得把每张图耗时相加后作为面向用户的“本轮总耗时”。
+- 不得把每张图耗时相加后作为面向用户的"本轮总耗时"。
 
 ## EXIF Orientation 归一
 
@@ -67,19 +67,19 @@
 - 保存 JPEG/WebP 前将 EXIF Orientation 归一为 `1`。
 - 回归时检查原图显示方向、输出物理尺寸和输出 Orientation。
 
-## cleanup candidate 安全删除规则
+## 不适合保留候选安全删除规则
 
-- cleanup candidate 是建议，不是自动删除命令。
+- 不适合保留候选是建议，不是自动删除命令。
 - UI 默认不勾选候选。
 - 删除前必须二次确认。
 - 删除必须走 `safe_cleanup_paths()`。
 - 优先移入系统回收站；失败时移入项目内 `_cleanup_candidates` 隔离目录。
-- 不得在 cleanup 或 similar 窗口中直接 `unlink()` 或永久删除。
+- 不得在不适合保留或相似图复核窗口中直接 `unlink()` 或永久删除。
 
 ## 修复目标集合规则
 
-- “修复当前”只读取当前焦点图片。
-- “批量修复勾选”优先使用真正的 Treeview 多选集合；只有当多选数量多于 1 张时才视为批量多选。
+- "修复当前"只读取当前焦点图片。
+- "批量修复勾选"优先使用真正的 Treeview 多选集合；只有当多选数量多于 1 张时才视为批量多选。
 - 没有真正多选时，批量入口回退到勾选集合；单个蓝色高亮行不得覆盖勾选集合。
 - 批量修复必须逐图调用 `repair_engine.repair_image_file()`，并让 `repair_planner.build_repair_plan()` 基于该图自己的 `AnalysisResult` 生成 `method_ids`、`op_strengths` 和 policy notes。
 - 不得把当前焦点图的推荐方法、参数或力度套用到整批图片。
@@ -87,17 +87,17 @@
 
 ## 弹窗尺寸规则
 
-- 分析/修复进度、扫描四选项、修复完成详情、cleanup candidate、相似图列表、相似图组内对比和设置窗口都应有明确 `minsize()` 或固定/滚动策略。
+- 分析/修复进度、扫描四选项、修复完成详情、不适合保留候选、相似图列表、相似图组内对比和设置窗口都应有明确 `minsize()` 或固定/滚动策略。
 - 底部关键按钮应放在固定按钮区，内容过长时滚动内容区，不压缩按钮区。
 - 进度窗口的底部提示与取消按钮必须使用独立布局单元，不能互相覆盖；关闭叉号必须等同取消或明确禁用，但取消按钮必须可达。
-- 可缩放窗口达到最小尺寸附近时，统一显示“已达到最小可用窗口大小”。
+- 可缩放窗口达到最小尺寸附近时，统一显示"已达到最小可用窗口大小"。
 - 二级窗口默认尺寸必须受屏幕可用区域限制，不能为了展示完整内容超出屏幕。
 
 ## 相似图维护规则
 
 - 相似图只作为分析批次附加结果。
-- `SimilarImageGroup` 不写回单张 `AnalysisResult.issues`、`scene_type`、人像字段、修复建议或 cleanup candidates。
-- 同一张图可以同时出现在 cleanup candidate 和 similar group 中；UI 只能提示，不自动处理。
+- `SimilarImageGroup` 不写回单张 `AnalysisResult.issues`、`scene_type`、人像字段、修复建议或不适合保留候选。
+- 同一张图可以同时出现在不适合保留候选和 similar group 中；UI 只能提示，不自动处理。
 - 相似图删除复用全局安全清理。
 
 ## 设置与扫描规则
@@ -106,7 +106,7 @@
 - UI 设置统一由 `settings_dialog.py` 管理，不新增零散菜单项。
 - Console 时间模式和外观主题也属于 app_settings schema，不能在 UI 内私有保存。
 - 扫描默认至少忽略 `_repair` 前缀，任意层级以 `_repair` 开头的目录都跳过。
-- 扫描结果应写入 Console 简报和“最近扫描摘要”明细；完整跳过目录明细不得刷屏到 Console。
+- 扫描结果应写入 Console 简报和"最近扫描摘要"明细；完整跳过目录明细不得刷屏到 Console。
 - 扫描和扫描后的图片加载阶段都必须显示进度弹窗；无法预知总数时显示已处理数量，不造假进度。
 - 修改扫描逻辑时同时验证按钮扫描、拖拽文件夹、补扫、默认扫描模式和忽略前缀。
 
@@ -145,7 +145,7 @@
 - 真实 `test/manifest.json` 也默认忽略，因为可能包含用户图片文件名。
 - 可提交的模板是 `test/manifest.example.json`。
 - `tools/benchmark/benchmark_test_images.py` 必须允许 `test/` 为空时安全跳过。
-- benchmark 摘要应记录 wall time、worker cumulative、queue/wait、慢图、慢阶段、相似检测、问题图和 cleanup candidate 数量。
+- benchmark 摘要应记录 wall time、worker cumulative、queue/wait、慢图、慢阶段、相似检测、问题图和不适合保留候选数量。
 - benchmark 报告写入被忽略的 `benchmark_reports/`，不得提交报告文件。
 
 ## 文档更新规则
@@ -171,7 +171,7 @@
 
 1. `python -m compileall -q .`
 2. 静态检查 `start.bat` / `tools/launcher/start_helper.py` 未加入 benchmark、扫描、更新包下载或其他启动无关重任务。
-3. 搜索旧入口描述：`single_image_window`、孤立“去噪当前”、普通 `messagebox` 长修复详情。
+3. 搜索旧入口描述：`single_image_window`、孤立"去噪当前"、普通 `messagebox` 长修复详情。
 4. 检查文档是否存在明显乱码。
 5. 检查 `git status --short`，确认没有本地样张、`__pycache__`、patch、tmp 或 debug 输出进入版本控制。
 
@@ -183,6 +183,17 @@
 - `file_actions.py`：扫描忽略、清理安全和输出路径。
 - `app_settings.py`：设置兼容、默认值和 worker 规划。
 - `similar_detector.py` / `similar_review_dialog.py`：相似图算法与安全删除。
+
+# 1.2.5 维护补充说明
+
+- UI 所有内部名词如 `cleanup candidate`、`no-op` 等面向用户展示时必须通过 `display_names.py` 转为"不适合保留"、"未生成新版本"等中文；上述文档已将描述更新为中文化词汇。
+- `start.bat` 已支持按需安装 `requirements.txt` 中的依赖（包括正式依赖 `cryptography`），但依然禁止包含任何其他重型操作。
+- 开发者私有文件如部署流程、AI协作提示词等归档于 `private_docs/`，严禁提交到公开仓库或发版包中。
+- UI/云端操作相关的网络调用必须放置于后台线程，超时和重试必须不阻塞主界面的重绘和用户操作，关闭窗口时必须能安全切断关联。
+
+---
+> 下方内容为旧版本的维护规范英文历史记录，供追溯使用。
+
 # 1.1.8 Maintenance Addendum
 
 - Settings additions must be defined in `app_settings.py` and surfaced from `settings_dialog.py`.

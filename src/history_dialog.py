@@ -4,7 +4,8 @@ import tkinter as tk
 from tkinter import ttk
 import re
 
-from app_metadata import CHANGELOG
+from app_metadata import CHANGELOG, CHANGELOG_I18N
+from ui.language import get_current_language, normalize_language
 from ui.window_titles import app_window_title
 from window_layout import center_window
 
@@ -56,7 +57,11 @@ def show_history_dialog(parent: tk.Widget) -> None:
     text.grid(row=0, column=0, sticky="nsew")
     scroll.grid(row=0, column=1, sticky="ns")
 
-    for entry in CHANGELOG:
+    lang = normalize_language(get_current_language())
+    localized_entries = CHANGELOG_I18N.get(lang, [])
+    localized_versions = {str(entry.get("version")) for entry in localized_entries}
+    entries = [*localized_entries, *[entry for entry in CHANGELOG if str(entry.get("version")) not in localized_versions]]
+    for entry in entries:
         text.insert("end", f"{entry['version']}  {entry['date']}\n", "version")
         for index, item in enumerate(entry["items"], start=1):
             text.insert("end", f"{index}. {_plain_history_item(item)}\n", "item")

@@ -4,13 +4,31 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
-from app_settings import SCAN_MODE_ALL, SCAN_MODE_CURRENT_ONLY, SCAN_MODE_SUBDIRS_ONLY, normalize_scan_ignore_prefixes
+from app_settings import (
+    SCAN_MODE_ALL,
+    SCAN_MODE_CURRENT_ONLY,
+    SCAN_MODE_SUBDIRS_ONLY,
+    normalize_scan_ignore_contains,
+    normalize_scan_ignore_prefixes,
+    normalize_scan_ignore_suffixes,
+)
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
 
+def _rule_text(label: str, values: list[str]) -> str:
+    return f"{label}：{', '.join(values) if values else '无'}"
+
+
 class ScanModeDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Widget, folder: Path, ignored_prefixes: list[str]) -> None:
+    def __init__(
+        self,
+        parent: tk.Widget,
+        folder: Path,
+        ignored_prefixes: list[str],
+        ignored_suffixes: list[str] | None = None,
+        ignored_contains: list[str] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.title(app_window_title("选择文件夹扫描范围"))
         self.transient(parent.winfo_toplevel())
@@ -20,6 +38,8 @@ class ScanModeDialog(tk.Toplevel):
         self.result: str | None = None
         self._size_notice_var = tk.StringVar(value="")
         self._ignored_prefixes = normalize_scan_ignore_prefixes(ignored_prefixes)
+        self._ignored_suffixes = normalize_scan_ignore_suffixes(ignored_suffixes)
+        self._ignored_contains = normalize_scan_ignore_contains(ignored_contains)
 
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
@@ -54,8 +74,10 @@ class ScanModeDialog(tk.Toplevel):
             content,
             text=(
                 f"文件夹：{folder}\n"
-                f"忽略前缀：{', '.join(self._ignored_prefixes)}\n"
-                "名称符合这些前缀的文件夹会被跳过，里面的图片也不会扫描。"
+                f"{_rule_text('忽略前缀', self._ignored_prefixes)}\n"
+                f"{_rule_text('忽略后缀', self._ignored_suffixes)}\n"
+                f"{_rule_text('名称包含', self._ignored_contains)}\n"
+                "名称符合这些规则的文件夹会被跳过，里面的图片也不会扫描。"
             ),
             wraplength=560,
             justify="left",
@@ -92,8 +114,14 @@ class ScanModeDialog(tk.Toplevel):
         self.destroy()
 
 
-def show_scan_mode_dialog(parent: tk.Widget, folder: Path, ignored_prefixes: list[str]) -> str | None:
-    dialog = ScanModeDialog(parent, folder, ignored_prefixes)
+def show_scan_mode_dialog(
+    parent: tk.Widget,
+    folder: Path,
+    ignored_prefixes: list[str],
+    ignored_suffixes: list[str] | None = None,
+    ignored_contains: list[str] | None = None,
+) -> str | None:
+    dialog = ScanModeDialog(parent, folder, ignored_prefixes, ignored_suffixes, ignored_contains)
     dialog.wait_window()
     return dialog.result
 

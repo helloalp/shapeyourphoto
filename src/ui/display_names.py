@@ -88,6 +88,15 @@ STATUS_LABELS_EN = {
     "skipped": "Skipped",
 }
 
+STATUS_LABELS_JA = {
+    "pending": "保留中",
+    "selected": "選択済み",
+    "current": "現在",
+    "done": "完了",
+    "failed": "失敗",
+    "skipped": "スキップ済み",
+}
+
 SCENE_TYPE_LABELS_ZH = {
     "generic_scene": "普通场景",
     "portrait_scene": "人像场景",
@@ -268,6 +277,7 @@ WORKER_LABELS_EN = {
 
 GPU_LABELS_ZH = {"off": "关闭", "auto": "自动", "on": "开启"}
 GPU_LABELS_EN = {"off": "Off", "auto": "Auto", "on": "On"}
+GPU_LABELS_JA = {"off": "オフ", "auto": "自動", "on": "オン"}
 
 CONSOLE_TIME_MODE_LABELS_ZH = {
     "24h": "24 小时制 [20:28:14]",
@@ -403,11 +413,48 @@ _TABLES = {
         "console_time_mode": CONSOLE_TIME_MODE_LABELS_EN,
         "perf_stage": PERF_STAGE_LABELS_EN,
     },
+    "ja_JP": {
+        "issue": ISSUE_CODE_LABELS_EN,
+        "cleanup_reason": CLEANUP_REASON_LABELS_EN,
+        "severity": {
+            "low": "低",
+            "medium": "中",
+            "high": "高",
+            "critical": "重大",
+            "warning": "注意",
+            "severe": "深刻",
+        },
+        "status": STATUS_LABELS_JA,
+        "scene_type": SCENE_TYPE_LABELS_EN,
+        "portrait_type": PORTRAIT_TYPE_LABELS_EN,
+        "portrait_scene_type": PORTRAIT_SCENE_LABELS_EN,
+        "exposure_type": EXPOSURE_TYPE_LABELS_EN,
+        "color_type": COLOR_TYPE_LABELS_EN,
+        "repair_policy": REPAIR_POLICY_LABELS_EN,
+        "outcome": OUTCOME_LABELS_EN,
+        "scan_mode": {
+            "ask": "毎回確認",
+            "all": "すべてスキャン（サブフォルダーを含む）",
+            "current_only": "現在のフォルダーのみ",
+            "subdirs_only": "サブフォルダーのみ",
+        },
+        "worker": {
+            "auto": "自動",
+            "low": "低",
+            "medium": "中",
+            "high": "高",
+            "custom": "同時処理数を指定",
+        },
+        "gpu": GPU_LABELS_JA,
+        "console_time_mode": CONSOLE_TIME_MODE_LABELS_EN,
+        "perf_stage": PERF_STAGE_LABELS_EN,
+    },
 }
 
 _UNKNOWN_PREFIX = {
     DEFAULT_LANGUAGE: "未知类型",
     "en_US": "Unknown type",
+    "ja_JP": "不明な種類",
 }
 
 

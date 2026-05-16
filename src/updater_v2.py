@@ -38,6 +38,7 @@ PROTECTED_TOP_LEVEL = {
     "test",
     "tmp",
     "_cleanup_candidates",
+    "_repair",
     "_repair_canceled_outputs",
     "_repair_cancel_backups",
     "_update_removed_files",

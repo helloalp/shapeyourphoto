@@ -1,57 +1,24 @@
-﻿# Similar Images
+# 相似图片处理机制
 
-## 定位
+本文记录系统内“相似图片复核”功能的定位与用户流向。
 
-相似图片检测是批量分析后的附加复核能力，用于帮助用户发现近重复、连拍或同场景同主体图片。它不是单张图片质量问题，也不是 cleanup candidate。
+> [!NOTE]
+> `SimilarImageGroup` 在底层的比对算法（如感知哈希 aHash/dHash 结合灰度结构特征、色彩直方图降维）及确切置信度阈值，作为系统的深度技术细节，已隔离归档至 `private_docs/` 百科体系。此处仅记录外围边界机制。
 
-## 数据结构
+## 功能定位
 
-`SimilarImageGroup` 位于 [src/models.py](/E:/aitools/shapeyourphoto/src/models.py)，包含：
+相似图片检测是整个批量分析结束后的附加复核能力，用于协助用户识别近重复图片、连拍冗余以及极高相似度的同场景同主体图片。
+- 它不属于“单张图片质量问题”的范畴。
+- 它不会擅自篡改单张图片的质量评价指标（Issues）、场景分类与修复评分策略。
 
-- `group_id`
-- `paths`
-- `similarity`
-- `level`
-- `reason`
-- `evidence`
-- `possible_burst`
+## 数据独立性与隔离保护
 
-该结构只保存在批次结果中，不写回单张 `AnalysisResult`。
+- **结果结构分离**：检测出的特征组仅保存在批次的聚合结果内存中，系统严格禁止将“因为与它图相似”这个原因直接挂载到某张单图的 `AnalysisResult` 上。
+- **并行标记**：一张图片可能同时被归入“相似组”并被标记为“不适合保留”。在用户界面上，这两类状态标记并行存在，系统仅提供合并摘要提示，但从不在后台私自执行交叉删除或串联判定。
 
-## 检测模块
+## 删除确认与清理流向
 
-[src/similar_detector.py](/E:/aitools/shapeyourphoto/src/similar_detector.py) 使用轻量特征：
-
-- 缩略图颜色/亮度摘要。
-- aHash / dHash。
-- 低分辨率灰度结构向量。
-- 尺寸比例。
-- 文件编号连续性。
-- 可靠 EXIF 或文件时间辅助。
-- JPEG `draft()` 降低特征提取解码成本。
-
-检测阶段耗时写入 `perf_timings`，包括 feature extract、pair build、pair compare、group build 和 total similar detection。
-
-## UI 复核
-
-[src/similar_review_dialog.py](/E:/aitools/shapeyourphoto/src/similar_review_dialog.py) 包含两个窗口：
-
-- 相似组列表：滚动、筛选、多选和开始抉择。
-- 组内对比：逐组处理，2-4 张网格，5 张以上分页。
-
-图片区可滚动，底部全局按钮固定；每张图的“删除此图”按钮必须可达。
-
-## 删除规则
-
-- 删除前必须二次确认。
-- 删除调用主应用回调，再走 `safe_cleanup_paths()`。
-- 优先回收站，失败时进入 `_cleanup_candidates`。
-- 删除后刷新相似组、主列表、cleanup 面板和文件存在状态。
-- 未删除图片的分析结果、修复建议和扫描摘要不变。
-
-## 禁止事项
-
-- 不把相似组写入 `AnalysisResult.issues`。
-- 不因为相似而自动标记 cleanup candidate。
-- 不在相似窗口里直接永久删除。
-- 不让相似图弹窗阻塞 cleanup candidate 复核；两个提示需要按顺序出现。
+对于相似组中用户主动抛弃的图片，遵循全局系统的通用清理原则：
+- 所有针对相似项的清理操作都会先走“二次确认”界面拦截。
+- 确认后，核心清理逻辑会回调应用主函数，走统一的安全隔离清理程序。
+- 清理触发后，前端的主列表和其余相关状态面板将进行定向更新，而已选定的留存图片状态绝不会受到影响。

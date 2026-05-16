@@ -36,7 +36,7 @@ class SimilarGroupListDialog(tk.Toplevel):
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
-        self.minsize(780, 460)
+        self.minsize(900, 560)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
         self._groups = groups
@@ -267,7 +267,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
-        self.minsize(900, 640)
+        self.minsize(1040, 720)
         self.protocol("WM_DELETE_WINDOW", self._skip_all)
 
         self._groups = groups

@@ -30,6 +30,19 @@ from ui.display_names import display_name
 
 
 class UiRepairActionsMixin:
+    def show_last_repair_summary(self) -> None:
+        payload = getattr(self, "_last_repair_summary_payload", None)
+        if not payload:
+            messagebox.showinfo("最近修复摘要", "当前还没有可查看的修复摘要。")
+            return
+        show_repair_completion_dialog(
+            self.root,
+            title="最近修复摘要",
+            summary_lines=payload["summary_lines"],
+            entries=payload["entries"],
+            default_filter=self.settings.repair_summary_default_filter or REPAIR_SUMMARY_FILTER_ALL,
+        )
+
     def repair_current(self) -> None:
         path = self._current_path()
         if path is None:
@@ -510,6 +523,9 @@ class UiRepairActionsMixin:
             detail += f" 另有 {len(cleanup_messages)} 个清理警告，详见 Console。"
         self.is_busy = False
         self._set_controls_enabled(True)
+        self._active_task_cancel_callback = None
+        if hasattr(self, "task_cancel_button"):
+            self.task_cancel_button.configure(state="disabled", text="取消任务")
         self.progress_controller.finish(title="修复已取消", detail=detail, status=detail, close_dialog=True)
         self._repair_cancel_event = None
         self._repair_cancel_targets = []
@@ -679,11 +695,16 @@ class UiRepairActionsMixin:
             "discard_candidate_skipped": "默认跳过不适合保留图片",
             "normal_skipped": "常规跳过",
         }
+        completion_entries = self._build_repair_completion_entries(repaired, skipped, failed, outcome_labels)
+        self._last_repair_summary_payload = {
+            "summary_lines": list(lines),
+            "entries": completion_entries,
+        }
         show_repair_completion_dialog(
             self.root,
             title="修复完成",
             summary_lines=lines,
-            entries=self._build_repair_completion_entries(repaired, skipped, failed, outcome_labels),
+            entries=completion_entries,
             default_filter=self.settings.repair_summary_default_filter or REPAIR_SUMMARY_FILTER_ALL,
         )
 
