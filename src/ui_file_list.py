@@ -16,6 +16,7 @@ from result_sorting import sort_paths
 from ui.display_names import display_name, issue_display
 from ui.language import tr
 from ui.metadata_editor import show_metadata_edit_dialog, supports_metadata_edit
+from gps_editor import show_gps_edit_dialog
 
 
 class UiFileListMixin:
@@ -604,15 +605,13 @@ class UiFileListMixin:
         if hasattr(self, "meta_edit_button"):
             editable, reason = supports_metadata_edit(path)
             self.meta_edit_button.configure(state="normal" if editable else "disabled")
+            if hasattr(self, "gps_edit_button"):
+                self.gps_edit_button.configure(state="normal" if editable else "disabled")
             edit_note = tr("meta.editable_broad") if editable else tr("meta.readonly_reason").format(reason=reason)
             meta_summary = f"{meta_summary}\n\n{edit_note}"
         self._set_meta_summary(meta_summary)
 
-        lines = [
-            f"文件：{path.name}",
-            f"路径：{path}",
-            f"尺寸：{original_size[0]} x {original_size[1]}",
-        ]
+        lines = [f"尺寸：{original_size[0]} x {original_size[1]}"]
         if error:
             lines.append("")
             lines.append(f"分析失败：{error}")
@@ -957,6 +956,20 @@ class UiFileListMixin:
             self._log_console(f"metadata edited: {path.name}")
             self._set_meta_summary(summarize_image_metadata(path))
             messagebox.showinfo("保存完成", result.message)
+
+    def edit_current_gps(self) -> None:
+        path = self._current_path()
+        if path is None:
+            messagebox.showinfo("提示", "请先选中一张图片。")
+            return
+        editable, reason = supports_metadata_edit(path)
+        if not editable:
+            messagebox.showinfo("只读", reason)
+            return
+        result = show_gps_edit_dialog(self.root, path, log_callback=self._log_console)
+        if result.saved:
+            self._set_meta_summary(summarize_image_metadata(path))
+            messagebox.showinfo(tr("gps.title"), result.message)
 
     def export_selected(self) -> None:
         cleanup_primary = self._primary_cleanup_candidates()

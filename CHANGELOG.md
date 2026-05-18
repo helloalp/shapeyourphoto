@@ -3,11 +3,19 @@
 ## 1.2.6 - 2026-05-16
 
 - 主界面任务进度区接入扫描、分析和修复状态；文件夹扫描不再额外弹出扫描进度窗口，并支持取消后保留已找到的图片。
+- 增强高对比主题和主题覆盖范围，更多按钮、输入框、表格、滚动条、进度条、页签、右侧栏、设置页和 Console 会跟随主题变化。
+- 整理主界面入口：官网移入帮助菜单，统计移入查看菜单，更新历史移入设置的更新页；新增日志管理页和日志导出。
+- 分析进度窗口显示图片数量，内部阶段步数只用于进度条；右侧诊断页不再重复占用底部显示文件名和路径。
+- 新增批量质量保持格式转换，支持 PNG、JPG、WebP，并尽量保留 EXIF、ICC、DPI 和正确方向。
+- 新增 GPS 经纬度查看与写入入口，保存前备份，失败时尽量回退。
 - UI 回调队列增加单次处理预算，进度窗口减少同步刷新开销，降低批量分析和修复期间点击、切换选中项时的卡顿风险。
 - 拖入图片和文件夹时会过滤不可读取文件；拖入单张、多张图片或文件夹后会立即加入列表或开始扫描，并在 Console 记录摘要。
 - 文件列表支持 Ctrl+A 全选、反选、清除选择、Delete/右键批量移出；批量修复仍只把真正多选或勾选集合视为批量目标。
 - 扫描、导入和列表刷新不再整批清空缩略图缓存，减少重复解码；扫描、分析、修复继续输出简短耗时摘要。
 - GPU 状态说明改为区分硬件可见、加速组件准备情况和当前任务使用状态；加速组件未准备时会安全使用 CPU，并提供可理解的下一步入口。
+- GPU 加速链路改为应用自带 Rust/wgpu native backend；安装包携带 `gpu/shapeyourphoto_gpu_core.exe`，普通用户不需要安装 CUDA、torch、CuPy 或 OpenCV CUDA。大图分析的亮度直方图/百分位统计已接入 GPU，日志会记录 `accelerated=true` 和耗时；小图、修复候选评分与相似图缩略特征在当前 benchmark 下继续自动回退 CPU。
+- 设置页 GPU 操作更新为重新检测、native 自检、复制诊断和日志入口；缺少 native 组件时提示安装包缺少 GPU 加速组件并自动 CPU 回退，不再引导普通用户运行 GPU requirements。
+- Windows 打包流程会构建并携带 native GPU backend，CI 会验证 `gpu/shapeyourphoto_gpu_core.exe` 存在；根目录删除 `requirements-gpu.txt`，模块索引移动到 `docs/MODULES.md`。
 - 启动脚本在缺少 Python 时会识别 Windows 环境和可用安装方式，保留窗口并引导安装；运行前会把旧布局根目录残留文件移入隔离目录并生成清单。
 - 右侧信息区改为同级标签页：诊断、预览图、属性 / EXIF 和 Console；预览图页会随窗口尺寸显示更大的当前图片。
 - 查看菜单新增最近修复摘要，顶部菜单新增帮助与官网入口；修复完成详情、相似图和清理窗口默认尺寸更适合 1080p、2K 与 4K 屏幕。
@@ -143,7 +151,7 @@
 
 ## 1.1.6 - 2026-05-08
 
-- 重整文档体系：明确根 README、根 MODULES、`docs/`、`docs/technical/` 与 `docs/updates/` 的分工，并给出后续维护阅读顺序。
+- 重整文档体系：明确根 README、`docs/MODULES.md`、`docs/`、`docs/technical/` 与 `docs/updates/` 的分工，并给出后续维护阅读顺序。
 - 重写核心维护文档：系统总览、模块参考、UI 工作流、维护指南和保留规则均更新为 1.1.6 当前口径。
 - 新增技术专题：分析流水线、性能与并发、相似图片、cleanup candidates、设置与扫描。
 - 修正旧内容误导：明确独立单图窗口、孤立“去噪当前”入口、普通 messagebox 承载批量长修复详情都不是当前主路径。
@@ -276,3 +284,13 @@
 - Added conservative working-image analysis for large photos, scaled result regions back to original coordinates, and kept noise conclusions stable with pixel-scale correction.
 - Used Pillow JPEG `draft()` in similar feature extraction to avoid unnecessary full-size decode for hash/vector stages.
 - `/test` real 16-photo benchmark: high mode improved from 53.29s wall time to 23.92s; quality spot check stayed at 6 issue images, 3 cleanup candidates, and 4 similar groups.
+# 1.2.6 Final Release Prep
+
+- 批量格式转换现在有完整进度、取消回滚、提前结束和原子写入；转换会尽量保留 DPI、EXIF、ICC、方向和来源元数据标记。
+- “修复当前”调整为“修复选中”，实际处理当前选中且已分析、仍在列表内的图片；移出列表或未分析目标会被拒绝。
+- 修复取消会等待后台 worker 结束并显示回滚进度，完成清理后才恢复 UI，避免窗口关闭后仍占用文件或锁。
+- 修复候选统计接入 bundled native GPU backend，并在日志中记录实际加速或 fallback。
+- 格式转换窗口文件列表可滚动，所有重点弹窗继续使用统一安全边距和固定底部操作区。
+- 日志设置新增语言模式；多语言维护规范要求 UI、Console、日志文本进入语言体系。
+- 32 线程设备性能档位调整为高 24、极高 28；低线程设备允许档位相同并保留系统响应空间。
+- GitHub workflow 仅产出 Windows test / experimental 单 exe artifact；推荐发布包仍为便携包。

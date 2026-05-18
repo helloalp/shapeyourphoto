@@ -6,6 +6,8 @@ from typing import Callable
 import numpy as np
 from PIL import Image, ImageOps
 
+from app_settings import GPU_ACCELERATION_AUTO
+from gpu_accel import accelerated_luma_stats
 from models import AnalysisResult, Issue
 
 from .common import (
@@ -595,7 +597,11 @@ def _build_color_issues(
     return issues, color_type
 
 
-def analyze_image(path: str | Path, progress_callback: Callable[[int, int, str], None] | None = None) -> AnalysisResult:
+def analyze_image(
+    path: str | Path,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+    gpu_mode: str = GPU_ACCELERATION_AUTO,
+) -> AnalysisResult:
     image_path = Path(path)
     perf_timings: dict[str, float] = {}
     analyze_started_at = np.float64(0.0)
@@ -631,18 +637,39 @@ def analyze_image(path: str | Path, progress_callback: Callable[[int, int, str],
     if progress_callback is not None:
         progress_callback(2, 5, "统计亮度、主体与背景")
     started_at = time.perf_counter()
-    brightness = float(np.mean(gray))
-    highlight_ratio = float(np.mean(gray >= 0.96))
-    clipped_highlights = float(np.mean(gray >= 0.985))
-    shadow_ratio = float(np.mean(gray <= 0.08))
-    crushed_shadows = float(np.mean(gray <= 0.03))
+    gpu_luma = accelerated_luma_stats(rgb, gpu_mode)
+    if gpu_luma is not None:
+        perf_timings["gpu_luma_stats"] = gpu_luma.timings.get("python_total_ms", gpu_luma.elapsed_ms)
+        perf_timings["gpu_luma_native"] = gpu_luma.elapsed_ms
+        perf_timings["gpu_luma_compute"] = gpu_luma.timings.get("gpu_compute_ms", 0.0)
+        perf_timings["gpu_luma_read_input"] = gpu_luma.timings.get("read_input_ms", 0.0)
+        perf_timings["gpu_luma_accelerated"] = 1.0 if gpu_luma.accelerated else 0.0
+    if gpu_luma is not None and gpu_luma.accelerated and gpu_luma.stats:
+        brightness = gpu_luma.stats.get("brightness", 0.0)
+        highlight_ratio = gpu_luma.stats.get("highlight_ratio", 0.0)
+        clipped_highlights = gpu_luma.stats.get("clipped_highlights", 0.0)
+        shadow_ratio = gpu_luma.stats.get("shadow_ratio", 0.0)
+        crushed_shadows = gpu_luma.stats.get("crushed_shadows", 0.0)
+        dyn_range = gpu_luma.stats.get("dyn_range", 0.0)
+        p50 = gpu_luma.stats.get("p50", 0.0)
+        p95 = gpu_luma.stats.get("p95", 0.0)
+        p99 = gpu_luma.stats.get("p99", 0.0)
+        p999 = gpu_luma.stats.get("p999", 0.0)
+    else:
+        brightness = float(np.mean(gray))
+        highlight_ratio = float(np.mean(gray >= 0.96))
+        clipped_highlights = float(np.mean(gray >= 0.985))
+        shadow_ratio = float(np.mean(gray <= 0.08))
+        crushed_shadows = float(np.mean(gray <= 0.03))
+        dyn_range = float(np.percentile(gray, 95) - np.percentile(gray, 5))
+        p50 = float(np.percentile(gray, 50))
+        p95 = float(np.percentile(gray, 95))
+        p99 = float(np.percentile(gray, 99))
+        p999 = float(np.percentile(gray, 99.9))
+        if gpu_luma is not None and gpu_luma.fallback_reason:
+            perf_timings["gpu_luma_fallback"] = (time.perf_counter() - started_at) * 1000.0
     contrast = float(np.std(gray))
-    dyn_range = float(np.percentile(gray, 95) - np.percentile(gray, 5))
     scene_detail = float(np.var(gray))
-    p50 = float(np.percentile(gray, 50))
-    p95 = float(np.percentile(gray, 95))
-    p99 = float(np.percentile(gray, 99))
-    p999 = float(np.percentile(gray, 99.9))
     add_timing(perf_timings, "exposure", started_at)
 
     started_at = time.perf_counter()

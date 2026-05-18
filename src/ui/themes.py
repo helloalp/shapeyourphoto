@@ -16,6 +16,12 @@ class ThemeTokens:
     muted_text: str
     button: str
     selection: str
+    border: str = "#b9c7bc"
+    input_bg: str = "#ffffff"
+    disabled_bg: str = "#e5e8e5"
+    disabled_text: str = "#777777"
+    danger: str = "#9a2d2d"
+    success: str = "#2f8f63"
     font_delta: int = 0
     spacing: int = 0
 
@@ -76,15 +82,21 @@ THEMES: dict[str, ThemeTokens] = {
     "high_contrast": ThemeTokens(
         "high_contrast",
         "高对比",
-        "#0b1320",
-        "#006fd6",
-        "#f7f7f7",
+        "#050505",
+        "#005fcc",
         "#ffffff",
-        "#f0f3f6",
-        "#101820",
-        "#3c4854",
-        "#dde7ef",
-        "#b9ddff",
+        "#ffffff",
+        "#f4f4f4",
+        "#000000",
+        "#1f1f1f",
+        "#e8e8e8",
+        "#ffe15a",
+        border="#000000",
+        input_bg="#ffffff",
+        disabled_bg="#d0d0d0",
+        disabled_text="#4a4a4a",
+        danger="#b00020",
+        success="#007a3d",
         font_delta=1,
         spacing=1,
     ),

@@ -44,6 +44,7 @@
 
 - `src/app_metadata.py` 的 `CHANGELOG` 属于应用内用户可见版本历史，默认必须使用中文。
 - 根 `CHANGELOG.md` 与 `docs/updates/<version>.md` 默认必须使用中文，并与 `app_metadata.CHANGELOG` 同步同一批事实。
+- 同一个版本号只能有一个版本块；准备发布期间的新条目必须追加到既有版本块中，不得拆出第二个同版本记录。
 - 英文只用于技术标识原文，例如文件名、函数名、模块名、环境变量、协议字段、第三方库名、内部 code/enum/storage value。
 - 不得把整条英文 release note 直接放进 `app_metadata.CHANGELOG` 作为正式版本记录。
 

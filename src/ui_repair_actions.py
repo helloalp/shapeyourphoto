@@ -44,28 +44,62 @@ class UiRepairActionsMixin:
         )
 
     def repair_current(self) -> None:
-        path = self._current_path()
-        if path is None:
-            messagebox.showinfo("提示", "请先在列表中选中一张图片。")
+        targets = self._selected_repair_targets()
+        if not targets:
+            messagebox.showinfo("提示", "请先在列表中选中已有分析结果的图片。")
             return
-        self._open_repair_dialog([path], "修复当前图片")
+        self._open_repair_dialog(targets, f"修复选中 {len(targets)} 张图片")
 
     def repair_checked(self) -> None:
         targets, source_label = self._batch_repair_targets()
         if not targets:
-            messagebox.showinfo("提示", "请先多选或勾选至少一张图片。")
+            messagebox.showinfo("提示", "当前没有可修复目标。请先分析当前列表内的图片，再选择或勾选需要修复的项目。")
             return
         self._log_console(f"batch repair target source: {source_label} | count={len(targets)}")
         self._open_repair_dialog(targets, f"批量修复 {len(targets)} 张图片")
 
     def _batch_repair_targets(self) -> tuple[list[Path], str]:
-        multi_selected = [path for path in self._selected_tree_paths() if path.exists()]
+        multi_selected = self._validate_repair_targets(self._selected_tree_paths(), source="multi_select")
         if len(multi_selected) > 1:
             return self._dedupe_repair_targets(multi_selected), "multi_select"
-        checked = [path for path in self.image_paths if self.selected_flags.get(path) and self.selected_flags[path].get() and path.exists()]
+        checked = self._validate_repair_targets(
+            [path for path in self.image_paths if self.selected_flags.get(path) and self.selected_flags[path].get()],
+            source="checked",
+        )
         if checked:
             return self._dedupe_repair_targets(checked), "checked"
         return [], "empty"
+
+    def _selected_repair_targets(self) -> list[Path]:
+        selected = self._validate_repair_targets(self._selected_tree_paths(), source="selected")
+        if selected:
+            return self._dedupe_repair_targets(selected)
+        current = self._current_path()
+        if current is None:
+            return []
+        return self._validate_repair_targets([current], source="current")
+
+    def _validate_repair_targets(self, paths: list[Path], *, source: str) -> list[Path]:
+        current_paths = set(self.image_paths)
+        valid: list[Path] = []
+        stale = missing_analysis = missing_file = 0
+        for path in paths:
+            if path not in current_paths:
+                stale += 1
+                continue
+            if not path.exists():
+                missing_file += 1
+                continue
+            if path not in self.results:
+                missing_analysis += 1
+                continue
+            valid.append(path)
+        if stale or missing_analysis or missing_file:
+            self._log_console(
+                f"repair target validation: source={source} valid={len(valid)} "
+                f"stale={stale} missing_analysis={missing_analysis} missing_file={missing_file}"
+            )
+        return valid
 
     def _dedupe_repair_targets(self, paths: list[Path]) -> list[Path]:
         seen: set[Path] = set()
@@ -78,7 +112,11 @@ class UiRepairActionsMixin:
         return targets
 
     def _open_repair_dialog(self, targets: list[Path], title: str) -> None:
-        existing_results = [self.results[path] for path in targets if path in self.results]
+        targets = self._validate_repair_targets(targets, source="final")
+        if not targets:
+            messagebox.showinfo("提示", "当前没有可修复目标。修复只能处理仍在当前列表内且已有分析结果的图片。")
+            return
+        existing_results = [self.results[path] for path in targets]
         recommended = suggest_methods_for_results(existing_results)
         selection = show_repair_dialog(
             self.root,
@@ -135,8 +173,12 @@ class UiRepairActionsMixin:
         if self.is_busy:
             messagebox.showinfo("提示", "当前已有任务正在运行。")
             return
+        targets = self._validate_repair_targets(targets, source="run_start")
+        if not targets:
+            messagebox.showinfo("提示", "当前没有可修复目标。请先分析当前列表内的图片。")
+            return
 
-        missing = [path for path in targets if path not in self.results and path not in self.errors]
+        missing: list[Path] = []
         total_steps = len(missing) + len(targets)
         analysis_worker_plan = self._analysis_worker_plan(len(missing)) if missing else None
         analysis_workers = analysis_worker_plan.actual_workers if analysis_worker_plan is not None else 0
@@ -218,7 +260,7 @@ class UiRepairActionsMixin:
                         step += 1
                         self._dispatch_repair_progress(run_id, step, total_steps, path.name, "修复前分析")
                 finally:
-                    pool.shutdown(wait=not cancel_event.is_set(), cancel_futures=True)
+                    pool.shutdown(wait=True, cancel_futures=True)
 
             if cancel_event.is_set():
                 batch_timings = self._repair_batch_timings(batch_started_at, repaired + skipped)
@@ -258,6 +300,7 @@ class UiRepairActionsMixin:
                             base_folder,
                             repair_progress,
                             cancel_event,
+                            getattr(self.settings, "gpu_acceleration_mode", "auto"),
                         )
                     ] = path
 
@@ -307,7 +350,7 @@ class UiRepairActionsMixin:
                     step += 1
                     self._dispatch_repair_progress(run_id, step, total_steps, path.name, "修复中")
             finally:
-                pool.shutdown(wait=not cancel_event.is_set(), cancel_futures=True)
+                pool.shutdown(wait=True, cancel_futures=True)
 
             if cancel_event.is_set():
                 cleanup_records = self._collect_completed_repair_records(repair_futures, repaired + skipped)
@@ -473,14 +516,22 @@ class UiRepairActionsMixin:
         shutil.move(str(path), str(destination))
         return destination
 
-    def _cleanup_canceled_repair_outputs(self, records: list[RepairRecord]) -> tuple[int, list[str]]:
+    def _cleanup_canceled_repair_outputs(self, records: list[RepairRecord], run_id: int) -> tuple[int, list[str]]:
         cleaned = 0
         messages: list[str] = []
         output_paths: set[Path] = set()
         for record in records:
             if record.saved_output and record.output_path != record.source_path:
                 output_paths.add(record.output_path)
+        rollback_items = list(output_paths) + list(self._repair_rollback_backups.keys())
+        rollback_total = max(1, len(rollback_items))
+        rollback_done = 0
         for output_path in output_paths:
+            rollback_done += 1
+            self._dispatch_ui(
+                lambda d=rollback_done, t=rollback_total, name=output_path.name, rid=run_id:
+                self._update_repair_rollback_progress(rid, d, t, name, cleaned)
+            )
             if not output_path.exists():
                 continue
             try:
@@ -495,6 +546,11 @@ class UiRepairActionsMixin:
                     messages.append(f"{output_path} 清理失败：删除 {unlink_exc}；隔离 {move_exc}")
 
         for source_path, backup_path in self._repair_rollback_backups.items():
+            rollback_done += 1
+            self._dispatch_ui(
+                lambda d=rollback_done, t=rollback_total, name=source_path.name, rid=run_id:
+                self._update_repair_rollback_progress(rid, d, t, name, cleaned)
+            )
             if not backup_path.exists():
                 messages.append(f"{source_path.name} 的回滚备份不存在，无法恢复覆盖原文件。")
                 continue
@@ -505,6 +561,20 @@ class UiRepairActionsMixin:
                 messages.append(f"{source_path} 覆盖回滚失败：{exc}")
         self._cleanup_repair_backup_root()
         return cleaned, messages
+
+    def _update_repair_rollback_progress(self, run_id: int, done: int, total: int, filename: str, cleaned: int) -> None:
+        if run_id != self._repair_run_id:
+            return
+        detail = f"正在回滚取消的修复 {done}/{total}：{filename} | 已回滚 {cleaned} 个"
+        self.progress_controller.update(
+            done=done,
+            total=total,
+            title=f"正在回滚 {done}/{total}",
+            detail=detail,
+            status=detail,
+            dialog_title="修复图片中",
+            dialog_header="正在回滚取消结果",
+        )
 
     def _repair_canceled(
         self,
@@ -531,7 +601,7 @@ class UiRepairActionsMixin:
         )
 
         def cleanup_worker() -> None:
-            cleaned, cleanup_messages = self._cleanup_canceled_repair_outputs(records)
+            cleaned, cleanup_messages = self._cleanup_canceled_repair_outputs(records, run_id)
             self._dispatch_ui(
                 lambda c=cleaned, msgs=cleanup_messages, rid=run_id, recs=records, failed_items=failed, timings=batch_timings, total_count=total:
                 self._repair_cancel_cleanup_finished(rid, recs, failed_items, timings, total_count, c, msgs)

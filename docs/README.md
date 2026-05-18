@@ -5,7 +5,7 @@
 ## 目录分工
 
 - 根 [README.md](/E:/aitools/shapeyourphoto/README.md)：用户入口、当前能力和维护文档入口。
-- 根 [MODULES.md](/E:/aitools/shapeyourphoto/MODULES.md)：快速模块索引，便于先定位文件。
+- [MODULES.md](/E:/aitools/shapeyourphoto/docs/MODULES.md)：快速模块索引，便于先定位文件。
 - `docs/`：当前维护规则、系统总览、模块参考和 UI 工作流，是日常维护的权威说明。
 - `docs/technical/`：专题技术文档，记录分析链路、性能并发、相似图、cleanup、设置扫描等跨模块规则。
 - `docs/specs/`：产品、界面、用户可见语言、信息呈现、Console、display mapping、用户数据和设置扩展规范；不替代 technical 文档。
@@ -32,9 +32,9 @@
 - 不适合保留图片是安全复核机制，默认不修复、不删除，删除必须二次确认并走安全清理。
 - 相似图是批次级附加结果，不写回单张 `AnalysisResult`。
 - 性能计时统一用 `perf_timings` / `perf_notes`，Console 只做合并后的用户可读摘要。
-- GPU 只是可选检测和 CPU 回退提示，不能成为必需依赖。
+- GPU 是应用自带的可选 native 加速能力，不能成为硬依赖；缺少 native 组件或设备不可用时必须自动回退 CPU。
 - 当前主线：UI mixin 已拆分到 `ui_*.py`；`src/ui/` 承接 UI 基础设施；`updater_v2.py` 是当前 updater 主实现；`cryptography` 是正式依赖；`start.bat` 支持按需安装依赖；内部 code/enum 通过 `ui/display_names.py` 映射为用户可读中文显示名。
-- 1.2.6 新增：设置保存后不关闭窗口；右侧预览图会在布局稳定后从原图重绘，并避免超高清图片重复完整解码；GPU 说明区分硬件可见和加速组件准备情况，并在加速未准备时继续回退 CPU。
+- 1.2.6 新增：设置保存后不关闭窗口；右侧预览图会在布局稳定后从原图重绘，并避免超高清图片重复完整解码；GPU 说明区分硬件可见、随包 native 组件和实际任务使用状态，大图分析亮度统计可自动调用 native backend。
 
 ## 文档维护规则
 
@@ -45,6 +45,7 @@
 - README、CHANGELOG、`docs/updates/` 和 `src/app_metadata.py` 中的更新历史不得写入开发者设备型号、私有测试环境、内部依赖栈细节、维护过程、AI 协作过程或适用对象标签；只记录用户可理解的功能变化、体验变化和安全结果。
 - 功能、模块、设置或版本变化时，同步更新 `CHANGELOG.md`、`src/app_metadata.py` 和对应 `docs/updates/<version>.md`。
 - 版本记录默认使用中文：`app_metadata.CHANGELOG`、根 `CHANGELOG.md` 和 `docs/updates/<version>.md` 必须保持中文事实口径一致；英文仅保留在文件名、函数名、协议字段、环境变量和内部 code/enum 等技术标识中。
+- 同一个版本号只能有一个版本记录块；后续补充应追加到既有条目后面，不得拆成多个同版本记录。
 
 # 1.1.9 Documentation Note
 

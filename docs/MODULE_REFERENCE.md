@@ -56,7 +56,10 @@ UI 基础设施包，包含窗口标题、语言状态、display mapping、主�
 
 ### [src/gpu_accel.py](/E:/aitools/shapeyourphoto/src/gpu_accel.py)
 
-GPU 状态探测与保守回退。负责识别硬件可见性、加速组件准备情况和当前任务使用状态；加速未准备时不得影响分析、修复或设置页打开。
+GPU 状态探测、native backend 调用与保守回退。负责查找随包分发的 `gpu/shapeyourphoto_gpu_core.exe`，通过 JSON / persistent worker 调用 Rust/wgpu 后端执行大图亮度统计，并输出诊断 JSON；native 组件缺失、超时、设备不可用或小图任务不划算时不得影响分析、修复或设置页打开。
+### [native/gpu-core](/E:/aitools/shapeyourphoto/native/gpu-core)
+
+ShapeYourPhoto 自带 GPU core。Rust + wgpu 实现，普通用户不需要安装 Rust、CUDA Toolkit、torch、CuPy 或 OpenCV CUDA。当前提供 `capabilities`、`self-test`、`luma-stats` 和 `serve`，打包后位于 `gpu/`。
 
 ### [src/stats_store.py](/E:/aitools/shapeyourphoto/src/stats_store.py)
 

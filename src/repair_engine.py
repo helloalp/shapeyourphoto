@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import time
+import os
+import tempfile
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
 from PIL import Image, ImageOps, PngImagePlugin
 
+from app_settings import GPU_ACCELERATION_AUTO
 from file_actions import build_repaired_output_path
+from gpu_accel import accelerated_luma_stats
 from models import AnalysisResult, RepairPlan, RepairRecord, RepairSelection
 from repair_planner import build_repair_plan
 from repair_ops import (
@@ -141,8 +145,16 @@ def _candidate_metrics(
     image: Image.Image,
     result: AnalysisResult | None,
     perf_timings: dict[str, float],
+    gpu_mode: str = GPU_ACCELERATION_AUTO,
 ) -> dict[str, object]:
     started_at = time.perf_counter()
+    gpu_luma = accelerated_luma_stats(image, gpu_mode)
+    if gpu_luma is not None:
+        perf_timings["repair_gpu_luma_stats"] = perf_timings.get("repair_gpu_luma_stats", 0.0) + gpu_luma.timings.get("python_total_ms", gpu_luma.elapsed_ms)
+        perf_timings["repair_gpu_luma_native"] = perf_timings.get("repair_gpu_luma_native", 0.0) + gpu_luma.elapsed_ms
+        perf_timings["repair_gpu_luma_accelerated"] = 1.0 if gpu_luma.accelerated else perf_timings.get("repair_gpu_luma_accelerated", 0.0)
+        if gpu_luma.fallback_reason:
+            perf_timings["repair_gpu_luma_fallback"] = perf_timings.get("repair_gpu_luma_fallback", 0.0) + gpu_luma.elapsed_ms
     metric_image = _resize_for_metrics(image)
     arr = as_array(metric_image)
     luma = luma_map(arr)
@@ -361,13 +373,14 @@ def _assess_repair_safety(
     original: Image.Image,
     fixed: Image.Image,
     result: AnalysisResult | None,
+    gpu_mode: str = GPU_ACCELERATION_AUTO,
 ) -> list[str]:
     if result is None:
         return []
 
     perf_timings: dict[str, float] = {}
-    original_metrics = _candidate_metrics(original, result, perf_timings)
-    fixed_metrics = _candidate_metrics(fixed, result, perf_timings)
+    original_metrics = _candidate_metrics(original, result, perf_timings, gpu_mode)
+    fixed_metrics = _candidate_metrics(fixed, result, perf_timings, gpu_mode)
     warnings: list[str] = []
 
     face_lift = float(fixed_metrics["face_luma"]) - float(original_metrics["face_luma"])
@@ -534,14 +547,15 @@ def _forced_output_unsuitable_reason(
     original: Image.Image,
     fixed: Image.Image,
     result: AnalysisResult | None,
+    gpu_mode: str = GPU_ACCELERATION_AUTO,
 ) -> str | None:
     primary_candidate = _primary_cleanup_candidate(result)
     if primary_candidate is None or result is None:
         return None
 
     perf_timings: dict[str, float] = {}
-    original_metrics = _candidate_metrics(original, result, perf_timings)
-    fixed_metrics = _candidate_metrics(fixed, result, perf_timings)
+    original_metrics = _candidate_metrics(original, result, perf_timings, gpu_mode)
+    fixed_metrics = _candidate_metrics(fixed, result, perf_timings, gpu_mode)
 
     if primary_candidate.reason_code == "portrait_out_of_focus":
         sharp_gain = float(fixed_metrics["face_sharpness"]) - float(original_metrics["face_sharpness"])
@@ -590,6 +604,13 @@ def _summarize_perf_notes(perf_timings: dict[str, float], result: AnalysisResult
         notes.append("保存输出耗时较长")
     if perf_timings.get("metadata_preserve", 0.0) > 120.0:
         notes.append("元数据写回耗时较长")
+    if perf_timings.get("repair_gpu_luma_accelerated", 0.0) >= 1.0:
+        notes.append(
+            "GPU 加速已用于修复候选亮度统计："
+            f"native={perf_timings.get('repair_gpu_luma_native', 0.0):.1f}ms"
+        )
+    elif perf_timings.get("repair_gpu_luma_fallback", 0.0) > 0.0:
+        notes.append("GPU 修复统计已自动回退 CPU")
     if result is not None and result.validated_face_count >= 3:
         notes.append(f"检测到 {result.validated_face_count} 张有效人脸")
     if result is not None and result.raw_face_candidates and not result.portrait_likely and result.portrait_rejection_reason:
@@ -608,8 +629,9 @@ def _select_portrait_candidate(
     perf_timings: dict[str, float],
     *,
     forced_repair: bool = False,
+    gpu_mode: str = GPU_ACCELERATION_AUTO,
 ) -> tuple[Image.Image | None, float | None, list[str], list[str]]:
-    original_metrics = _candidate_metrics(image, result, perf_timings)
+    original_metrics = _candidate_metrics(image, result, perf_timings, gpu_mode)
     policy_notes = [
         f"检测到 {result.portrait_scene_type}。",
         f"当前修复策略：{result.portrait_repair_policy} / plan={plan.policy}。",
@@ -636,7 +658,7 @@ def _select_portrait_candidate(
         )
         _add_timing(perf_timings, "candidate_generation", started_at)
 
-        candidate_metrics = _candidate_metrics(candidate, result, perf_timings)
+        candidate_metrics = _candidate_metrics(candidate, result, perf_timings, gpu_mode)
         score, notes = _evaluate_candidate(original_metrics, candidate_metrics, result)
         safe_high_key_candidate = (
             result.portrait_scene_type == "high_key_portrait"
@@ -655,7 +677,7 @@ def _select_portrait_candidate(
             best_score = score
             best_image = candidate
             best_strength = strength
-            best_warnings = _assess_repair_safety(image, candidate, result)
+            best_warnings = _assess_repair_safety(image, candidate, result, gpu_mode)
         else:
             reason = "、".join(notes) if notes else ("局部增强收益不足" if result.portrait_scene_type == "high_key_portrait" else "未优于原图")
             prefix = "候选被降级" if best_image is not None else "候选已回退"
@@ -693,8 +715,9 @@ def _select_scene_candidate(
     perf_timings: dict[str, float],
     *,
     forced_repair: bool = False,
+    gpu_mode: str = GPU_ACCELERATION_AUTO,
 ) -> tuple[Image.Image | None, float | None, list[str], list[str]]:
-    original_metrics = _candidate_metrics(image, result, perf_timings)
+    original_metrics = _candidate_metrics(image, result, perf_timings, gpu_mode)
     policy_notes = list(plan.notes)
     policy_notes.append(f"repair_policy={plan.policy}")
     best_image: Image.Image | None = None
@@ -715,7 +738,7 @@ def _select_scene_candidate(
             perf_timings=perf_timings,
         )
         _add_timing(perf_timings, "candidate_generation", started_at)
-        candidate_metrics = _candidate_metrics(candidate, result, perf_timings)
+        candidate_metrics = _candidate_metrics(candidate, result, perf_timings, gpu_mode)
         score, notes = _evaluate_candidate(original_metrics, candidate_metrics, result)
 
         if result is not None and result.exposure_type in {"high_contrast_window_scene", "silhouette_scene", "low_key_scene"}:
@@ -739,7 +762,7 @@ def _select_scene_candidate(
             best_score = score
             best_image = candidate
             best_scale = scale
-            best_warnings = _assess_repair_safety(image, candidate, result)
+            best_warnings = _assess_repair_safety(image, candidate, result, gpu_mode)
         else:
             rejected.append(f"候选已回退：scale={scale:.2f} | {'、'.join(notes) if notes else '未优于原图'}")
 
@@ -772,6 +795,22 @@ def _build_png_info(_filename: str) -> PngImagePlugin.PngInfo:
     return info
 
 
+def _atomic_save_image(image: Image.Image, output_path: Path, save_kwargs: dict[str, object]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{output_path.stem}.", suffix=f"{output_path.suffix}.tmp", dir=str(output_path.parent))
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        image.save(temp_path, **save_kwargs)
+        os.replace(temp_path, output_path)
+    except Exception:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
+        raise
+
+
 def repair_image_file(
     source_path: Path,
     result: AnalysisResult | None,
@@ -779,6 +818,7 @@ def repair_image_file(
     base_folder: str | Path,
     progress_callback: Callable[[str], None] | None = None,
     cancel_event=None,
+    gpu_mode: str = GPU_ACCELERATION_AUTO,
 ) -> RepairRecord | None:
     def _raise_if_canceled() -> None:
         if cancel_event is not None and cancel_event.is_set():
@@ -901,6 +941,7 @@ def repair_image_file(
             result,
             perf_timings,
             forced_repair=forced_repair,
+            gpu_mode=gpu_mode,
         )
         if fixed is None:
             _add_timing(perf_timings, "repair_total", repair_started_at)
@@ -934,6 +975,7 @@ def repair_image_file(
             result,
             perf_timings,
             forced_repair=forced_repair,
+            gpu_mode=gpu_mode,
         )
         if fixed is None:
             _add_timing(perf_timings, "repair_total", repair_started_at)
@@ -959,7 +1001,7 @@ def repair_image_file(
             )
 
     if forced_repair:
-        unsuitable_reason = _forced_output_unsuitable_reason(image, fixed, result)
+        unsuitable_reason = _forced_output_unsuitable_reason(image, fixed, result, gpu_mode)
         if unsuitable_reason:
             _add_timing(perf_timings, "repair_total", repair_started_at)
             perf_notes = _summarize_perf_notes(perf_timings, result)
@@ -1010,7 +1052,7 @@ def repair_image_file(
     if progress_callback is not None:
         progress_callback("保存结果")
     _raise_if_canceled()
-    fixed.save(output_path, **save_kwargs)
+    _atomic_save_image(fixed, output_path, save_kwargs)
     _add_timing(perf_timings, "save_output", started_at)
     _add_timing(perf_timings, "repair_total", repair_started_at)
     perf_notes = _summarize_perf_notes(perf_timings, result)

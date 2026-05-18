@@ -75,6 +75,8 @@ class UiAnalysisActionsMixin:
             dialog_header=tr("analysis.dialog_header"),
             cancel_callback=lambda rid=run_id: self.cancel_analysis(rid),
             cancel_text=tr("analysis.cancel"),
+            display_total=total,
+            display_done=0,
         )
 
         for path in targets:
@@ -115,7 +117,7 @@ class UiAnalysisActionsMixin:
 
                     def analyze_job(p: Path = path, queued: float = queued_at, cb=progress_callback):
                         started = time.perf_counter()
-                        result = analyze_image(p, cb)
+                        result = analyze_image(p, cb, getattr(self.settings, "gpu_acceleration_mode", GPU_ACCELERATION_OFF))
                         finished = time.perf_counter()
                         result.perf_timings["worker_queue_wait"] = (started - queued) * 1000.0
                         result.perf_timings["worker_wall_time"] = (finished - started) * 1000.0
@@ -335,6 +337,8 @@ class UiAnalysisActionsMixin:
             status=tr("analysis.image_done_status").format(done=done, total=total, name=path.name),
             dialog_title=tr("analysis.dialog_title"),
             dialog_header=tr("analysis.dialog_header"),
+            display_total=total,
+            display_done=done,
         )
         if not self._refresh_tree_item(path):
             self.refresh_tree()
@@ -401,6 +405,8 @@ class UiAnalysisActionsMixin:
             status=detail,
             dialog_title=tr("analysis.dialog_title"),
             dialog_header=tr("analysis.dialog_header"),
+            display_total=total_images,
+            display_done=finished_images,
         )
 
     def _update_similarity_detection_phase(self, total: int, run_id: int) -> None:
@@ -414,6 +420,8 @@ class UiAnalysisActionsMixin:
             status=tr("analysis.similar_status"),
             dialog_title=tr("analysis.dialog_title"),
             dialog_header=tr("analysis.dialog_header"),
+            display_total=total,
+            display_done=total,
         )
 
     def _analysis_finished(
@@ -433,7 +441,7 @@ class UiAnalysisActionsMixin:
             requested_workers=1,
             actual_workers=1,
         )
-        gpu_status = gpu_status or resolve_gpu_status(getattr(self.settings, "gpu_acceleration_mode", GPU_ACCELERATION_OFF))
+        gpu_status = resolve_gpu_status(getattr(self.settings, "gpu_acceleration_mode", GPU_ACCELERATION_OFF))
         target_paths = list(self._last_analysis_targets)
         issue_count = sum(1 for path in target_paths if path in self.results and self.results[path].issues)
         error_count = sum(1 for path in target_paths if path in self.errors)
@@ -477,6 +485,8 @@ class UiAnalysisActionsMixin:
             status=detail,
             dialog_title=tr("analysis.dialog_title"),
             dialog_header=tr("analysis.dialog_header"),
+            display_total=total,
+            display_done=total,
         )
         self._finish_task(tr("analysis.finished_title").format(done=total, total=total), detail)
         self._analysis_cancel_event = None

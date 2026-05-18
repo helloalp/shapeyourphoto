@@ -1,6 +1,6 @@
 ﻿# 模块快速索引
 
-本文是根目录快速索引，帮助接手者先定位文件。正式维护规则、流程细节和版本说明以 [docs/README.md](/E:/aitools/shapeyourphoto/docs/README.md) 为准；如果旧版本说明与当前行为冲突，以 1.2.5 文档和代码为准。
+本文是模块快速索引，帮助接手者先定位文件。正式维护规则、流程细节和版本说明以 [docs/README.md](/E:/aitools/shapeyourphoto/docs/README.md) 为准；如果旧版本说明与当前行为冲突，以 1.2.6 文档和代码为准。
 
 ## 启动链路
 

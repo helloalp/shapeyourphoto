@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import combinations
 from pathlib import Path
@@ -58,6 +58,8 @@ class _PairMatch:
     level: str
     reasons: tuple[str, ...]
     possible_burst: bool
+    participate_union: bool = True
+    debug: dict[str, object] = field(default_factory=dict)
 
 
 class _UnionFind:
@@ -115,7 +117,8 @@ def detect_similar_groups(
     started_at = time.perf_counter()
     union_find = _UnionFind([feature.path for feature in features])
     for match in matches:
-        union_find.union(match.left, match.right)
+        if match.participate_union:
+            union_find.union(match.left, match.right)
 
     grouped: dict[Path, list[Path]] = {}
     for feature in features:
@@ -157,6 +160,67 @@ def detect_similar_groups(
     _add_timing(perf_timings, "similar_group_build", started_at)
     _add_timing(perf_timings, "similar_detection", similar_started_at)
     return groups
+
+
+def debug_similar_pairs(paths: list[Path], results: dict[Path, AnalysisResult] | None = None) -> list[dict[str, object]]:
+    """Return developer-facing pair diagnostics without changing normal UI."""
+    results = results or {}
+    features = _extract_features_parallel([path for path in paths if path.exists()])
+    feature_map = {feature.path: feature for feature in features}
+    records: list[dict[str, object]] = []
+    for left_path, right_path in combinations([feature.path for feature in features], 2):
+        left = feature_map[left_path]
+        right = feature_map[right_path]
+        match = _compare_features(left, right, results)
+        record = match.debug if match is not None else _rejected_debug(left, right, results)
+        records.append(record)
+    return records
+
+
+def _rejected_debug(left: _ImageFeature, right: _ImageFeature, results: dict[Path, AnalysisResult]) -> dict[str, object]:
+    hash_distance = _best_hash_distance(left, right)
+    hash_score = 1.0 - min(1.0, hash_distance / 32.0)
+    color_score = 1.0 - min(1.0, (_l1(left.color_hist, right.color_hist) / 2.0) / 0.72)
+    luma_score = 1.0 - min(1.0, (_l1(left.luma_hist, right.luma_hist) / 2.0) / 0.55)
+    scene_score = _vector_score(left.scene_vector, right.scene_vector, 0.58)
+    center_score = _vector_score(left.center_vector, right.center_vector, 0.70)
+    edge_score = _vector_score(left.edge_vector, right.edge_vector, 0.36)
+    aspect_score = 1.0 - min(1.0, abs(left.aspect_ratio - right.aspect_ratio) / 1.4)
+    sequence_score = _sequence_score(left, right)
+    time_score, _possible_burst = _time_score(left, right)
+    subject_close = center_score >= 0.76 and edge_score >= 0.56
+    same_scene = _scene_compatible(results.get(left.path), results.get(right.path)) and _strict_scene_compatible(results.get(left.path), results.get(right.path), subject_close)
+    sequence_evidence = max(time_score, min(sequence_score, 0.58))
+    strict_score = hash_score * 0.36 + center_score * 0.24 + color_score * 0.17 + luma_score * 0.09 + edge_score * 0.08 + sequence_evidence * 0.04 + aspect_score * 0.02
+    contextual_score = color_score * 0.23 + scene_score * 0.18 + center_score * 0.18 + luma_score * 0.10 + edge_score * 0.12 + sequence_evidence * 0.05 + time_score * 0.04 + aspect_score * 0.10
+    return {
+        "left": left.path.name,
+        "right": right.path.name,
+        "hash_distance": hash_distance,
+        "hash_score": hash_score,
+        "color_score": color_score,
+        "luma_score": luma_score,
+        "scene_score": scene_score,
+        "center_score": center_score,
+        "edge_score": edge_score,
+        "aspect_score": aspect_score,
+        "sequence_score": sequence_score,
+        "time_score": time_score,
+        "strict_score": strict_score,
+        "contextual_score": contextual_score,
+        "final_score": max(strict_score, contextual_score),
+        "palette_close": color_score >= 0.54 and luma_score >= 0.54,
+        "context_close": scene_score >= 0.74 and center_score >= 0.72 and edge_score >= 0.52,
+        "sequence_close": (sequence_score >= 0.72 and time_score >= 0.66) or time_score >= 0.86,
+        "same_scene": same_scene,
+        "high": False,
+        "medium": False,
+        "low": False,
+        "burst": False,
+        "participate_union": False,
+        "reasons": ("未达到近重复阈值",),
+        "level": "rejected",
+    }
 
 
 def _add_timing(perf_timings: dict[str, float] | None, key: str, started_at: float) -> None:
@@ -404,39 +468,59 @@ def _compare_features(left: _ImageFeature, right: _ImageFeature, results: dict[P
     time_score, possible_burst = _time_score(left, right)
     same_scene = _scene_compatible(results.get(left.path), results.get(right.path))
 
+    natural_texture = _natural_texture_risk(left, right)
+    aspect_mismatch = aspect_score < 0.72
+    sequence_evidence = max(time_score, min(sequence_score, 0.58))
     strict_score = (
-        hash_score * 0.34
-        + center_score * 0.22
-        + color_score * 0.18
-        + luma_score * 0.10
+        hash_score * 0.36
+        + center_score * 0.24
+        + color_score * 0.17
+        + luma_score * 0.09
         + edge_score * 0.08
-        + max(time_score, sequence_score) * 0.08
+        + sequence_evidence * 0.04
+        + aspect_score * 0.02
     )
     contextual_score = (
-        color_score * 0.25
-        + scene_score * 0.23
+        color_score * 0.23
+        + scene_score * 0.18
         + center_score * 0.18
         + luma_score * 0.10
-        + edge_score * 0.10
-        + sequence_score * 0.09
-        + time_score * 0.03
-        + aspect_score * 0.02
+        + edge_score * 0.12
+        + sequence_evidence * 0.05
+        + time_score * 0.04
+        + aspect_score * 0.10
     )
     score = max(strict_score, contextual_score)
 
-    palette_close = (color_score >= 0.42 and luma_score >= 0.46) or scene_score >= 0.72
-    context_close = scene_score >= 0.68 or center_score >= 0.66
-    sequence_close = sequence_score >= 0.72 or time_score >= 0.72
-    high_match = same_scene and strict_score >= 0.86 and hash_distance <= 16 and palette_close
+    palette_close = color_score >= 0.54 and luma_score >= 0.54
+    scene_close = scene_score >= 0.74
+    layout_close = center_score >= 0.72 and edge_score >= 0.52
+    context_close = scene_close and layout_close
+    sequence_close = (sequence_score >= 0.72 and time_score >= 0.66) or time_score >= 0.86
+    subject_close = center_score >= 0.76 and edge_score >= 0.56
+    same_scene = same_scene and _strict_scene_compatible(results.get(left.path), results.get(right.path), subject_close)
+    if natural_texture:
+        score -= 0.04
+
+    high_match = (
+        same_scene
+        and strict_score >= 0.88
+        and hash_distance <= 14
+        and palette_close
+        and subject_close
+        and not aspect_mismatch
+    )
     medium_match = (
         same_scene
-        and contextual_score >= 0.70
+        and contextual_score >= 0.76
         and palette_close
         and context_close
-        and (sequence_close or (strict_score >= 0.80 and hash_distance <= 16))
+        and (sequence_close or (strict_score >= 0.83 and hash_distance <= 15))
+        and not (natural_texture and not subject_close)
+        and not (aspect_mismatch and strict_score < 0.86)
     )
-    low_match = same_scene and contextual_score >= 0.62 and palette_close and sequence_close
-    burst_match = possible_burst and palette_close and contextual_score >= 0.64
+    low_match = same_scene and contextual_score >= 0.70 and palette_close and context_close and sequence_close and not aspect_mismatch
+    burst_match = possible_burst and palette_close and subject_close and contextual_score >= 0.72 and aspect_score >= 0.78
 
     if not (high_match or medium_match or low_match or burst_match):
         return None
@@ -452,14 +536,16 @@ def _compare_features(left: _ImageFeature, right: _ImageFeature, results: dict[P
         reasons.append("亮度分布相近")
     if center_score >= 0.66:
         reasons.append("主体/中心区域相似")
-    if scene_score >= 0.68:
+    if scene_score >= 0.74:
         reasons.append("场景摘要相似")
     if edge_score >= 0.58:
         reasons.append("结构/边缘摘要相近")
     if hash_distance <= 16:
         reasons.append("多尺度感知哈希接近")
     if aspect_score < 0.70:
-        reasons.append("横竖或裁切差异明显，归入复核候选")
+        reasons.append("横竖或裁切差异明显，已降级为复核候选")
+    if natural_texture:
+        reasons.append("自然重复纹理场景，采用保守判定")
 
     if high_match:
         level = _HIGH_LEVEL
@@ -467,7 +553,36 @@ def _compare_features(left: _ImageFeature, right: _ImageFeature, results: dict[P
         level = _MEDIUM_LEVEL
     else:
         level = _LOW_CONFIDENCE_LEVEL
-    return _PairMatch(left.path, right.path, float(score), level, tuple(reasons), possible_burst or sequence_score >= 0.90)
+    participate_union = level in {_HIGH_LEVEL, _MEDIUM_LEVEL} and not (natural_texture and score < 0.80)
+    debug = {
+        "left": left.path.name,
+        "right": right.path.name,
+        "hash_distance": hash_distance,
+        "hash_score": hash_score,
+        "color_score": color_score,
+        "luma_score": luma_score,
+        "scene_score": scene_score,
+        "center_score": center_score,
+        "edge_score": edge_score,
+        "aspect_score": aspect_score,
+        "sequence_score": sequence_score,
+        "time_score": time_score,
+        "strict_score": strict_score,
+        "contextual_score": contextual_score,
+        "final_score": score,
+        "palette_close": palette_close,
+        "context_close": context_close,
+        "sequence_close": sequence_close,
+        "same_scene": same_scene,
+        "natural_texture": natural_texture,
+        "high": high_match,
+        "medium": medium_match,
+        "low": low_match,
+        "burst": burst_match,
+        "participate_union": participate_union,
+        "reasons": tuple(reasons),
+    }
+    return _PairMatch(left.path, right.path, float(score), level, tuple(reasons), possible_burst and sequence_close, participate_union, debug)
 
 
 def _best_hash_distance(left: _ImageFeature, right: _ImageFeature) -> float:
@@ -490,12 +605,32 @@ def _sequence_score(left: _ImageFeature, right: _ImageFeature) -> float:
     if gap == 0:
         return 0.0
     if gap <= 3:
-        return 1.0
-    if gap <= 8:
         return 0.72
+    if gap <= 8:
+        return 0.52
     if gap <= 20:
-        return 0.45
+        return 0.28
     return 0.0
+
+
+def _natural_texture_risk(left: _ImageFeature, right: _ImageFeature) -> bool:
+    green_pair = left.green_ratio >= 0.24 and right.green_ratio >= 0.24
+    low_detail_pair = left.std_luma < 0.25 and right.std_luma < 0.25
+    bright_gray_pair = left.bright_ratio >= 0.16 and right.bright_ratio >= 0.16 and abs(left.mean_luma - right.mean_luma) <= 0.18
+    return green_pair or (low_detail_pair and bright_gray_pair)
+
+
+def _strict_scene_compatible(left: AnalysisResult | None, right: AnalysisResult | None, subject_close: bool) -> bool:
+    if left is None or right is None:
+        return True
+    if left.scene_type == right.scene_type:
+        return True
+    generic = {"generic_scene", "unknown", ""}
+    if left.scene_type in generic and right.scene_type in generic:
+        return subject_close
+    if left.scene_type in generic or right.scene_type in generic:
+        return subject_close
+    return False
 
 
 def _time_score(left: _ImageFeature, right: _ImageFeature) -> tuple[float, bool]:
@@ -544,7 +679,7 @@ def _group_level(matches: list[_PairMatch], score: float) -> str:
     levels = {match.level for match in matches}
     if _HIGH_LEVEL in levels and score >= 0.84:
         return _HIGH_LEVEL
-    if _MEDIUM_LEVEL in levels or score >= 0.70:
+    if _MEDIUM_LEVEL in levels:
         return _MEDIUM_LEVEL
     return _LOW_CONFIDENCE_LEVEL
 

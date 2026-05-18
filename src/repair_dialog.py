@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 from models import RepairMethod, RepairSelection
 from repair_planner import get_method_labels
 from ui.window_titles import app_window_title
-from window_layout import bind_minimum_size_notice, center_window
+from window_layout import bind_minimum_size_notice, center_window, prepare_dialog_window
 
 
 class RepairDialog(tk.Toplevel):
@@ -22,8 +22,7 @@ class RepairDialog(tk.Toplevel):
         recommendation_note: str = "",
     ) -> None:
         super().__init__(parent)
-        self.title(app_window_title(title))
-        self.resizable(True, True)
+        prepare_dialog_window(self, parent, title=app_window_title(title), min_width=760, min_height=640)
         self.result: RepairSelection | None = None
 
         self.mode_var = tk.StringVar(value="adaptive" if allow_adaptive else "manual")
@@ -39,10 +38,7 @@ class RepairDialog(tk.Toplevel):
         }
         self.recommended_method_ids = recommended_method_ids
 
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._cancel)
-        self.minsize(760, 640)
 
         container = ttk.Frame(self, padding=14)
         container.pack(fill="both", expand=True)

@@ -1,0 +1,11 @@
+[package]
+name = "shapeyourphoto_gpu_core"
+version = "1.2.6"
+edition = "2021"
+
+[dependencies]
+bytemuck = { version = "1.15", features = ["derive"] }
+pollster = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+wgpu = "0.19"

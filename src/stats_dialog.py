@@ -8,7 +8,7 @@ from stats_store import export_stats_report
 from ui.display_names import display_name
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import center_window
+from window_layout import center_window, prepare_dialog_window
 
 
 def _format_bytes(size: int) -> str:
@@ -37,22 +37,25 @@ def _section(canvas: tk.Canvas, y: int, title: str) -> int:
 
 def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
     dialog = tk.Toplevel(parent)
-    dialog.title(app_window_title(tr("stats.title")))
-    dialog.minsize(900, 680)
-    dialog.resizable(True, True)
-    dialog.transient(parent.winfo_toplevel())
-    center_window(dialog, 980, 760)
+    prepare_dialog_window(
+        dialog,
+        parent,
+        title=app_window_title(tr("stats.title")),
+        min_width=960,
+        min_height=760,
+        modal=False,
+    )
 
     outer = ttk.Frame(dialog, padding=14)
     outer.pack(fill="both", expand=True)
     outer.columnconfigure(0, weight=1)
-    outer.rowconfigure(2, weight=1)
+    outer.rowconfigure(2, weight=0)
 
     ttk.Label(outer, text=tr("stats.title"), font=("Microsoft YaHei UI", 12, "bold")).grid(row=0, column=0, sticky="w")
     ttk.Label(outer, text=tr("stats.subtitle"), wraplength=880, justify="left").grid(row=1, column=0, sticky="w", pady=(4, 10))
 
     summary = ttk.Frame(outer)
-    summary.grid(row=2, column=0, sticky="ew")
+    summary.grid(row=2, column=0, sticky="ew", pady=(4, 8))
     for column in range(4):
         summary.columnconfigure(column, weight=1)
     issue_rate = stats.issue_images / max(1, stats.analyzed_images)
@@ -68,7 +71,7 @@ def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
     ]
     for index, (title, value, sub) in enumerate(cards):
         card = ttk.Frame(summary, padding=10, style="TopCard.TFrame")
-        card.grid(row=index // 4, column=index % 4, sticky="ew", padx=4, pady=4)
+        card.grid(row=index // 4, column=index % 4, sticky="nsew", padx=4, pady=4)
         ttk.Label(card, text=title, style="HudValue.TLabel").pack(anchor="w")
         ttk.Label(card, text=value, style="HudTitle.TLabel").pack(anchor="w")
         ttk.Label(card, text=sub, style="HudValue.TLabel").pack(anchor="w")
@@ -173,3 +176,4 @@ def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
 
     ttk.Button(actions, text=tr("stats.export"), command=export_report).pack(side="left")
     ttk.Button(actions, text=tr("stats.close"), command=dialog.destroy).pack(side="right")
+    center_window(dialog, 1000, 820)

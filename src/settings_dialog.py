@@ -15,6 +15,8 @@ from app_settings import (
     DEFAULT_SCAN_IGNORE_PREFIXES,
     DEFAULT_SCAN_IGNORE_SUFFIXES,
     GPU_ACCELERATION_OPTIONS,
+    LOG_LANGUAGE_OPTIONS,
+    LOG_LEVEL_OPTIONS,
     REPAIR_SUMMARY_FILTER_OPTIONS,
     SCAN_MODE_OPTIONS,
     UI_DENSITY_OPTIONS,
@@ -24,6 +26,9 @@ from app_settings import (
     normalize_console_time_mode,
     normalize_default_scan_mode,
     normalize_gpu_acceleration_mode,
+    normalize_log_level,
+    normalize_log_language_mode,
+    normalize_log_retention_days,
     normalize_repair_summary_filter,
     normalize_scan_ignore_contains,
     normalize_scan_ignore_prefixes,
@@ -33,11 +38,12 @@ from app_settings import (
     validate_settings_payload,
 )
 from cloud_client import fetch_cloud_messages
-from gpu_accel import detect_gpu_backend
+from gpu_accel import detect_gpu_backend, export_gpu_diagnostics_json
+from history_dialog import show_history_dialog
 from ui.language import LANGUAGE_OPTIONS, language_label, normalize_language, set_current_language, tr
 from ui.themes import THEME_OPTIONS, normalize_theme_id
 from ui.window_titles import app_window_title
-from window_layout import bind_minimum_size_notice, center_window
+from window_layout import bind_minimum_size_notice, center_window, prepare_dialog_window
 
 
 THEME_LABEL_KEYS = {
@@ -90,11 +96,13 @@ class AppSettingsDialog(tk.Toplevel):
         self._log_callback = log_callback
         self._apply_callback = apply_callback
         self._initial_tab = initial_tab or ""
-        self.title(app_window_title(tr("settings.app")))
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.resizable(True, True)
-        self.minsize(820, 620)
+        prepare_dialog_window(
+            self,
+            parent,
+            title=app_window_title(tr("settings.app")),
+            min_width=980,
+            min_height=640,
+        )
         self.result: AppSettings | None = None
         self._size_notice_var = tk.StringVar(value="")
         self._save_status_var = tk.StringVar(value="")
@@ -126,6 +134,7 @@ class AppSettingsDialog(tk.Toplevel):
         self._build_behavior_tab(normalized)
         self._build_performance_tab(normalized)
         self._build_console_tab(normalized)
+        self._build_log_tab(normalized)
         self._build_appearance_tab(normalized)
         self._build_language_tab(normalized)
         self._build_update_tab()
@@ -133,11 +142,9 @@ class AppSettingsDialog(tk.Toplevel):
 
         buttons = ttk.Frame(outer)
         buttons.grid(row=2, column=0, sticky="ew", pady=(14, 0))
-        buttons.configure(height=52)
-        buttons.grid_propagate(False)
         buttons.columnconfigure(1, weight=1)
         ttk.Label(buttons, textvariable=self._size_notice_var).grid(row=0, column=0, sticky="w")
-        self.status_label = ttk.Label(buttons, textvariable=self._save_status_var, anchor="e", justify="right", wraplength=480)
+        self.status_label = ttk.Label(buttons, textvariable=self._save_status_var, anchor="w", justify="left", wraplength=560)
         self.status_label.grid(row=0, column=1, sticky="ew", padx=(12, 10))
         buttons.bind("<Configure>", self._sync_footer_status_wrap, add="+")
         self.save_button = ttk.Button(buttons, text=tr("settings.save"), command=self._confirm)
@@ -146,17 +153,24 @@ class AppSettingsDialog(tk.Toplevel):
         self.cancel_button.grid(row=0, column=3, sticky="e")
 
         self.protocol("WM_DELETE_WINDOW", self._cancel)
-        bind_minimum_size_notice(self, self._size_notice_var, 820, 620)
-        center_window(self, 900, 700)
+        bind_minimum_size_notice(self, self._size_notice_var, 980, 640)
+        center_window(self, 1040, 740)
         self._refresh_option_labels()
         self._update_concurrency_hint()
         self._select_initial_tab()
         self._start_gpu_status_refresh(force_refresh=False)
 
     def _sync_footer_status_wrap(self, event=None) -> None:
-        width = 480
+        width = 560
         if event is not None:
-            width = max(180, event.width - 260)
+            button_width = 0
+            for widget in (getattr(self, "save_button", None), getattr(self, "cancel_button", None)):
+                if widget is not None:
+                    try:
+                        button_width += max(widget.winfo_reqwidth(), widget.winfo_width())
+                    except tk.TclError:
+                        pass
+            width = max(260, event.width - button_width - 140)
         self.status_label.configure(wraplength=width)
 
     def _tr_widget(self, widget: tk.Widget, key: str) -> tk.Widget:
@@ -290,7 +304,7 @@ class AppSettingsDialog(tk.Toplevel):
         gpu_actions.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         for key, command in (
             ("settings.gpu_check", lambda: self._start_gpu_status_refresh(force_refresh=True)),
-            ("settings.gpu_prepare", self._open_gpu_prepare_help),
+            ("settings.gpu_prepare", self._run_gpu_self_test),
             ("settings.gpu_copy", self._copy_gpu_diagnostics),
             ("settings.gpu_help", self._open_gpu_help),
         ):
@@ -307,6 +321,28 @@ class AppSettingsDialog(tk.Toplevel):
         self.console_time_var = tk.StringVar(value=settings.console_time_mode)
         self._option_combobox(c, self.console_time_var, "console", [v for v, _ in CONSOLE_TIME_MODE_OPTIONS], row=2, width=34)
         self._label(c, "settings.desc.console_tz", row=3, columnspan=2, wrap=True, pady=(14, 0))
+
+    def _build_log_tab(self, settings: AppSettings) -> None:
+        page = self._make_page("settings.tab.logs", "logs")
+        c = page.content
+        self._label(c, "settings.section.logs", row=0, bold=True)
+        self._label(c, "settings.desc.logs", row=1, columnspan=3, wrap=True, pady=(8, 10))
+        self._label(c, "settings.log_level", row=2)
+        self.log_level_var = tk.StringVar(value=settings.log_level)
+        self._option_combobox(c, self.log_level_var, "log_level", [v for v, _ in LOG_LEVEL_OPTIONS], row=2)
+        self._label(c, "settings.log_language", row=3, pady=(12, 0))
+        self.log_language_var = tk.StringVar(value=settings.log_language_mode)
+        self._option_combobox(c, self.log_language_var, "log_language", [v for v, _ in LOG_LANGUAGE_OPTIONS], row=3, pady=(12, 0))
+        self._label(c, "settings.log_retention", row=4, pady=(12, 0))
+        self.log_retention_var = tk.StringVar(value=str(settings.log_retention_days))
+        retention_frame = ttk.Frame(c)
+        retention_frame.grid(row=4, column=1, sticky="w", pady=(12, 0))
+        ttk.Spinbox(retention_frame, from_=0, to=3650, textvariable=self.log_retention_var, width=8).grid(row=0, column=0, sticky="w")
+        retention_unit = ttk.Label(retention_frame, text=tr("settings.log_retention_unit"))
+        retention_unit.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self._tr_widget(retention_unit, "settings.log_retention_unit")
+        self._label(c, "settings.desc.logs_retention", row=5, columnspan=3, wrap=True, pady=(10, 0))
+        self._label(c, "settings.desc.logs_export", row=6, columnspan=3, wrap=True, pady=(10, 0))
 
     def _build_appearance_tab(self, settings: AppSettings) -> None:
         page = self._make_page("settings.tab.appearance", "appearance")
@@ -338,6 +374,9 @@ class AppSettingsDialog(tk.Toplevel):
         self.update_button = ttk.Button(c, text=tr("settings.check_updates"), command=self._check_updates_now)
         self.update_button.grid(row=2, column=0, sticky="w")
         self._tr_widget(self.update_button, "settings.check_updates")
+        self.history_button = ttk.Button(c, text=tr("action.history"), command=lambda: show_history_dialog(self))
+        self.history_button.grid(row=2, column=1, sticky="w", padx=(8, 0))
+        self._tr_widget(self.history_button, "action.history")
         self._label(c, "settings.desc.update", row=3, columnspan=2, wrap=True, pady=(14, 0))
 
     def _build_announcements_tab(self) -> None:
@@ -523,15 +562,18 @@ class AppSettingsDialog(tk.Toplevel):
                 if status.driver_version:
                     hardware = f"{hardware} ({status.driver_version})"
                 self.gpu_hardware_var.set(hardware)
-                self.gpu_backend_var.set(status.backend_name if status.available else tr("settings.gpu_cpu"))
+                self.gpu_backend_var.set(status.backend_name)
                 if status.available:
-                    self.gpu_reason_var.set(tr("settings.gpu_available"))
+                    self.gpu_reason_var.set(status.reason)
                     self.gpu_next_step_var.set(tr("settings.gpu_available"))
+                elif status.native_backend_present:
+                    self.gpu_reason_var.set(status.reason)
+                    self.gpu_next_step_var.set(tr("settings.gpu_native_fallback"))
                 elif status.hardware_detected:
-                    self.gpu_reason_var.set(tr("settings.gpu_hw_no_backend"))
-                    self.gpu_next_step_var.set(tr("settings.gpu_hw_no_backend"))
+                    self.gpu_reason_var.set(status.reason)
+                    self.gpu_next_step_var.set(tr("settings.gpu_component_missing"))
                 else:
-                    self.gpu_reason_var.set(tr("settings.gpu_cpu"))
+                    self.gpu_reason_var.set(status.reason)
                     self.gpu_next_step_var.set(tr("settings.gpu_cpu"))
 
             self.after(0, _finish)
@@ -539,18 +581,7 @@ class AppSettingsDialog(tk.Toplevel):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _copy_gpu_diagnostics(self) -> None:
-        status = self._last_gpu_status or detect_gpu_backend()
-        text = (
-            f"ShapeYourPhoto GPU diagnostics\n"
-            f"hardware_detected={status.hardware_detected}\n"
-            f"hardware_name={status.hardware_name}\n"
-            f"driver_version={status.driver_version}\n"
-            f"backend_name={status.backend_name}\n"
-            f"available={status.available}\n"
-            f"active={status.active}\n"
-            f"reason={status.reason}\n"
-            f"backend_reasons={' | '.join(status.backend_reasons)}"
-        )
+        text = export_gpu_diagnostics_json()
         try:
             self.clipboard_clear()
             self.clipboard_append(text)
@@ -558,9 +589,25 @@ class AppSettingsDialog(tk.Toplevel):
         except Exception as exc:
             messagebox.showwarning(tr("settings.gpu_copy"), str(exc), parent=self)
 
-    def _open_gpu_prepare_help(self) -> None:
-        self._open_gpu_help()
-        self._set_status(tr("settings.gpu_prepare_opened"), kind="temporary")
+    def _run_gpu_self_test(self) -> None:
+        self._set_status(tr("settings.gpu_self_test_running"), kind="persistent")
+        self._log("native gpu self-test requested from settings")
+
+        def _worker() -> None:
+            status = detect_gpu_backend(force_refresh=True)
+
+            def _finish() -> None:
+                self._last_gpu_status = status
+                if status.available:
+                    self._set_status(tr("settings.gpu_self_test_done"), kind="temporary", timeout_ms=6000)
+                else:
+                    self._set_status(tr("settings.gpu_self_test_fallback"), kind="persistent")
+                self._start_gpu_status_refresh(force_refresh=False)
+                self._log(f"native gpu self-test finished: available={status.available} backend={status.backend_name}")
+
+            self.after(0, _finish)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _open_gpu_help(self) -> None:
         url = "https://helloalp.top/tools/shapeyourphoto/articles/faq.html#gpu"
@@ -641,6 +688,9 @@ class AppSettingsDialog(tk.Toplevel):
             analysis_custom_workers=custom_workers,
             gpu_acceleration_mode=normalize_gpu_acceleration_mode(self.gpu_mode_var.get()),
             console_time_mode=normalize_console_time_mode(self.console_time_var.get()),
+            log_level=normalize_log_level(self.log_level_var.get()),
+            log_language_mode=normalize_log_language_mode(self.log_language_var.get()),
+            log_retention_days=normalize_log_retention_days(self.log_retention_var.get()),
             theme_id=normalize_theme_id(self.theme_var.get()),
             ui_density=normalize_ui_density(self.density_var.get()),
             language=language,

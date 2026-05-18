@@ -14,6 +14,9 @@ PACKAGE_DIR = ROOT / "src"
 REQUIREMENTS = ROOT / "requirements.txt"
 APP_PYW = ROOT / "app.pyw"
 APP_PY = ROOT / "app.py"
+GPU_CORE_EXE = ROOT / "native" / "gpu-core" / "target" / "release" / (
+    "shapeyourphoto_gpu_core.exe" if sys.platform == "win32" else "shapeyourphoto_gpu_core"
+)
 
 REQUIRED_IMPORTS = [
     ("Pillow", "PIL"),
@@ -50,6 +53,11 @@ def check_imports() -> list[str]:
 def install_dependencies() -> None:
     if not REQUIREMENTS.exists():
         raise RuntimeError(f"requirements.txt not found: {REQUIREMENTS}")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "--version"], cwd=str(ROOT))
+    except subprocess.CalledProcessError:
+        stage("正在准备 pip", "Preparing pip")
+        subprocess.check_call([sys.executable, "-m", "ensurepip", "--upgrade"], cwd=str(ROOT))
     cmd = [sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS)]
     subprocess.check_call(cmd, cwd=str(ROOT))
 
@@ -103,6 +111,17 @@ def organize_legacy_files() -> None:
         )
 
 
+def check_native_gpu_component() -> None:
+    packaged = ROOT / "gpu" / GPU_CORE_EXE.name
+    if packaged.exists() or GPU_CORE_EXE.exists() or os.environ.get("SHAPEYOURPHOTO_GPU_CORE"):
+        info("Native GPU 组件已找到。", "Native GPU component found.")
+        return
+    info(
+        "Native GPU 组件未找到；应用会自动使用 CPU 回退。发布包应包含 gpu\\shapeyourphoto_gpu_core.exe。",
+        "Native GPU component was not found; the app will use CPU fallback. Release builds should include gpu\\shapeyourphoto_gpu_core.exe.",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--install-only", action="store_true")
@@ -114,7 +133,10 @@ def main() -> int:
     stage("正在检查 Python", "Checking Python")
     info(f"Python {sys.version.split()[0]}", f"Using {sys.executable}")
     if sys.version_info < (3, 10):
-        raise RuntimeError("ShapeYourPhoto needs Python 3.10 or newer.")
+        raise RuntimeError(
+            "ShapeYourPhoto needs Python 3.10 or newer. "
+            "请安装 Python 3.10 或更新版本后重试。"
+        )
 
     stage("正在检查依赖", "Checking dependencies")
     missing = check_imports()
@@ -127,6 +149,9 @@ def main() -> int:
             raise RuntimeError("Still missing packages after install: " + ", ".join(missing))
     else:
         info("运行环境已就绪。", "Runtime environment is ready.")
+
+    stage("正在检查 Native GPU 组件", "Checking native GPU component")
+    check_native_gpu_component()
 
     if args.check_only:
         return 0

@@ -7,13 +7,15 @@ from tkinter import ttk
 
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import bind_minimum_size_notice, center_window
+from window_layout import bind_minimum_size_notice, center_window, prepare_dialog_window
 
 
 @dataclass
 class TaskProgressState:
     total: int = 1
     done: float = 0.0
+    display_total: int | None = None
+    display_done: float | None = None
     title: str = "待处理"
     detail: str = "尚未开始。"
     status: str = "尚未开始。"
@@ -38,14 +40,18 @@ class TaskProgressDialog:
         self._tick_after_id: str | None = None
         self._started_at = state.started_at or time.monotonic()
         self.window = tk.Toplevel(master)
-        self.window.title(app_window_title(state.dialog_title))
-        self.window.transient(master.winfo_toplevel())
-        self.window.resizable(True, False)
         screen_height = max(360, self.window.winfo_screenheight())
-        initial_height = min(340, max(300, screen_height - 72))
-        minimum_height = min(320, initial_height)
-        self.window.geometry(f"640x{initial_height}")
-        self.window.minsize(600, minimum_height)
+        initial_height = min(390, max(350, screen_height - 72))
+        minimum_height = min(350, initial_height)
+        prepare_dialog_window(
+            self.window,
+            master,
+            title=app_window_title(state.dialog_title),
+            min_width=640,
+            min_height=minimum_height,
+            resizable=(True, False),
+            modal=False,
+        )
         self.window.configure(bg="#edf4ef")
         self.window.protocol("WM_DELETE_WINDOW", self._handle_close)
 
@@ -59,8 +65,8 @@ class TaskProgressDialog:
         outer = ttk.Frame(self.window, padding=18, style="Panel.TFrame")
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(4, minsize=76)
-        outer.rowconfigure(6, minsize=38)
+        outer.rowconfigure(4, minsize=96)
+        outer.rowconfigure(6, minsize=48)
 
         self.header_label = ttk.Label(outer, textvariable=self.title_var, style="Header.TLabel")
         self.header_label.grid(row=0, column=0, sticky="ew")
@@ -84,7 +90,7 @@ class TaskProgressDialog:
         stat_row.columnconfigure(0, weight=1)
         ttk.Label(stat_row, textvariable=self.count_var, style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(stat_row, textvariable=self.elapsed_var, style="PanelTitle.TLabel").grid(row=0, column=1, sticky="e")
-        detail_shell = tk.Frame(outer, bg="#fbfcfa", height=76)
+        detail_shell = tk.Frame(outer, bg="#fbfcfa", height=96)
         detail_shell.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         detail_shell.grid_propagate(False)
         detail_shell.columnconfigure(0, weight=1)
@@ -105,9 +111,8 @@ class TaskProgressDialog:
 
         self.accent_line = tk.Frame(outer, bg=state.accent, height=4)
         self.accent_line.grid(row=5, column=0, sticky="ew", pady=(12, 0))
-        self.button_row = ttk.Frame(outer, style="Panel.TFrame", height=38)
+        self.button_row = ttk.Frame(outer, style="Panel.TFrame")
         self.button_row.grid(row=6, column=0, sticky="ew", pady=(10, 0))
-        self.button_row.grid_propagate(False)
         self.button_row.columnconfigure(0, weight=1)
         self.button_row.columnconfigure(1, weight=0)
         ttk.Label(self.button_row, textvariable=self.size_notice_var, style="Sub.TLabel").grid(row=0, column=0, sticky="w")
@@ -117,8 +122,8 @@ class TaskProgressDialog:
             self.cancel_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
 
         self.window.update_idletasks()
-        bind_minimum_size_notice(self.window, self.size_notice_var, 600, minimum_height)
-        center_window(self.window, 640, initial_height)
+        bind_minimum_size_notice(self.window, self.size_notice_var, 640, minimum_height)
+        center_window(self.window, 680, initial_height)
         self.update_state(state)
         self._schedule_elapsed_tick()
         self.window.lift()
@@ -153,11 +158,13 @@ class TaskProgressDialog:
         self.window.title(app_window_title(state.dialog_title))
         self.progressbar.configure(maximum=maximum)
         self.progress_var.set(float(state.done))
-        if float(state.done).is_integer():
-            done_text = str(int(state.done))
+        display_done = state.display_done if state.display_done is not None else state.done
+        display_total = state.display_total if state.display_total is not None else state.total
+        if float(display_done).is_integer():
+            done_text = str(int(display_done))
         else:
-            done_text = f"{state.done:.1f}"
-        self.count_var.set(f"{done_text} / {state.total}")
+            done_text = f"{display_done:.1f}"
+        self.count_var.set(f"{done_text} / {display_total}")
         self.title_var.set(state.dialog_header)
         self.detail_var.set(_compact_progress_text(state.detail))
         self.elapsed_var.set(_format_elapsed(time.monotonic() - self._started_at))
@@ -208,11 +215,15 @@ class TaskProgressController:
         accent: str | None = None,
         cancel_callback=None,
         cancel_text: str = "取消",
+        display_total: int | None = None,
+        display_done: float | None = None,
     ) -> None:
         started_at = time.monotonic()
         self.state = TaskProgressState(
             total=max(1, total),
             done=0,
+            display_total=display_total,
+            display_done=display_done if display_done is not None else 0,
             title=title,
             detail=detail,
             status=status or detail,
@@ -241,10 +252,16 @@ class TaskProgressController:
         status: str | None = None,
         dialog_title: str | None = None,
         dialog_header: str | None = None,
+        display_total: int | None = None,
+        display_done: float | None = None,
     ) -> None:
         if total is not None:
             self.state.total = max(1, total)
         self.state.done = max(0.0, min(float(done), float(self.state.total)))
+        if display_total is not None:
+            self.state.display_total = max(1, int(display_total))
+        if display_done is not None:
+            self.state.display_done = max(0.0, min(float(display_done), float(self.state.display_total or self.state.total)))
         if title is not None:
             self.state.title = title
         if detail is not None:

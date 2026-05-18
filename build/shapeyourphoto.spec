@@ -22,6 +22,9 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 PROJECT_ROOT = Path(os.getcwd()).resolve()
 PACKAGE_DIR = PROJECT_ROOT / "src"
 ASSETS_DIR = PROJECT_ROOT / "assets"
+GPU_CORE_EXE = PROJECT_ROOT / "native" / "gpu-core" / "target" / "release" / (
+    "shapeyourphoto_gpu_core.exe" if sys.platform == "win32" else "shapeyourphoto_gpu_core"
+)
 
 APP_NAME = "ShapeYourPhoto"
 BUNDLE_ID = "com.helloalp.shapeyourphoto"
@@ -52,6 +55,10 @@ datas = [
     (str(ASSETS_DIR), "assets"),
 ] + tkdnd_data
 
+binaries = []
+if GPU_CORE_EXE.exists():
+    binaries.append((str(GPU_CORE_EXE), "gpu"))
+
 hiddenimports = [
     "PIL._tkinter_finder",
     "platformdirs",
@@ -77,7 +84,7 @@ excludes = [
 a = Analysis(
     [str(PROJECT_ROOT / "app.py")],
     pathex=[str(PROJECT_ROOT), str(PACKAGE_DIR)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -89,31 +96,50 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data)
 
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name=APP_NAME,
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,  # UPX 在 mac 上破坏代码签名能力，windows 上偶被杀软误报
-    console=False,
-    disable_windowed_traceback=False,
-    icon=icon_file,
-    target_arch=None,  # mac job 默认 arm64，win job 默认 x86_64
-)
+if sys.platform == "win32" and os.environ.get("SYP_TEST_ONEFILE") == "1":
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name=f"{APP_NAME}-v{APP_VERSION}-windows-x64-test-experimental",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        disable_windowed_traceback=False,
+        icon=icon_file,
+        target_arch=None,
+    )
+    coll = None
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name=APP_NAME,
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,  # UPX 在 mac 上破坏代码签名能力，windows 上偶被杀软误报
+        console=False,
+        disable_windowed_traceback=False,
+        icon=icon_file,
+        target_arch=None,  # mac job 默认 arm64，win job 默认 x86_64
+    )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name=APP_NAME,
-)
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name=APP_NAME,
+    )
 
 if sys.platform == "darwin":
     app = BUNDLE(

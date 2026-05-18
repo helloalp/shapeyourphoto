@@ -114,6 +114,8 @@ class UiTaskConsoleMixin:
         dialog_header: str | None = None,
         cancel_callback=None,
         cancel_text: str = "取消",
+        display_total: int | None = None,
+        display_done: float | None = None,
     ) -> None:
         self._task_started_at = time.monotonic()
         self._last_progress_ui_update = 0.0
@@ -136,6 +138,8 @@ class UiTaskConsoleMixin:
             dialog_header=dialog_header,
             cancel_callback=cancel_callback,
             cancel_text=cancel_text,
+            display_total=display_total,
+            display_done=display_done,
         )
 
     def _finish_task(self, title: str, detail: str) -> None:
@@ -248,11 +252,18 @@ class UiTaskConsoleMixin:
                 f"并发模式 {self._analysis_concurrency_label(worker_plan)} | CPU/GPU {gpu_console_label(gpu_status)}"
             )
             return
+        accelerated_records = [record for record in records if record.perf_timings.get("gpu_luma_accelerated", 0.0) >= 1.0]
+        gpu_luma_ms = sum(record.perf_timings.get("gpu_luma_stats", 0.0) for record in records)
         self._log_console(
             f"本轮分析完成：{total} 张，成功 {success}，失败 {failed}，取消 {canceled} | "
             f"本轮分析真实耗时 {self._format_ms(wall_ms)} | 平均真实等待折算 {self._format_ms(avg_wall_ms)}/张 | "
             f"并发模式 {self._analysis_concurrency_label(worker_plan)} | "
             f"CPU/GPU {gpu_console_label(gpu_status)}"
+        )
+        self._log_console(
+            f"gpu acceleration audit: accelerated={len(accelerated_records)}/{len(records)} | "
+            f"task=analysis.luma_stats | gpu_time={self._format_ms(gpu_luma_ms)} | "
+            f"backend={gpu_status.backend_name} | last_task={gpu_status.last_accelerated_task or '-'}"
         )
         self._log_console(
             f"analysis audit: total_wall_time={self._format_ms(wall_ms)} | "

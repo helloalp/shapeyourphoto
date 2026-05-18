@@ -26,6 +26,8 @@ start.bat
 
 `start.bat` 会检查 Python 和运行依赖。依赖齐全时会快速启动；缺少依赖时会按需安装 `requirements.txt` 中的运行依赖，然后继续启动。启动流程不会运行 benchmark、目录扫描或更新包下载。
 
+v1.2.6 入口整理：统计在“查看”菜单，官网和日志导出在“帮助”菜单，更新历史在“设置 -> 更新”。批量质量保持格式转换入口位于主按钮区，GPS 编辑入口位于“属性 / EXIF”页。
+
 ## 没有 Python 时
 
 源码包不能在没有 Python 的电脑上直接运行。双击 `start.bat` 时，如果没有找到 Python，会显示说明并保留窗口，不会直接闪退。
@@ -87,3 +89,11 @@ python -m pip install -r requirements.txt
 - 修复输出会尽量保留必要的图片元数据，并保护 ShapeYourPhoto 写入的来源信息。
 
 Copyright (c) 2026 Francis Zhang & Helloalp. All rights reserved. No permission is granted to use, copy, modify, or distribute this project without explicit written permission.
+# Shape Your Photo v1.2.6
+
+v1.2.6 focuses on release readiness: safer batch conversion, stricter repair target validation, bundled native GPU acceleration, clearer multilingual UI/log settings, and a cleaner portable-release chain.
+
+- Batch format conversion shows progress, supports cancel rollback and finish-after-current, writes outputs atomically, and preserves DPI / metadata where the target format supports it.
+- Repair Selected only processes images that are still in the current list and already analyzed.
+- GPU acceleration is bundled through the native backend; users do not need to install CUDA or Python GPU packages for core use.
+- The recommended Windows release remains the portable package. GitHub Actions test EXE artifacts are experimental smoke-test builds.

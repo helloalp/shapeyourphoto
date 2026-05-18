@@ -55,3 +55,19 @@ _debug/
 !/test/.gitkeep
 !/test/manifest.example.json
 !/test/EXPECTED.example.md
+
+# Local runtime data
+*/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Native build outputs
+native/gpu-core/target/
+*.pdb
+
+# Local app/user state
+
+# Private docs and secrets
+*_private_key.pem

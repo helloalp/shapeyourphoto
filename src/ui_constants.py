@@ -27,6 +27,7 @@ ANALYSIS_TIMING_LABELS = [
     ("转换色彩模式", ("image_convert",)),
     ("生成工作尺寸", ("resize", "working_resize")),
     ("像素数组转换", ("array_convert",)),
+    ("Native GPU 亮度统计", ("gpu_luma_stats",)),
     ("基础统计", ("basic_stats",)),
     ("曝光", ("exposure",)),
     ("色彩", ("color",)),
@@ -45,6 +46,7 @@ ANALYSIS_BATCH_TIMING_LABELS = ANALYSIS_TIMING_LABELS + [
 REPAIR_TIMING_LABELS = [
     ("生成修复方案", ("planner",)),
     ("读取图片", ("image_read",)),
+    ("Native GPU 修复统计", ("repair_gpu_luma_stats",)),
     ("执行修复操作", ("candidate_generation", "op:auto_tone", "op:recover_highlights", "op:lift_shadows", "op:boost_contrast", "op:boost_vibrance", "op:reduce_saturation", "op:warm_up", "op:cool_down", "op:add_magenta", "op:add_green", "op:boost_clarity", "op:reduce_noise", "op:portrait_local_face_enhance", "op:portrait_subject_midcontrast", "op:portrait_dark_clothing_detail", "op:protect_high_key_background")),
     ("候选评分/蒙版", ("candidate_scoring", "mask_build", "mask_feather")),
     ("保存输出", ("save_output",)),

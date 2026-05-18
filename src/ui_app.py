@@ -14,7 +14,7 @@ from app_metadata import APP_NAME, APP_VERSION
 from diagnostics_chart import DiagnosticsChart
 from dnd_support import install_drop_target
 from file_actions import ScanResult
-from gpu_accel import detect_gpu_backend
+from gpu_accel import detect_gpu_backend, shutdown_native_gpu_server
 from history_dialog import show_history_dialog
 from models import AnalysisResult, SimilarImageGroup
 from preview_cache import ThumbnailCache
@@ -22,6 +22,8 @@ from progress_dialog import TaskProgressController
 from settings_dialog import show_app_settings_dialog
 from stats_dialog import show_stats_dialog
 from stats_store import load_stats
+from format_conversion import show_format_conversion_dialog
+from log_manager import cleanup_old_logs, export_logs_bundle
 from ui.language import get_current_language, set_current_language, tr
 from ui.display_names import display_name
 from ui.themes import get_theme
@@ -107,6 +109,8 @@ class PhotoAnalyzerApp(
         if self.status_var.get() == "请选择图片文件夹开始分析。":
             self.status_var.set(tr("status.ready"))
         self.console.set_time_mode(self.settings.console_time_mode)
+        self.console.set_log_language_mode(getattr(self.settings, "log_language_mode", "follow_ui"))
+        removed_logs = cleanup_old_logs(getattr(self.settings, "log_retention_days", 30))
         self.drop_target = None
         self.sort_column = "name"
         self.sort_reverse = False
@@ -166,6 +170,8 @@ class PhotoAnalyzerApp(
         self.root.after(1600, self._run_startup_cloud_checks)
         for warning in self._settings_warnings:
             self._log_console(warning)
+        if removed_logs:
+            self._log_console(f"log cleanup: removed {removed_logs} old log files")
         self._log_console(
             "scan ignore rules: "
             f"prefix={', '.join(self.settings.scan_ignore_prefixes)} | "
@@ -177,8 +183,12 @@ class PhotoAnalyzerApp(
         def worker() -> None:
             status = detect_gpu_backend()
             hardware = status.hardware_name if status.hardware_detected else "not detected"
-            backend = status.backend_name if status.available else "none"
-            self._log_console(f"gpu probe: hardware={hardware} backend={backend} active={status.active}")
+            self._log_console(
+                "gpu probe: "
+                f"hardware={hardware} | driver={status.driver_version or 'unknown'} | "
+                f"native_present={status.native_backend_present} | backend={status.backend_name} | "
+                f"available={status.available} | active={status.active} | reason={status.reason}"
+            )
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -206,15 +216,53 @@ class PhotoAnalyzerApp(
         style.configure("PanelTitle.TLabel", background=theme.panel, foreground=theme.text, font=("Microsoft YaHei UI", base_size, "bold"))
         style.configure("HudTitle.TLabel", background=theme.panel_alt, foreground=theme.primary, font=("Microsoft YaHei UI", base_size, "bold"))
         style.configure("HudValue.TLabel", background=theme.panel_alt, foreground=theme.muted_text, font=("Microsoft YaHei UI", max(9, base_size - 2)))
-        style.configure("Treeview", font=("Microsoft YaHei UI", max(10, base_size - 1)), rowheight=90 + theme.spacing * 4 + spacing_delta * 8)
-        style.configure("Treeview.Heading", font=("Microsoft YaHei UI", max(10, base_size - 1), "bold"))
+        style.configure(
+            "Treeview",
+            font=("Microsoft YaHei UI", max(10, base_size - 1)),
+            rowheight=90 + theme.spacing * 4 + spacing_delta * 8,
+            background=theme.panel,
+            fieldbackground=theme.panel,
+            foreground=theme.text,
+            bordercolor=theme.border,
+            lightcolor=theme.border,
+            darkcolor=theme.border,
+        )
+        style.configure(
+            "Treeview.Heading",
+            font=("Microsoft YaHei UI", max(10, base_size - 1), "bold"),
+            background=theme.button,
+            foreground=theme.text,
+            bordercolor=theme.border,
+        )
         style.map("Treeview", background=[("selected", theme.selection)], foreground=[("selected", theme.text)])
+        style.configure("TButton", background=theme.button, foreground=theme.text, bordercolor=theme.border, focusthickness=2, focuscolor=theme.accent)
+        style.map(
+            "TButton",
+            background=[("disabled", theme.disabled_bg), ("active", theme.selection), ("pressed", theme.selection)],
+            foreground=[("disabled", theme.disabled_text)],
+        )
         style.configure("Accent.TButton", font=("Microsoft YaHei UI", base_size, "bold"), padding=(10 + theme.spacing + spacing_delta, 7 + theme.spacing + spacing_delta))
         style.configure("Soft.TButton", font=("Microsoft YaHei UI", base_size), padding=(10 + theme.spacing + spacing_delta, 7 + theme.spacing + spacing_delta))
         style.configure("Topmost.TButton", font=("Microsoft YaHei UI", max(9, base_size - 2)), padding=(8, 4))
         style.configure("TopmostOn.TButton", font=("Microsoft YaHei UI", max(9, base_size - 2), "bold"), padding=(8, 4))
-        style.configure("TLabelframe", background=theme.panel, bordercolor=theme.selection)
+        style.configure("TEntry", fieldbackground=theme.input_bg, foreground=theme.text, bordercolor=theme.border)
+        style.configure("TCombobox", fieldbackground=theme.input_bg, foreground=theme.text, bordercolor=theme.border)
+        style.configure("Vertical.TScrollbar", background=theme.button, troughcolor=theme.panel_alt, bordercolor=theme.border, arrowcolor=theme.text)
+        style.configure("Horizontal.TScrollbar", background=theme.button, troughcolor=theme.panel_alt, bordercolor=theme.border, arrowcolor=theme.text)
+        style.configure("TProgressbar", background=theme.accent, troughcolor=theme.panel_alt, bordercolor=theme.border)
+        style.configure("TNotebook", background=theme.background, bordercolor=theme.border)
+        style.configure("TNotebook.Tab", background=theme.button, foreground=theme.text, padding=(9, 5))
+        style.map("TNotebook.Tab", background=[("selected", theme.selection)], foreground=[("selected", theme.text)])
+        style.configure("TLabelframe", background=theme.panel, bordercolor=theme.border)
         style.configure("TLabelframe.Label", background=theme.panel, foreground=theme.text, font=("Microsoft YaHei UI", base_size, "bold"))
+        for widget_name in ("summary_text", "meta_text", "console_text", "announcement_text"):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                try:
+                    font = ("Consolas", 9) if widget_name == "console_text" else ("Microsoft YaHei UI", 10)
+                    widget.configure(bg=theme.panel, fg=theme.text, insertbackground=theme.text, font=font)
+                except tk.TclError:
+                    pass
         self._pin_icon_off = self._make_topmost_icon(False)
         self._pin_icon_on = self._make_topmost_icon(True)
         self._refresh_topmost_button()
@@ -313,12 +361,10 @@ class PhotoAnalyzerApp(
             ("choose_image_button", "action.choose_image"),
             ("analyze_all_button", "action.analyze_all"),
             ("analyze_selected_button", "action.analyze_selected"),
-            ("repair_current_button", "action.repair_current"),
+            ("repair_current_button", "action.repair_selected"),
             ("repair_checked_button", "action.repair_checked"),
-            ("stats_button", "action.stats"),
-            ("history_button", "action.history"),
+            ("format_convert_button", "action.format_convert"),
             ("cleanup_button", "action.cleanup_checked"),
-            ("website_button", "action.website"),
             ("task_cancel_button", "action.cancel_task"),
             ("scan_summary_button", "view.scan_summary"),
             ("select_current_button", "action.select_current"),
@@ -332,6 +378,7 @@ class PhotoAnalyzerApp(
             ("cleanup_select_all_button", "action.select_all"),
             ("cleanup_unselect_all_button", "action.unselect_all_short"),
             ("meta_edit_button", "meta.edit"),
+            ("gps_edit_button", "gps.edit"),
         ]:
             widget = getattr(self, attr, None)
             if widget is not None:
@@ -384,6 +431,7 @@ class PhotoAnalyzerApp(
         review_menu = tk.Menu(menu_bar, tearoff=False)
         review_menu.add_command(label=tr("view.cleanup"), command=self.open_cleanup_review_window)
         review_menu.add_command(label=tr("view.similar"), command=self.open_similar_group_window)
+        review_menu.add_command(label=tr("action.stats"), command=self.show_stats)
         review_menu.add_command(label=tr("view.scan_summary"), command=self.show_last_scan_summary)
         review_menu.add_command(label=tr("view.repair_summary"), command=self.show_last_repair_summary)
         menu_bar.add_cascade(label=tr("menu.view"), menu=review_menu)
@@ -394,6 +442,8 @@ class PhotoAnalyzerApp(
             menu_bar.add_command(label=tr("menu.language_quick"), command=lambda: self.open_settings_panel(initial_tab="language"))
         help_menu = tk.Menu(menu_bar, tearoff=False)
         help_menu.add_command(label=tr("menu.help_website"), command=self.show_help_website_info)
+        help_menu.add_command(label=tr("action.website"), command=self.open_author_website)
+        help_menu.add_command(label=tr("log.export"), command=self.export_logs_for_support)
         help_menu.add_command(label=tr("menu.contact_author"), command=self.show_contact_author_window)
         menu_bar.add_cascade(label=tr("menu.help"), menu=help_menu)
         self.root.configure(menu=menu_bar)
@@ -444,12 +494,10 @@ class PhotoAnalyzerApp(
         self.choose_image_button = ttk.Button(controls, text=tr("action.choose_image"), command=self.choose_image)
         self.analyze_all_button = ttk.Button(controls, text=tr("action.analyze_all"), command=self.analyze_all)
         self.analyze_selected_button = ttk.Button(controls, text=tr("action.analyze_selected"), command=self.analyze_selected)
-        self.repair_current_button = ttk.Button(controls, text=tr("action.repair_current"), command=self.repair_current)
+        self.repair_current_button = ttk.Button(controls, text=tr("action.repair_selected"), command=self.repair_current)
         self.repair_checked_button = ttk.Button(controls, text=tr("action.repair_checked"), command=self.repair_checked)
-        self.stats_button = ttk.Button(controls, text=tr("action.stats"), command=self.show_stats)
-        self.history_button = ttk.Button(controls, text=tr("action.history"), command=lambda: show_history_dialog(self.root))
+        self.format_convert_button = ttk.Button(controls, text=tr("action.format_convert"), command=self.open_format_conversion)
         self.cleanup_button = ttk.Button(controls, text=tr("action.cleanup_checked"), command=self.cleanup_selected)
-        self.website_button = ttk.Button(controls, text=tr("action.website"), command=self.open_author_website)
 
         button_specs: list[ttk.Button] = []
         button_specs.append(self.choose_folder_button)
@@ -460,13 +508,11 @@ class PhotoAnalyzerApp(
                 self.analyze_selected_button,
                 self.repair_current_button,
                 self.repair_checked_button,
-                self.stats_button,
-                self.history_button,
+                self.format_convert_button,
                 self.cleanup_button,
-                self.website_button,
             ]
         )
-        button_columns = 5
+        button_columns = 4
         for offset in range(button_columns):
             controls.columnconfigure(offset + 1, weight=1)
         for index, button in enumerate(button_specs):
@@ -523,7 +569,7 @@ class PhotoAnalyzerApp(
         self.main_pane = main
 
         left = ttk.Frame(main, style="Panel.TFrame", padding=8)
-        right = ttk.Frame(main, style="Panel.TFrame", padding=8)
+        right = ttk.Frame(main, style="Panel.TFrame", padding=(8, 8, 0, 8))
         main.add(left, weight=3)
         main.add(right, weight=2)
         try:
@@ -682,15 +728,11 @@ class PhotoAnalyzerApp(
         console_tab = ttk.Frame(right_book, style="Panel.TFrame", padding=(0, 8, 0, 0))
 
         diagnosis_tab.columnconfigure(0, weight=1)
-        diagnosis_tab.rowconfigure(0, weight=0, minsize=310)
-        diagnosis_tab.rowconfigure(1, weight=1)
+        diagnosis_tab.rowconfigure(0, weight=1)
         chart_frame = ttk.Frame(diagnosis_tab, style="Panel.TFrame")
         chart_frame.grid(row=0, column=0, sticky="nsew")
-        summary_frame = ttk.Frame(diagnosis_tab, style="Panel.TFrame")
-        summary_frame.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
 
         chart_frame.columnconfigure(0, weight=1)
-        chart_frame.columnconfigure(1, minsize=118)
         chart_frame.rowconfigure(1, weight=1, minsize=220)
 
         hud_frame = ttk.Frame(chart_frame, style="TopCard.TFrame", padding=(8, 6))
@@ -704,8 +746,9 @@ class PhotoAnalyzerApp(
 
         self.chart = DiagnosticsChart(chart_frame)
         self.chart.grid(row=1, column=0, sticky="nsew")
-        self.chart.canvas.configure(height=220)
+        self.chart.canvas.configure(height=360)
 
+        summary_frame = ttk.Frame(diagnosis_tab, style="Panel.TFrame")
         summary_frame.columnconfigure(0, weight=1)
         summary_frame.rowconfigure(0, weight=1)
         self.summary_text = tk.Text(
@@ -731,6 +774,8 @@ class PhotoAnalyzerApp(
         meta_toolbar.columnconfigure(0, weight=1)
         self.meta_edit_button = ttk.Button(meta_toolbar, text=tr("meta.edit"), command=self.edit_current_metadata, state="disabled")
         self.meta_edit_button.grid(row=0, column=1, sticky="e")
+        self.gps_edit_button = ttk.Button(meta_toolbar, text=tr("gps.edit"), command=self.edit_current_gps, state="disabled")
+        self.gps_edit_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
         self.meta_text = tk.Text(meta_tab, wrap="word", font=("Microsoft YaHei UI", 10), bg="#f8fbf8", relief="flat", padx=10, pady=10)
         meta_scroll = ttk.Scrollbar(meta_tab, orient="vertical", command=self.meta_text.yview)
         self.meta_text.configure(yscrollcommand=meta_scroll.set)
@@ -799,6 +844,10 @@ class PhotoAnalyzerApp(
                 self.drop_target.uninstall()
         except Exception as exc:
             self._log_console(f"drag and drop cleanup failed during close: {exc}")
+        try:
+            shutdown_native_gpu_server()
+        except Exception as exc:
+            self._log_console(f"native gpu cleanup failed during close: {exc}")
         try:
             splash = SplashScreen(self.root, min_ms=650)
         except Exception:
@@ -953,6 +1002,31 @@ class PhotoAnalyzerApp(
     def show_stats(self) -> None:
         show_stats_dialog(self.root, self.stats)
 
+    def open_format_conversion(self) -> None:
+        current_paths = set(self.image_paths)
+        targets = [path for path, flag in self.selected_flags.items() if flag.get() and path in current_paths and path.exists()]
+        if not targets:
+            targets = [path for path in self._selected_tree_paths() if path in current_paths and path.exists()]
+        if not targets:
+            current = self._current_path()
+            if current is not None and current in current_paths and current.exists():
+                targets = [current]
+        if not targets:
+            messagebox.showinfo(tr("format.title"), tr("format.no_selection"), parent=self.root)
+            return
+        self._log_console(f"format conversion dialog opened: count={len(targets)}")
+        show_format_conversion_dialog(self.root, targets, log_callback=self._log_console)
+
+    def export_logs_for_support(self) -> None:
+        try:
+            path = export_logs_bundle(self.console.dump())
+        except Exception as exc:
+            messagebox.showerror(tr("log.export"), str(exc), parent=self.root)
+            self._log_console(f"log export failed: {exc}")
+            return
+        self._log_console(f"log bundle exported: {path}")
+        messagebox.showinfo(tr("log.export"), tr("log.export_done").format(path=path), parent=self.root)
+
     def open_settings_panel(self, initial_tab: str | None = None) -> None:
         def _apply_settings(settings: AppSettings) -> bool:
             try:
@@ -964,6 +1038,8 @@ class PhotoAnalyzerApp(
             self.settings = settings
             set_current_language(self.settings.language)
             self.console.set_time_mode(self.settings.console_time_mode)
+            self.console.set_log_language_mode(getattr(self.settings, "log_language_mode", "follow_ui"))
+            cleanup_old_logs(getattr(self.settings, "log_retention_days", 30))
             self._configure_style()
             self._refresh_language_texts()
             if self.image_paths:

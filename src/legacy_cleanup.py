@@ -40,7 +40,6 @@ ROOT_KEEP_FILES = {
     "app.pyw",
     "app_settings.json",
     "CHANGELOG.md",
-    "MODULES.md",
     "README.md",
     "requirements.txt",
     "start.bat",

@@ -11,7 +11,7 @@ from paths import migrate_legacy_file
 from ui.language import DEFAULT_LANGUAGE, normalize_language
 
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 8
+SETTINGS_SCHEMA_VERSION = 10
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
 DEFAULT_SCAN_IGNORE_SUFFIXES: list[str] = []
 DEFAULT_SCAN_IGNORE_CONTAINS: list[str] = []
@@ -65,6 +65,24 @@ CONSOLE_TIME_MODE_OPTIONS: list[tuple[str, str]] = [
     (CONSOLE_TIME_ELAPSED, "启动后经过时间 [T+00:20:28]"),
 ]
 CONSOLE_TIME_MODE_LABELS = {value: label for value, label in CONSOLE_TIME_MODE_OPTIONS}
+
+LOG_LEVEL_DETAILED = "detailed"
+LOG_LEVEL_BRIEF = "brief"
+LOG_RETENTION_DAYS_DEFAULT = 30
+LOG_RETENTION_NEVER = 0
+
+LOG_LEVEL_OPTIONS: list[tuple[str, str]] = [
+    (LOG_LEVEL_DETAILED, "详细"),
+    (LOG_LEVEL_BRIEF, "简洁"),
+]
+
+LOG_LANGUAGE_FOLLOW_UI = "follow_ui"
+LOG_LANGUAGE_BILINGUAL = "bilingual"
+
+LOG_LANGUAGE_OPTIONS: list[tuple[str, str]] = [
+    (LOG_LANGUAGE_FOLLOW_UI, "跟随界面语言"),
+    (LOG_LANGUAGE_BILINGUAL, "双语输出"),
+]
 
 UI_DENSITY_STANDARD = "standard"
 UI_DENSITY_COMFORTABLE = "comfortable"
@@ -181,7 +199,15 @@ def max_analysis_workers(*, cpu_count: int | None = None) -> int:
     cpus = max(1, int(cpu_count or os.cpu_count() or 4))
     if cpus <= 1:
         return 1
-    return max(1, min(30, cpus - 1))
+    if cpus <= 4:
+        return max(1, cpus - 1)
+    if cpus <= 8:
+        return max(2, cpus - 1)
+    if cpus <= 16:
+        return max(4, cpus - 2)
+    if cpus <= 32:
+        return max(8, cpus - 3)
+    return max(12, min(48, cpus - 4))
 
 
 @dataclass(frozen=True)
@@ -211,9 +237,29 @@ def resolve_analysis_worker_plan(
     elif normalized_mode == ANALYSIS_CONCURRENCY_MEDIUM:
         requested = max(1, min(6, max(2, cpus // 2)))
     elif normalized_mode == ANALYSIS_CONCURRENCY_HIGH:
-        requested = max(1, min(limit, min(16, max(2, cpus - 1))))
+        if cpus <= 8:
+            requested = max(2, cpus - 1)
+        elif cpus <= 16:
+            requested = cpus - 2
+        elif cpus <= 24:
+            requested = max(14, int(cpus * 0.72))
+        elif cpus <= 32:
+            requested = max(24, int(cpus * 0.75))
+        else:
+            requested = max(12, int(cpus * 0.82))
+        requested = min(limit, requested)
     elif normalized_mode == ANALYSIS_CONCURRENCY_EXTREME:
-        requested = min(limit, max(1, cpus - 1))
+        if cpus <= 8:
+            requested = max(2, cpus - 1)
+        elif cpus <= 16:
+            requested = cpus - 1
+        elif cpus <= 24:
+            requested = max(18, int(cpus * 0.86))
+        elif cpus <= 32:
+            requested = max(24, int(cpus * 0.88))
+        else:
+            requested = int(cpus * 0.90)
+        requested = min(limit, max(1, requested))
     elif normalized_mode == ANALYSIS_CONCURRENCY_CUSTOM:
         custom = normalize_analysis_custom_workers(custom_workers)
         if custom <= 0:
@@ -238,15 +284,37 @@ def resolve_analysis_worker_plan(
 
 
 def normalize_gpu_acceleration_mode(mode: str | None) -> str:
-    normalized = str(mode or GPU_ACCELERATION_OFF).strip().lower()
+    normalized = str(mode or GPU_ACCELERATION_AUTO).strip().lower()
     allowed = {value for value, _label in GPU_ACCELERATION_OPTIONS}
-    return normalized if normalized in allowed else GPU_ACCELERATION_OFF
+    return normalized if normalized in allowed else GPU_ACCELERATION_AUTO
 
 
 def normalize_console_time_mode(mode: str | None) -> str:
     normalized = str(mode or CONSOLE_TIME_24H).strip().lower()
     allowed = {value for value, _label in CONSOLE_TIME_MODE_OPTIONS}
     return normalized if normalized in allowed else CONSOLE_TIME_24H
+
+
+def normalize_log_level(value: object) -> str:
+    raw = str(value or LOG_LEVEL_DETAILED).strip().lower()
+    if raw in {"standard", "normal", "default"}:
+        return LOG_LEVEL_DETAILED
+    return raw if raw in {LOG_LEVEL_DETAILED, LOG_LEVEL_BRIEF} else LOG_LEVEL_DETAILED
+
+
+def normalize_log_language_mode(value: object) -> str:
+    raw = str(value or LOG_LANGUAGE_FOLLOW_UI).strip().lower()
+    return raw if raw in {LOG_LANGUAGE_FOLLOW_UI, LOG_LANGUAGE_BILINGUAL} else LOG_LANGUAGE_FOLLOW_UI
+
+
+def normalize_log_retention_days(value: object) -> int:
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        return LOG_RETENTION_DAYS_DEFAULT
+    if days <= 0:
+        return LOG_RETENTION_NEVER
+    return max(1, min(3650, days))
 
 
 def normalize_theme_id(value: object) -> str:
@@ -281,8 +349,11 @@ class AppSettings:
     repair_summary_default_filter: str = REPAIR_SUMMARY_FILTER_ALL
     analysis_concurrency_mode: str = ANALYSIS_CONCURRENCY_AUTO
     analysis_custom_workers: int = 0
-    gpu_acceleration_mode: str = GPU_ACCELERATION_OFF
+    gpu_acceleration_mode: str = GPU_ACCELERATION_AUTO
     console_time_mode: str = CONSOLE_TIME_24H
+    log_level: str = LOG_LEVEL_DETAILED
+    log_language_mode: str = LOG_LANGUAGE_FOLLOW_UI
+    log_retention_days: int = LOG_RETENTION_DAYS_DEFAULT
     theme_id: str = "classic_green"
     ui_density: str = UI_DENSITY_STANDARD
     language: str = DEFAULT_LANGUAGE
@@ -318,6 +389,11 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
         mode = normalize_analysis_concurrency_mode(migrated.get("analysis_concurrency_mode", ANALYSIS_CONCURRENCY_AUTO))
         if mode != ANALYSIS_CONCURRENCY_CUSTOM:
             migrated["analysis_custom_workers"] = 0
+    if old_version < 9:
+        migrated["log_level"] = normalize_log_level(migrated.get("log_level", migrated.get("console_log_level", LOG_LEVEL_DETAILED)))
+        migrated.setdefault("log_retention_days", LOG_RETENTION_DAYS_DEFAULT)
+    if old_version < 10:
+        migrated.setdefault("log_language_mode", LOG_LANGUAGE_FOLLOW_UI)
     return migrated
 
 
@@ -348,8 +424,11 @@ def validate_settings_payload(payload: object) -> AppSettings:
             == ANALYSIS_CONCURRENCY_CUSTOM
             else 0
         ),
-        gpu_acceleration_mode=normalize_gpu_acceleration_mode(payload.get("gpu_acceleration_mode", GPU_ACCELERATION_OFF)),
+        gpu_acceleration_mode=normalize_gpu_acceleration_mode(payload.get("gpu_acceleration_mode", GPU_ACCELERATION_AUTO)),
         console_time_mode=normalize_console_time_mode(payload.get("console_time_mode", CONSOLE_TIME_24H)),
+        log_level=normalize_log_level(payload.get("log_level", LOG_LEVEL_DETAILED)),
+        log_language_mode=normalize_log_language_mode(payload.get("log_language_mode", LOG_LANGUAGE_FOLLOW_UI)),
+        log_retention_days=normalize_log_retention_days(payload.get("log_retention_days", LOG_RETENTION_DAYS_DEFAULT)),
         theme_id=normalize_theme_id(payload.get("theme_id", "classic_green")),
         ui_density=normalize_ui_density(payload.get("ui_density", UI_DENSITY_STANDARD)),
         language=normalize_language(payload.get("language", DEFAULT_LANGUAGE)),
