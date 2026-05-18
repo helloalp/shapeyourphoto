@@ -8,6 +8,7 @@ from tkinter import messagebox, ttk
 from app_metadata import APP_NAME, APP_VERSION, APP_VERSION_ID
 from app_settings import (
     ANALYSIS_CONCURRENCY_OPTIONS,
+    ANALYSIS_CONCURRENCY_CUSTOM,
     AppSettings,
     CONSOLE_TIME_MODE_OPTIONS,
     DEFAULT_SCAN_IGNORE_CONTAINS,
@@ -103,6 +104,8 @@ class AppSettingsDialog(tk.Toplevel):
         self._notebook_tab_labels: list[tuple[ttk.Notebook, tk.Widget, str]] = []
         self._option_boxes: list[tuple[ttk.Combobox, tk.StringVar, str, list[str]]] = []
         self._last_gpu_status = None
+        self._status_after_id: str | None = None
+        self._status_kind = ""
 
         normalized = validate_settings_payload(settings.__dict__)
         self._scan_rule_widgets: dict[str, tuple[tk.Listbox, tk.StringVar, ttk.Button]] = {}
@@ -117,6 +120,7 @@ class AppSettingsDialog(tk.Toplevel):
         self.header_label.grid(row=0, column=0, sticky="w")
         self.notebook = ttk.Notebook(outer)
         self.notebook.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        self.notebook.bind("<<NotebookTabChanged>>", lambda _event: self._clear_temporary_status(), add="+")
 
         self._build_scan_tab(normalized)
         self._build_behavior_tab(normalized)
@@ -129,10 +133,13 @@ class AppSettingsDialog(tk.Toplevel):
 
         buttons = ttk.Frame(outer)
         buttons.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        buttons.configure(height=52)
+        buttons.grid_propagate(False)
         buttons.columnconfigure(1, weight=1)
         ttk.Label(buttons, textvariable=self._size_notice_var).grid(row=0, column=0, sticky="w")
-        self.status_label = ttk.Label(buttons, textvariable=self._save_status_var, anchor="e")
+        self.status_label = ttk.Label(buttons, textvariable=self._save_status_var, anchor="e", justify="right", wraplength=480)
         self.status_label.grid(row=0, column=1, sticky="ew", padx=(12, 10))
+        buttons.bind("<Configure>", self._sync_footer_status_wrap, add="+")
         self.save_button = ttk.Button(buttons, text=tr("settings.save"), command=self._confirm)
         self.save_button.grid(row=0, column=2, sticky="e", padx=(0, 8))
         self.cancel_button = ttk.Button(buttons, text=tr("settings.cancel"), command=self._cancel)
@@ -145,6 +152,12 @@ class AppSettingsDialog(tk.Toplevel):
         self._update_concurrency_hint()
         self._select_initial_tab()
         self._start_gpu_status_refresh(force_refresh=False)
+
+    def _sync_footer_status_wrap(self, event=None) -> None:
+        width = 480
+        if event is not None:
+            width = max(180, event.width - 260)
+        self.status_label.configure(wraplength=width)
 
     def _tr_widget(self, widget: tk.Widget, key: str) -> tk.Widget:
         self._text_widgets.append((widget, key))
@@ -247,10 +260,17 @@ class AppSettingsDialog(tk.Toplevel):
         ttk.Label(c, textvariable=self.concurrency_default_var).grid(row=2, column=2, sticky="w", padx=(12, 0))
         self._label(c, "settings.concurrent_workers", row=3, pady=(12, 0))
         self.custom_workers_var = tk.StringVar(value=str(settings.analysis_custom_workers or ""))
-        self.custom_workers_spin = ttk.Spinbox(c, from_=1, to=max_analysis_workers(), textvariable=self.custom_workers_var, width=10)
-        self.custom_workers_spin.grid(row=3, column=1, sticky="w", pady=(12, 0))
+        worker_box = ttk.Frame(c)
+        worker_box.grid(row=3, column=1, sticky="w", pady=(12, 0))
+        self.custom_workers_spin = ttk.Spinbox(worker_box, from_=1, to=max_analysis_workers(), textvariable=self.custom_workers_var, width=8)
+        self.custom_workers_spin.grid(row=0, column=0, sticky="w")
+        self.worker_minus_button = ttk.Button(worker_box, text="-", width=3, command=lambda: self._step_custom_workers(-1))
+        self.worker_minus_button.grid(row=0, column=1, padx=(8, 0), ipady=3)
+        self.worker_plus_button = ttk.Button(worker_box, text="+", width=3, command=lambda: self._step_custom_workers(1))
+        self.worker_plus_button.grid(row=0, column=2, padx=(4, 0), ipady=3)
         self.worker_range_var = tk.StringVar(value="")
-        ttk.Label(c, textvariable=self.worker_range_var).grid(row=3, column=2, sticky="w", padx=(12, 0), pady=(12, 0))
+        self.worker_range_label = ttk.Label(c, textvariable=self.worker_range_var)
+        self.worker_range_label.grid(row=3, column=2, sticky="w", padx=(12, 0), pady=(12, 0))
         self._label(c, "settings.section.gpu", row=4, columnspan=3, bold=True, pady=(22, 0))
         self._label(c, "settings.desc.gpu", row=5, columnspan=3, wrap=True, pady=(8, 10))
         self._label(c, "settings.gpu_mode", row=6)
@@ -270,6 +290,7 @@ class AppSettingsDialog(tk.Toplevel):
         gpu_actions.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         for key, command in (
             ("settings.gpu_check", lambda: self._start_gpu_status_refresh(force_refresh=True)),
+            ("settings.gpu_prepare", self._open_gpu_prepare_help),
             ("settings.gpu_copy", self._copy_gpu_diagnostics),
             ("settings.gpu_help", self._open_gpu_help),
         ):
@@ -451,14 +472,40 @@ class AppSettingsDialog(tk.Toplevel):
         if not hasattr(self, "concurrency_var"):
             return
         limit = max_analysis_workers()
-        plan = resolve_analysis_worker_plan(9999, self.concurrency_var.get(), self.custom_workers_var.get() if hasattr(self, "custom_workers_var") else 0)
+        mode = normalize_analysis_concurrency_mode(self.concurrency_var.get())
+        custom_value = self.custom_workers_var.get() if hasattr(self, "custom_workers_var") else 0
+        plan = resolve_analysis_worker_plan(9999, mode, custom_value)
         self.concurrency_default_var.set(tr("settings.default_workers").format(count=plan.requested_workers))
-        self.worker_range_var.set(tr("settings.worker_range").format(max=limit))
+        is_custom = mode == ANALYSIS_CONCURRENCY_CUSTOM
+        self.worker_range_var.set(
+            tr("settings.worker_range").format(max=limit)
+            if is_custom
+            else tr("settings.worker_locked")
+        )
         if hasattr(self, "custom_workers_spin"):
-            self.custom_workers_spin.configure(to=limit)
-        current = normalize_analysis_custom_workers(self.custom_workers_var.get() if hasattr(self, "custom_workers_var") else 0)
-        if current > limit:
+            self.custom_workers_spin.configure(to=limit, state="normal" if is_custom else "disabled")
+        for button_name in ("worker_minus_button", "worker_plus_button"):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.configure(state="normal" if is_custom else "disabled")
+        if hasattr(self, "worker_range_label"):
+            self.worker_range_label.configure(foreground="#666666" if not is_custom else "#1f3527")
+        if not is_custom:
+            self.custom_workers_var.set("")
+            return
+        current = normalize_analysis_custom_workers(custom_value)
+        if current <= 0:
+            self.custom_workers_var.set(str(min(limit, max(1, plan.requested_workers))))
+        elif current > limit:
             self.custom_workers_var.set(str(limit))
+
+    def _step_custom_workers(self, delta: int) -> None:
+        if normalize_analysis_concurrency_mode(self.concurrency_var.get()) != ANALYSIS_CONCURRENCY_CUSTOM:
+            return
+        limit = max_analysis_workers()
+        current = normalize_analysis_custom_workers(self.custom_workers_var.get()) or 1
+        self.custom_workers_var.set(str(max(1, min(limit, current + delta))))
+        self._update_concurrency_hint()
 
     def _start_gpu_status_refresh(self, *, force_refresh: bool = False) -> None:
         self.gpu_hardware_var.set(tr("settings.gpu_detecting"))
@@ -507,9 +554,13 @@ class AppSettingsDialog(tk.Toplevel):
         try:
             self.clipboard_clear()
             self.clipboard_append(text)
-            self._save_status_var.set(tr("settings.copied"))
+            self._set_status(tr("settings.copied"), kind="temporary")
         except Exception as exc:
             messagebox.showwarning(tr("settings.gpu_copy"), str(exc), parent=self)
+
+    def _open_gpu_prepare_help(self) -> None:
+        self._open_gpu_help()
+        self._set_status(tr("settings.gpu_prepare_opened"), kind="temporary")
 
     def _open_gpu_help(self) -> None:
         url = "https://helloalp.top/tools/shapeyourphoto/articles/faq.html#gpu"
@@ -520,9 +571,27 @@ class AppSettingsDialog(tk.Toplevel):
             try:
                 self.clipboard_clear()
                 self.clipboard_append(url)
-                self._save_status_var.set(tr("settings.copied"))
+                self._set_status(tr("settings.copied"), kind="temporary")
             except Exception:
                 messagebox.showinfo(tr("settings.gpu_help"), url, parent=self)
+
+    def _clear_temporary_status(self) -> None:
+        if self._status_kind == "temporary":
+            self._save_status_var.set("")
+            self._status_kind = ""
+        self._status_after_id = None
+
+    def _set_status(self, message: str, *, kind: str = "persistent", timeout_ms: int = 3500) -> None:
+        if self._status_after_id is not None:
+            try:
+                self.after_cancel(self._status_after_id)
+            except tk.TclError:
+                pass
+            self._status_after_id = None
+        self._status_kind = kind
+        self._save_status_var.set(message)
+        if kind == "temporary":
+            self._status_after_id = self.after(timeout_ms, self._clear_temporary_status)
 
     def _refresh_language_texts(self) -> None:
         self.title(app_window_title(tr("settings.app")))
@@ -545,7 +614,7 @@ class AppSettingsDialog(tk.Toplevel):
         if self.announcement_status_var.get() in {"暂无公告。", "No announcements.", "お知らせはありません。"}:
             self.announcement_status_var.set(tr("settings.no_announcements"))
             self._set_announcement_text(tr("settings.no_announcements"))
-        if self._save_status_var.get():
+        if self._save_status_var.get() and self._status_kind != "temporary":
             self._save_status_var.set(tr("settings.saved_keep_open"))
         self._refresh_option_labels()
         self._update_concurrency_hint()
@@ -556,7 +625,8 @@ class AppSettingsDialog(tk.Toplevel):
             messagebox.showwarning(tr("settings.app"), tr("settings.need_prefix"), parent=self)
             return
         language = normalize_language(self.language_var.get())
-        custom_workers = normalize_analysis_custom_workers(self.custom_workers_var.get())
+        mode = normalize_analysis_concurrency_mode(self.concurrency_var.get())
+        custom_workers = normalize_analysis_custom_workers(self.custom_workers_var.get()) if mode == ANALYSIS_CONCURRENCY_CUSTOM else 0
         limit = max_analysis_workers()
         if custom_workers > limit:
             custom_workers = limit
@@ -567,7 +637,7 @@ class AppSettingsDialog(tk.Toplevel):
             scan_ignore_contains=self._current_contains(),
             default_scan_mode=normalize_default_scan_mode(self.scan_mode_var.get()),
             repair_summary_default_filter=normalize_repair_summary_filter(self.summary_filter_var.get()),
-            analysis_concurrency_mode=normalize_analysis_concurrency_mode(self.concurrency_var.get()),
+            analysis_concurrency_mode=mode,
             analysis_custom_workers=custom_workers,
             gpu_acceleration_mode=normalize_gpu_acceleration_mode(self.gpu_mode_var.get()),
             console_time_mode=normalize_console_time_mode(self.console_time_var.get()),
@@ -585,14 +655,14 @@ class AppSettingsDialog(tk.Toplevel):
                     tr("settings.save_failed_body").format(error=exc),
                     parent=self,
                 )
-                self._save_status_var.set(tr("settings.save_failed"))
+                self._set_status(tr("settings.save_failed"), kind="persistent")
                 return
             if not applied:
-                self._save_status_var.set(tr("settings.save_failed"))
+                self._set_status(tr("settings.save_failed"), kind="persistent")
                 return
             language_changed = language != self._initial_language
             self._initial_language = language
-            self._save_status_var.set(tr("settings.saved_keep_open"))
+            self._set_status(tr("settings.saved_keep_open"), kind="persistent")
             if language_changed:
                 set_current_language(language)
                 self._refresh_language_texts()

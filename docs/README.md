@@ -34,13 +34,15 @@
 - 性能计时统一用 `perf_timings` / `perf_notes`，Console 只做合并后的用户可读摘要。
 - GPU 只是可选检测和 CPU 回退提示，不能成为必需依赖。
 - 当前主线：UI mixin 已拆分到 `ui_*.py`；`src/ui/` 承接 UI 基础设施；`updater_v2.py` 是当前 updater 主实现；`cryptography` 是正式依赖；`start.bat` 支持按需安装依赖；内部 code/enum 通过 `ui/display_names.py` 映射为用户可读中文显示名。
-- 1.2.6 新增：设置保存后不关闭窗口；右侧预览图会在布局稳定后从原图重绘，并避免超高清图片重复完整解码；GPU 说明区分硬件可见和 Python/CUDA 后端缺失，可选依赖见根目录 `requirements-gpu.txt`。
+- 1.2.6 新增：设置保存后不关闭窗口；右侧预览图会在布局稳定后从原图重绘，并避免超高清图片重复完整解码；GPU 说明区分硬件可见和加速组件准备情况，并在加速未准备时继续回退 CPU。
 
 ## 文档维护规则
 
 - 不得删除 `docs/`、`docs/technical/`、`docs/updates/`。
 - 不得清空正式文档。
 - 旧内容不适用时，应修订、迁移、标注历史上下文，或指向当前说明。
+- 不得在公开或私有文档中加入限制产品未来发展方向、适用人群、使用场景、AI 能力接入或专业化功能扩展的表述；任何文档修改、增删、更新、升级都应描述当前事实、当前安全规则和已实现行为，不应把阶段性状态写成长期产品边界。
+- README、CHANGELOG、`docs/updates/` 和 `src/app_metadata.py` 中的更新历史不得写入开发者设备型号、私有测试环境、内部依赖栈细节、维护过程、AI 协作过程或适用对象标签；只记录用户可理解的功能变化、体验变化和安全结果。
 - 功能、模块、设置或版本变化时，同步更新 `CHANGELOG.md`、`src/app_metadata.py` 和对应 `docs/updates/<version>.md`。
 - 版本记录默认使用中文：`app_metadata.CHANGELOG`、根 `CHANGELOG.md` 和 `docs/updates/<version>.md` 必须保持中文事实口径一致；英文仅保留在文件名、函数名、协议字段、环境变量和内部 code/enum 等技术标识中。
 

@@ -5,6 +5,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 
+from ui.language import tr
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
@@ -65,7 +66,7 @@ class TaskProgressDialog:
         self.header_label.grid(row=0, column=0, sticky="ew")
         self.description_label = ttk.Label(
             outer,
-            text="当前任务会持续刷新进度，完成后自动关闭。",
+            text=tr("progress.description"),
             style="Sub.TLabel",
         )
         self.description_label.grid(row=1, column=0, sticky="ew", pady=(4, 14))

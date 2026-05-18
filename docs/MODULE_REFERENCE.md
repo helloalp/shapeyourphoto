@@ -14,7 +14,7 @@
 
 ### [tools/legacy/](/E:/aitools/shapeyourphoto/tools/legacy)
 
-保留旧 `setup_deps.bat`、`start_app.bat` 和 `start_app.vbs` 作为兼容入口。普通用户不需要使用。
+保留旧 `setup_deps.bat`、`start_app.bat` 和 `start_app.vbs` 作为兼容入口。日常启动不需要使用。
 
 ### [app.py](/E:/aitools/shapeyourphoto/app.py) / [app.pyw](/E:/aitools/shapeyourphoto/app.pyw)
 
@@ -56,7 +56,7 @@ UI 基础设施包，包含窗口标题、语言状态、display mapping、主�
 
 ### [src/gpu_accel.py](/E:/aitools/shapeyourphoto/src/gpu_accel.py)
 
-GPU 状态探测与保守回退。负责识别显卡硬件、可用运行后端和当前任务使用状态；缺少 CUDA、CuPy、OpenCV CUDA 或 torch CUDA 时不得影响分析、修复或设置页打开。
+GPU 状态探测与保守回退。负责识别硬件可见性、加速组件准备情况和当前任务使用状态；加速未准备时不得影响分析、修复或设置页打开。
 
 ### [src/stats_store.py](/E:/aitools/shapeyourphoto/src/stats_store.py)
 

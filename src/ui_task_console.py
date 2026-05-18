@@ -10,6 +10,7 @@ from app_settings import ANALYSIS_CONCURRENCY_AUTO, AnalysisWorkerPlan, resolve_
 from gpu_accel import GPUBackendStatus, gpu_console_label
 from models import AnalysisResult, RepairRecord
 from ui.display_names import display_name
+from ui.language import tr
 from ui_constants import (
     ANALYSIS_BATCH_TIMING_LABELS,
     ANALYSIS_TIMING_LABELS,
@@ -142,7 +143,7 @@ class UiTaskConsoleMixin:
         self._set_controls_enabled(True)
         self._active_task_cancel_callback = None
         if hasattr(self, "task_cancel_button"):
-            self.task_cancel_button.configure(state="disabled", text="取消任务")
+            self.task_cancel_button.configure(state="disabled", text=tr("action.cancel_task"))
         self.progress_controller.finish(title=title, detail=detail, status=detail, close_dialog=True)
         self._flush_console()
 

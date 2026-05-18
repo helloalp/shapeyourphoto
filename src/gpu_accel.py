@@ -13,7 +13,7 @@ from app_settings import GPU_ACCELERATION_AUTO, GPU_ACCELERATION_OFF, GPU_ACCELE
 @dataclass(frozen=True)
 class GPUBackendStatus:
     requested_mode: str
-    backend_name: str = "未检测到可用后端"
+    backend_name: str = "ShapeYourPhoto GPU 后端未准备"
     available: bool = False
     active: bool = False
     reason: str = "未启用 GPU，加速回退 CPU。"
@@ -56,16 +56,16 @@ def detect_gpu_backend(*, force_refresh: bool = False, timeout_seconds: float = 
         )
     else:
         if hardware_detected:
-            reason = f"检测到 {hardware_name}，但没有可用的 CUDA / OpenCV CUDA / torch CUDA 后端，当前使用 CPU。"
+            reason = f"已检测到 {hardware_name}，显卡和驱动可用；当前 ShapeYourPhoto 运行环境还没有准备好图像处理加速组件，已继续使用 CPU。"
         else:
-            reason = "未检测到可用 GPU 后端，当前使用 CPU。"
+            reason = "当前 ShapeYourPhoto 没有可用的图像处理加速组件，已继续使用 CPU。"
         if backend_reasons:
             reason += " " + "；".join(dict.fromkeys(backend_reasons[:4]))
         if timed_out:
             reason += " 部分后端检测超时，已跳过以避免卡住界面。"
         status = GPUBackendStatus(
             requested_mode=GPU_ACCELERATION_AUTO,
-            backend_name="未检测到可用后端",
+            backend_name="ShapeYourPhoto GPU 后端未准备",
             available=False,
             active=False,
             reason=reason,
@@ -245,7 +245,7 @@ def _python_probe(code: str, *, timeout_seconds: float) -> tuple[str, bool, str]
 
 def _detect_cupy(*, timeout_seconds: float) -> tuple[GPUBackendStatus, bool]:
     if find_spec("cupy") is None:
-        return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="CuPy 未安装"), False
+        return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="CuPy 未准备"), False
     if getattr(sys, "frozen", False):
         return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="CuPy 后端检测已跳过"), False
     code = (
@@ -282,7 +282,7 @@ def _detect_cupy(*, timeout_seconds: float) -> tuple[GPUBackendStatus, bool]:
 
 def _detect_opencv_cuda(*, timeout_seconds: float) -> tuple[GPUBackendStatus, bool]:
     if find_spec("cv2") is None:
-        return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="OpenCV 未安装"), False
+        return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="OpenCV 加速组件未准备"), False
     if getattr(sys, "frozen", False):
         return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="OpenCV CUDA 后端检测已跳过"), False
     code = (
@@ -310,7 +310,7 @@ def _detect_opencv_cuda(*, timeout_seconds: float) -> tuple[GPUBackendStatus, bo
 
 def _detect_torch_cuda(*, timeout_seconds: float) -> tuple[GPUBackendStatus, bool]:
     if find_spec("torch") is None:
-        return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="torch 未安装"), False
+        return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="torch 加速组件未准备"), False
     if getattr(sys, "frozen", False):
         return GPUBackendStatus(requested_mode=GPU_ACCELERATION_AUTO, reason="torch CUDA 后端检测已跳过"), False
     code = (

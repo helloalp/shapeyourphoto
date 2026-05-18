@@ -64,7 +64,7 @@ def bind_minimum_size_notice(
             return
         width = window.winfo_width()
         height = window.winfo_height()
-        if width <= min_width + threshold or height <= min_height + threshold:
+        if width <= min_width + threshold and height <= min_height + threshold:
             notice_var.set(MIN_SIZE_NOTICE)
         elif notice_var.get() == MIN_SIZE_NOTICE:
             notice_var.set("")

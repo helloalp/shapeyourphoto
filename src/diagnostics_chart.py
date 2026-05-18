@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from models import AnalysisResult
+from ui.language import tr
 
 
 class DiagnosticsChart(ttk.Frame):
@@ -39,7 +40,7 @@ class DiagnosticsChart(ttk.Frame):
                 18,
                 18,
                 anchor="nw",
-                text="完成分析后，这里会显示不同指标的彩色条图和风险概览。",
+                text=tr("diagnostics.empty"),
                 fill="#476051",
                 font=("Microsoft YaHei UI", body_font),
             )
@@ -52,12 +53,12 @@ class DiagnosticsChart(ttk.Frame):
         percent_x = max(bar_x + 46, value_x - value_pad)
         bar_w = max(90, percent_x - bar_x - 14)
 
-        self.canvas.create_text(x0, y, anchor="nw", text="问题强度", fill="#1c3c2a", font=("Microsoft YaHei UI", title_font, "bold"))
+        self.canvas.create_text(x0, y, anchor="nw", text=tr("diagnostics.issue_strength"), fill="#1c3c2a", font=("Microsoft YaHei UI", title_font, "bold"))
         y += row_gap + 2
 
         issue_rows = self._result.issues[:6]
         if not issue_rows:
-            self.canvas.create_text(x0, y, anchor="nw", text="当前未检测到明显问题。", fill="#4c6a57", font=("Microsoft YaHei UI", body_font))
+            self.canvas.create_text(x0, y, anchor="nw", text=tr("diagnostics.no_issues"), fill="#4c6a57", font=("Microsoft YaHei UI", body_font))
             y += row_gap
         else:
             for issue in issue_rows:
@@ -78,7 +79,7 @@ class DiagnosticsChart(ttk.Frame):
                 )
 
         y += max(8, row_gap // 2)
-        self.canvas.create_text(x0, y, anchor="nw", text="关键指标", fill="#1c3c2a", font=("Microsoft YaHei UI", title_font, "bold"))
+        self.canvas.create_text(x0, y, anchor="nw", text=tr("diagnostics.key_metrics"), fill="#1c3c2a", font=("Microsoft YaHei UI", title_font, "bold"))
         y += row_gap + 2
 
         for metric in self._result.metrics:

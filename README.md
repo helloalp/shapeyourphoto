@@ -4,10 +4,14 @@
 
 ShapeYourPhoto 是一个本地桌面图片工具，用于导入图片、批量分析、查看质量提示、执行修复、复核不适合保留的图片和相似图片。图片分析和修复默认在本机进行，不主动上传用户图片。
 
-## Windows 用户使用方法
+## 文档入口
+
+本 README 只保留快速启动和项目入口。功能、维护、版本记录和文档写作规则以 [docs/README.md](E:/aitools/shapeyourphoto/docs/README.md) 为准；修改 README、CHANGELOG 或任何文档前，先阅读 `docs/` 中的维护规范。
+
+## Windows 使用方法
 
 1. 打开 [GitHub Releases](https://github.com/helloalp/shapeyourphoto/releases)，找到最新版本，展开最下方的列表，选择source_code.zip下载解压，至第3步。
-2. 普通用户优先下载正式发布包；源码包更适合开发者和高级用户。
+2. 正式发布包提供完整启动体验；源码包保留开发、审计和手动运行入口。
 3. 如果下载的是源码包，解压到普通目录，例如：
 
 ```text
@@ -28,8 +32,8 @@ start.bat
 
 推荐做法：
 
-- 普通用户：使用正式发布包或安装包。
-- 需要运行源码包：先安装 Python 3.10 或更新版本，再双击 `start.bat`。
+- 使用正式发布包或安装包。
+- 运行源码包时，先安装 Python 3.10 或更新版本，再双击 `start.bat`。
 
 Python 下载地址：
 
@@ -37,7 +41,7 @@ Python 下载地址：
 https://www.python.org/downloads/
 ```
 
-`tools/legacy/setup_deps.bat` 和 `tools/legacy/start_app.bat` 仅作为兼容入口保留，普通用户不需要使用。
+`tools/legacy/setup_deps.bat` 和 `tools/legacy/start_app.bat` 仅作为兼容入口保留，日常启动不需要使用。
 
 ## macOS 用户
 
@@ -64,7 +68,7 @@ python -m pip install -r requirements.txt
 
 ## 项目结构
 
-- `start.bat`：普通用户入口。
+- `start.bat`：日常启动入口。
 - `app.py` / `app.pyw`：源码包 GUI 启动器。
 - `src/`：应用代码。
 - `tools/launcher/`：启动环境检查和按需依赖安装。
@@ -72,6 +76,8 @@ python -m pip install -r requirements.txt
 - `tools/benchmark/`：本地 benchmark 工具，不属于日常启动流程。
 - `build/`：打包配置。
 - `docs/`：公开维护文档。
+
+更新历史不得写入开发者设备型号、私有测试环境、内部依赖栈细节、适用人群限制或产品发展边界；相关规则见 [docs/README.md](E:/aitools/shapeyourphoto/docs/README.md) 和 [docs/PRESERVATION_RULES.md](E:/aitools/shapeyourphoto/docs/PRESERVATION_RULES.md)。
 
 ## 隐私说明
 

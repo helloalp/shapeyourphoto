@@ -13,6 +13,7 @@ from gpu_accel import GPUBackendStatus, gpu_console_label, resolve_gpu_status
 from models import AnalysisResult, SimilarImageGroup
 from similar_detector import detect_similar_groups
 from stats_store import record_analysis_batch, record_analysis_result, save_stats
+from ui.language import tr
 from ui_constants import ANALYSIS_PROGRESS_STEPS, AnalysisCanceled
 
 
@@ -67,13 +68,13 @@ class UiAnalysisActionsMixin:
         self._log_console(gpu_status.reason)
         self._begin_task(
             total * ANALYSIS_PROGRESS_STEPS,
-            f"分析中 0/{total}",
-            f"正在分析 {total} 张图片，请稍候...",
+            tr("analysis.running_title").format(done=0, total=total),
+            tr("analysis.start_detail").format(total=total),
             show_dialog=True,
-            dialog_title="分析图片中",
-            dialog_header="正在逐张分析图片",
+            dialog_title=tr("analysis.dialog_title"),
+            dialog_header=tr("analysis.dialog_header"),
             cancel_callback=lambda rid=run_id: self.cancel_analysis(rid),
-            cancel_text="取消分析",
+            cancel_text=tr("analysis.cancel"),
         )
 
         for path in targets:
@@ -329,11 +330,11 @@ class UiAnalysisActionsMixin:
         self.progress_controller.update(
             done=sum(self.analysis_phase_progress.values()),
             total=total * ANALYSIS_PROGRESS_STEPS,
-            title=f"分析中 {done}/{total}",
-            detail=f"已完成第 {done}/{total} 张：{path.name} | 生成建议与诊断信息 | {self._elapsed_task_text()}",
-            status=f"分析进度 {done}/{total}，最近完成：{path.name}",
-            dialog_title="分析图片中",
-            dialog_header="正在逐张分析图片",
+            title=tr("analysis.running_title").format(done=done, total=total),
+            detail=tr("analysis.image_done_detail").format(done=done, total=total, name=path.name, elapsed=self._elapsed_task_text()),
+            status=tr("analysis.image_done_status").format(done=done, total=total, name=path.name),
+            dialog_title=tr("analysis.dialog_title"),
+            dialog_header=tr("analysis.dialog_header"),
         )
         if not self._refresh_tree_item(path):
             self.refresh_tree()
@@ -350,15 +351,15 @@ class UiAnalysisActionsMixin:
 
     def _friendly_analysis_phase(self, phase: str) -> str:
         if "读取" in phase or "图像" in phase:
-            return "读取图片"
+            return tr("analysis.phase.read")
         if "亮度" in phase or "主体" in phase or "背景" in phase:
-            return "分析曝光与画面结构"
+            return tr("analysis.phase.exposure")
         if "锐度" in phase or "色彩" in phase or "人像" in phase:
-            return "分析色彩与清晰度"
+            return tr("analysis.phase.color")
         if "问题" in phase or "建议" in phase:
-            return "生成问题与修复建议"
+            return tr("analysis.phase.issue")
         if "指标" in phase or "最终" in phase:
-            return "整理诊断结果"
+            return tr("analysis.phase.final")
         return phase
 
     def _update_analysis_phase(self, path: Path, step: int, steps: int, phase: str, total_images: int, run_id: int) -> None:
@@ -376,17 +377,30 @@ class UiAnalysisActionsMixin:
             return
         self._last_progress_ui_update = now
         friendly_phase = self._friendly_analysis_phase(phase)
-        detail = f"处理第 {finished_images + 1}/{total_images} 张：{path.name} | {friendly_phase} | {self._elapsed_task_text()}"
+        detail = tr("analysis.processing_one").format(
+            index=finished_images + 1,
+            total=total_images,
+            name=path.name,
+            phase=friendly_phase,
+            elapsed=self._elapsed_task_text(),
+        )
         if total_images > 1:
-            detail = f"批量分析 {finished_images}/{total_images} | 第 {min(total_images, finished_images + 1)}/{total_images} 张：{path.name} | {friendly_phase} | {self._elapsed_task_text()}"
+            detail = tr("analysis.processing_batch").format(
+                done=finished_images,
+                total=total_images,
+                index=min(total_images, finished_images + 1),
+                name=path.name,
+                phase=friendly_phase,
+                elapsed=self._elapsed_task_text(),
+            )
         self.progress_controller.update(
             done=aggregate_done,
             total=max(1, total_images * ANALYSIS_PROGRESS_STEPS),
-            title=f"分析中 {finished_images}/{total_images}",
+            title=tr("analysis.running_title").format(done=finished_images, total=total_images),
             detail=detail,
             status=detail,
-            dialog_title="分析图片中",
-            dialog_header="正在逐张分析图片",
+            dialog_title=tr("analysis.dialog_title"),
+            dialog_header=tr("analysis.dialog_header"),
         )
 
     def _update_similarity_detection_phase(self, total: int, run_id: int) -> None:
@@ -395,11 +409,11 @@ class UiAnalysisActionsMixin:
         self.progress_controller.update(
             done=total * ANALYSIS_PROGRESS_STEPS,
             total=max(1, total * ANALYSIS_PROGRESS_STEPS),
-            title="检测相似图片",
-            detail=f"分析已完成，正在使用缩略图哈希和摘要特征检测本轮相似图片组。{self._elapsed_task_text()}",
-            status="正在检测相似图片组",
-            dialog_title="分析图片中",
-            dialog_header="正在逐张分析图片",
+            title=tr("analysis.similar_title"),
+            detail=tr("analysis.similar_detail").format(elapsed=self._elapsed_task_text()),
+            status=tr("analysis.similar_status"),
+            dialog_title=tr("analysis.dialog_title"),
+            dialog_header=tr("analysis.dialog_header"),
         )
 
     def _analysis_finished(
@@ -431,7 +445,7 @@ class UiAnalysisActionsMixin:
         ]
         self.similar_groups.extend(similar_groups)
         similar_count = len(similar_groups)
-        detail = f"分析完成：问题图片 {issue_count} 张，失败 {error_count} 张，相似组 {similar_count} 组。"
+        detail = tr("analysis.finished_detail").format(issues=issue_count, failed=error_count, similar=similar_count)
         self._log_console(f"analysis finished: count={total} issues={issue_count} errors={error_count} similar_groups={similar_count}")
         self._log_analysis_perf_rollup(
             self._last_analysis_targets,
@@ -458,13 +472,13 @@ class UiAnalysisActionsMixin:
         self.progress_controller.update(
             done=total * ANALYSIS_PROGRESS_STEPS,
             total=max(1, total * ANALYSIS_PROGRESS_STEPS),
-            title=f"分析完成 {total}/{total}",
+            title=tr("analysis.finished_title").format(done=total, total=total),
             detail=detail,
             status=detail,
-            dialog_title="分析图片中",
-            dialog_header="正在逐张分析图片",
+            dialog_title=tr("analysis.dialog_title"),
+            dialog_header=tr("analysis.dialog_header"),
         )
-        self._finish_task(f"分析完成 {total}/{total}", detail)
+        self._finish_task(tr("analysis.finished_title").format(done=total, total=total), detail)
         self._analysis_cancel_event = None
         self._analysis_cancel_targets = []
         current = self._current_path()

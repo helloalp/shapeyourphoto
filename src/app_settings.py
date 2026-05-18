@@ -11,7 +11,7 @@ from paths import migrate_legacy_file
 from ui.language import DEFAULT_LANGUAGE, normalize_language
 
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 7
+SETTINGS_SCHEMA_VERSION = 8
 DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
 DEFAULT_SCAN_IGNORE_SUFFIXES: list[str] = []
 DEFAULT_SCAN_IGNORE_CONTAINS: list[str] = []
@@ -179,7 +179,9 @@ def normalize_analysis_custom_workers(value: object) -> int:
 
 def max_analysis_workers(*, cpu_count: int | None = None) -> int:
     cpus = max(1, int(cpu_count or os.cpu_count() or 4))
-    return max(2, min(32, cpus * 2))
+    if cpus <= 1:
+        return 1
+    return max(1, min(30, cpus - 1))
 
 
 @dataclass(frozen=True)
@@ -209,9 +211,9 @@ def resolve_analysis_worker_plan(
     elif normalized_mode == ANALYSIS_CONCURRENCY_MEDIUM:
         requested = max(1, min(6, max(2, cpus // 2)))
     elif normalized_mode == ANALYSIS_CONCURRENCY_HIGH:
-        requested = max(1, min(16, max(2, cpus + 2)))
+        requested = max(1, min(limit, min(16, max(2, cpus - 1))))
     elif normalized_mode == ANALYSIS_CONCURRENCY_EXTREME:
-        requested = max(2, min(limit, cpus * 2))
+        requested = min(limit, max(1, cpus - 1))
     elif normalized_mode == ANALYSIS_CONCURRENCY_CUSTOM:
         custom = normalize_analysis_custom_workers(custom_workers)
         if custom <= 0:
@@ -312,6 +314,10 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
     if old_version < 7:
         if migrated.get("analysis_concurrency_mode") == "very_high":
             migrated["analysis_concurrency_mode"] = ANALYSIS_CONCURRENCY_EXTREME
+    if old_version < 8:
+        mode = normalize_analysis_concurrency_mode(migrated.get("analysis_concurrency_mode", ANALYSIS_CONCURRENCY_AUTO))
+        if mode != ANALYSIS_CONCURRENCY_CUSTOM:
+            migrated["analysis_custom_workers"] = 0
     return migrated
 
 
@@ -336,7 +342,12 @@ def validate_settings_payload(payload: object) -> AppSettings:
         analysis_concurrency_mode=normalize_analysis_concurrency_mode(
             payload.get("analysis_concurrency_mode", ANALYSIS_CONCURRENCY_AUTO)
         ),
-        analysis_custom_workers=normalize_analysis_custom_workers(payload.get("analysis_custom_workers", 0)),
+        analysis_custom_workers=(
+            normalize_analysis_custom_workers(payload.get("analysis_custom_workers", 0))
+            if normalize_analysis_concurrency_mode(payload.get("analysis_concurrency_mode", ANALYSIS_CONCURRENCY_AUTO))
+            == ANALYSIS_CONCURRENCY_CUSTOM
+            else 0
+        ),
         gpu_acceleration_mode=normalize_gpu_acceleration_mode(payload.get("gpu_acceleration_mode", GPU_ACCELERATION_OFF)),
         console_time_mode=normalize_console_time_mode(payload.get("console_time_mode", CONSOLE_TIME_24H)),
         theme_id=normalize_theme_id(payload.get("theme_id", "classic_green")),

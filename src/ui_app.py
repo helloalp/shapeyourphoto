@@ -74,13 +74,13 @@ class PhotoAnalyzerApp(
         self.filter_var = tk.StringVar(value="全部")
         self.only_problem_var = tk.BooleanVar(value=True)
         self.debug_open_after_repair_var = tk.BooleanVar(value=False)
-        self.progress_text_var = tk.StringVar(value="等待任务")
-        self.progress_detail_var = tk.StringVar(value="尚未开始。")
+        self.progress_text_var = tk.StringVar(value=tr("task.waiting"))
+        self.progress_detail_var = tk.StringVar(value=tr("task.not_started"))
         self.progress_value = tk.DoubleVar(value=0.0)
-        self.hud_name_var = tk.StringVar(value="未选择图片")
-        self.hud_risk_var = tk.StringVar(value="风险值 --")
-        self.hud_tags_var = tk.StringVar(value="识别结果：等待分析")
-        self.hud_methods_var = tk.StringVar(value="推荐修复：等待分析")
+        self.hud_name_var = tk.StringVar(value=tr("hud.no_selection"))
+        self.hud_risk_var = tk.StringVar(value=tr("hud.risk_empty"))
+        self.hud_tags_var = tk.StringVar(value=tr("hud.tags_waiting"))
+        self.hud_methods_var = tk.StringVar(value=tr("hud.methods_waiting"))
 
         self.image_paths: list[Path] = []
         self.results: dict[Path, AnalysisResult] = {}
@@ -366,6 +366,18 @@ class PhotoAnalyzerApp(
             for tab, key in getattr(self, "_right_info_tabs", []):
                 self.right_info_book.tab(tab, text=tr(key))
         self._refresh_filter_options()
+        if not getattr(self, "image_paths", []):
+            self._clear_hud_and_summary()
+            self._update_list_stats()
+        else:
+            current_path = self._current_path()
+            self.refresh_tree()
+            if current_path is not None:
+                self._select_path(current_path)
+        state = getattr(getattr(self, "progress_controller", None), "state", None)
+        if state is not None and state.done <= 0 and state.title in {"等待任务", "Waiting", "待機中", tr("task.waiting")}:
+            self.progress_text_var.set(tr("task.waiting"))
+            self.progress_detail_var.set(tr("task.not_started"))
 
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self.root)
@@ -849,7 +861,7 @@ class PhotoAnalyzerApp(
                 messagebox.showinfo(tr("help.faq"), url, parent=self.root)
 
     def show_contact_author_window(self) -> None:
-        email = "hello@helloalp.top"
+        email = "master@helloalp.top"
         dialog = tk.Toplevel(self.root)
         dialog.title(tr("contact.title"))
         dialog.transient(self.root)
@@ -877,14 +889,38 @@ class PhotoAnalyzerApp(
         ttk.Label(outer, text=tr("contact.extra"), font=("Microsoft YaHei UI", 10, "bold")).grid(row=5, column=0, sticky="w", pady=(12, 4))
         extra_text = tk.Text(outer, height=5, wrap="word", font=("Microsoft YaHei UI", 10), padx=8, pady=8)
         extra_text.grid(row=6, column=0, sticky="ew")
-        extra_text.insert("1.0", tr("contact.extra_placeholder"))
+        placeholder = tr("contact.extra_placeholder")
+        placeholder_active = tk.BooleanVar(value=True)
+
+        def _show_placeholder() -> None:
+            placeholder_active.set(True)
+            extra_text.configure(fg="#7f8a82")
+            extra_text.delete("1.0", "end")
+            extra_text.insert("1.0", placeholder)
+
+        def _hide_placeholder() -> None:
+            if placeholder_active.get():
+                placeholder_active.set(False)
+                extra_text.configure(fg="#1f3527")
+                extra_text.delete("1.0", "end")
+
+        def _on_extra_focus_in(_event=None) -> None:
+            _hide_placeholder()
+
+        def _on_extra_focus_out(_event=None) -> None:
+            if not extra_text.get("1.0", "end").strip():
+                _show_placeholder()
+
+        _show_placeholder()
+        extra_text.bind("<FocusIn>", _on_extra_focus_in)
+        extra_text.bind("<FocusOut>", _on_extra_focus_out)
         status_var = tk.StringVar(value="")
         ttk.Label(outer, textvariable=status_var).grid(row=7, column=0, sticky="w", pady=(8, 0))
 
         def composed_body() -> str:
             template = template_text.get("1.0", "end").strip()
-            extra = extra_text.get("1.0", "end").strip()
-            if extra and extra != tr("contact.extra_placeholder"):
+            extra = "" if placeholder_active.get() else extra_text.get("1.0", "end").strip()
+            if extra:
                 return f"{template}\n\n{tr('contact.extra')}:\n{extra}"
             return template
 

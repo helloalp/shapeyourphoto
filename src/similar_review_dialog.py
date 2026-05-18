@@ -10,16 +10,17 @@ from PIL import Image, ImageOps, ImageTk
 from models import AnalysisResult, SimilarImageGroup
 from repair_planner import get_method_labels, suggest_methods_for_result
 from ui.display_names import display_name, issue_display
+from ui.language import tr
 from ui.window_titles import app_window_title
 from window_layout import MIN_SIZE_NOTICE, bind_minimum_size_notice
 
 
-FILTER_ALL = "全部相似组"
-FILTER_HIGH = "高相似"
-FILTER_MEDIUM = "中等相似"
-FILTER_LOW = "低置信候选"
-FILTER_LARGE = "组内数量较多"
-FILTER_BURST = "可能连拍/同组拍摄"
+FILTER_ALL = "all"
+FILTER_HIGH = "high"
+FILTER_MEDIUM = "medium"
+FILTER_LOW = "low"
+FILTER_LARGE = "large"
+FILTER_BURST = "burst"
 
 
 class SimilarGroupListDialog(tk.Toplevel):
@@ -44,6 +45,7 @@ class SimilarGroupListDialog(tk.Toplevel):
         self._cleanup_paths = cleanup_paths
         self._decision_callback = decision_callback
         self._filter_var = tk.StringVar(value=FILTER_ALL)
+        self._filter_label_var = tk.StringVar(value=tr("similar.filter.all"))
         self._selected_vars: dict[int, tk.BooleanVar] = {}
         self._thumbs: list[ImageTk.PhotoImage] = []
         self._hint_var = tk.StringVar()
@@ -52,34 +54,28 @@ class SimilarGroupListDialog(tk.Toplevel):
         outer = ttk.Frame(self, padding=14)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(2, weight=1)
-
-        intro = ttk.Label(
-            outer,
-            text="本轮分析完成后检测到以下相似图片组。默认不删除任何图片，只有勾选组并进入组内对比后才可逐张安全清理。",
-            wraplength=960,
-        )
-        intro.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        outer.rowconfigure(1, weight=1)
 
         toolbar = ttk.Frame(outer)
-        toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         toolbar.columnconfigure(4, weight=1)
-        ttk.Label(toolbar, text="筛选：").grid(row=0, column=0, sticky="w")
+        ttk.Label(toolbar, text=tr("filter.label")).grid(row=0, column=0, sticky="w")
+        self._filter_labels = self._filter_label_map()
         filter_box = ttk.Combobox(
             toolbar,
-            textvariable=self._filter_var,
-            values=[FILTER_ALL, FILTER_HIGH, FILTER_MEDIUM, FILTER_LOW, FILTER_LARGE, FILTER_BURST],
+            textvariable=self._filter_label_var,
+            values=list(self._filter_labels.values()),
             state="readonly",
             width=18,
         )
         filter_box.grid(row=0, column=1, sticky="w", padx=(4, 12))
-        filter_box.bind("<<ComboboxSelected>>", lambda _event: self._render_groups())
-        ttk.Button(toolbar, text="全选当前筛选", command=self._select_visible).grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(toolbar, text="取消全选", command=self._unselect_all).grid(row=0, column=3, padx=(0, 12))
+        filter_box.bind("<<ComboboxSelected>>", self._on_filter_selected)
+        ttk.Button(toolbar, text=tr("similar.select_visible"), command=self._select_visible).grid(row=0, column=2, padx=(0, 6))
+        ttk.Button(toolbar, text=tr("similar.clear_all"), command=self._unselect_all).grid(row=0, column=3, padx=(0, 12))
         ttk.Label(toolbar, textvariable=self._hint_var).grid(row=0, column=4, sticky="e")
 
         list_shell = ttk.Frame(outer)
-        list_shell.grid(row=2, column=0, sticky="nsew")
+        list_shell.grid(row=1, column=0, sticky="nsew")
         list_shell.columnconfigure(0, weight=1)
         list_shell.rowconfigure(0, weight=1)
 
@@ -97,16 +93,31 @@ class SimilarGroupListDialog(tk.Toplevel):
         self._bind_mousewheel(self.inner)
 
         footer = ttk.Frame(outer)
-        footer.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        footer.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         footer.columnconfigure(1, weight=1)
         self.start_button = ttk.Button(footer, text="开始抉择", command=self._start_decision, state="disabled")
         self.start_button.grid(row=0, column=0, sticky="w")
         ttk.Label(footer, textvariable=self._size_notice_var).grid(row=0, column=1, sticky="w", padx=(12, 0))
-        ttk.Button(footer, text="关闭", command=self.destroy).grid(row=0, column=2, sticky="e")
+        ttk.Button(footer, text=tr("similar.skip_all"), command=self.destroy).grid(row=0, column=2, sticky="e")
 
         self._render_groups()
         bind_minimum_size_notice(self, self._size_notice_var, 780, 460)
         self._fit_to_screen(1080, 720)
+
+    def _filter_label_map(self) -> dict[str, str]:
+        return {
+            FILTER_ALL: tr("similar.filter.all"),
+            FILTER_HIGH: tr("similar.filter.high"),
+            FILTER_MEDIUM: tr("similar.filter.medium"),
+            FILTER_LOW: tr("similar.filter.low"),
+            FILTER_LARGE: tr("similar.filter.large"),
+            FILTER_BURST: tr("similar.filter.burst"),
+        }
+
+    def _on_filter_selected(self, _event=None) -> None:
+        reverse = {label: code for code, label in self._filter_labels.items()}
+        self._filter_var.set(reverse.get(self._filter_label_var.get(), FILTER_ALL))
+        self._render_groups()
 
     def _fit_to_screen(self, preferred_width: int, preferred_height: int) -> None:
         self.update_idletasks()
@@ -155,7 +166,7 @@ class SimilarGroupListDialog(tk.Toplevel):
 
         visible = self._visible_groups()
         if not visible:
-            empty = ttk.Label(self.inner, text="当前筛选下没有相似组。", padding=16)
+            empty = ttk.Label(self.inner, text=tr("similar.empty_filter"), padding=16)
             empty.pack(anchor="w")
             self._bind_mousewheel(empty)
         for group in visible:
@@ -179,8 +190,8 @@ class SimilarGroupListDialog(tk.Toplevel):
         check.grid(row=0, column=0, rowspan=4, sticky="n", padx=(0, 8))
         self._bind_mousewheel(check)
 
-        level_label = {"high": "高相似", "medium": "中等相似", "low": "低置信候选"}.get(group.level, group.level)
-        title = ttk.Label(card, text=f"组 {group.group_id} | {len(existing_paths)} 张 | {level_label}", font=("Microsoft YaHei UI", 10, "bold"))
+        level_label = {"high": tr("similar.level.high"), "medium": tr("similar.level.medium"), "low": tr("similar.level.low")}.get(group.level, group.level)
+        title = ttk.Label(card, text=tr("similar.group_title").format(id=group.group_id, count=len(existing_paths), level=level_label), font=("Microsoft YaHei UI", 10, "bold"))
         title.grid(row=0, column=1, sticky="w")
         self._bind_mousewheel(title)
 
@@ -197,17 +208,17 @@ class SimilarGroupListDialog(tk.Toplevel):
             label.pack(side="left", padx=(0, 6))
             self._bind_mousewheel(label)
         if len(existing_paths) > len(preview_paths):
-            more = ttk.Label(thumbs_frame, text=f"另 {len(existing_paths) - len(preview_paths)} 张")
+            more = ttk.Label(thumbs_frame, text=tr("similar.more_count").format(count=len(existing_paths) - len(preview_paths)))
             more.pack(side="left", padx=(4, 0))
             self._bind_mousewheel(more)
 
         marker_count = len([path for path in existing_paths if path in self._cleanup_paths])
-        marker = f" | 含 {marker_count} 张不适合保留图片" if marker_count else ""
-        reason = ttk.Label(card, text=f"相似度 {group.similarity:.2f} | {group.reason}{marker}", wraplength=900)
+        marker = f" | {tr('similar.contains_cleanup').format(count=marker_count)}" if marker_count else ""
+        reason = ttk.Label(card, text=tr("similar.reason_line").format(score=f"{group.similarity:.2f}", reason=group.reason, marker=marker), wraplength=900)
         reason.grid(row=2, column=1, sticky="ew", pady=(8, 0))
         self._bind_mousewheel(reason)
 
-        filenames = "、".join(path.name + (" [不适合保留]" if path in self._cleanup_paths else "") for path in existing_paths)
+        filenames = "、".join(path.name + (f" [{tr('similar.cleanup_marker')}]" if path in self._cleanup_paths else "") for path in existing_paths)
         names = ttk.Label(card, text=filenames, wraplength=900)
         names.grid(row=3, column=1, sticky="ew", pady=(6, 0))
         self._bind_mousewheel(names)
@@ -231,7 +242,7 @@ class SimilarGroupListDialog(tk.Toplevel):
         selected_count = len(self._selected_groups())
         visible_count = len(self._visible_groups())
         self.start_button.configure(state="normal" if selected_count else "disabled")
-        self._hint_var.set(f"当前显示 {visible_count} 组，已勾选 {selected_count} 组。")
+        self._hint_var.set(tr("similar.hint").format(visible=visible_count, selected=selected_count))
 
     def _start_decision(self) -> None:
         selected = self._selected_groups()
@@ -267,11 +278,11 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         delete_callback: Callable[[Path, SimilarImageGroup], bool],
     ) -> None:
         super().__init__(parent)
-        self.title(app_window_title("相似图片组内对比"))
+        self.title(app_window_title(tr("similar.decision_title")))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
-        self.minsize(1040, 720)
+        self.minsize(1120, 780)
         self.protocol("WM_DELETE_WINDOW", self._skip_all)
 
         self._groups = groups
@@ -310,17 +321,18 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
 
         nav_row = ttk.Frame(outer)
         nav_row.grid(row=4, column=0, sticky="ew", pady=(10, 0))
-        self.prev_button = ttk.Button(nav_row, text="上一页", command=self._prev_page)
-        self.next_button = ttk.Button(nav_row, text="下一页", command=self._next_page)
+        self.prev_button = ttk.Button(nav_row, text=tr("similar.prev"), command=self._prev_page)
+        self.next_button = ttk.Button(nav_row, text=tr("similar.next"), command=self._next_page)
         self.prev_button.pack(side="left")
         self.next_button.pack(side="left", padx=6)
-        self.skip_button = ttk.Button(nav_row, text="跳过本组", command=self._skip_group)
+        self.skip_button = ttk.Button(nav_row, text=tr("similar.skip_group"), command=self._skip_group)
         self.skip_button.pack(side="right")
-        ttk.Button(nav_row, text="跳过所有剩余组", command=self._skip_all).pack(side="right", padx=6)
-        ttk.Button(nav_row, text="结束选择", command=self._skip_all).pack(side="right", padx=(0, 6))
+        ttk.Button(nav_row, text=tr("similar.skip_remaining"), command=self._skip_all).pack(side="right", padx=6)
+        ttk.Button(nav_row, text=tr("similar.finish"), command=self._skip_all).pack(side="right", padx=(0, 6))
 
         self.bind("<Configure>", lambda _event: self._update_size_hint())
         self._render_group()
+        bind_minimum_size_notice(self, self._size_hint_var, 1120, 780)
         self._fit_to_screen(1180, 900)
 
     def _fit_to_screen(self, preferred_width: int, preferred_height: int) -> None:
@@ -367,9 +379,9 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
             self.destroy()
             return
 
-        self._title_var.set(f"组 {group.group_id} | {self._group_index + 1}/{len(self._groups)} | {len(group.paths)} 张")
+        self._title_var.set(tr("similar.decision_group_title").format(id=group.group_id, index=self._group_index + 1, total=len(self._groups), count=len(group.paths)))
         self._reason_var.set(group.reason)
-        max_visible = 4
+        max_visible = 2
         page_paths = group.paths[self._page_start : self._page_start + max_visible]
         columns = 2 if len(page_paths) > 1 else 1
         for row in range(2):
@@ -385,7 +397,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         has_pages = len(group.paths) > max_visible
         self.prev_button.configure(state="normal" if has_pages and self._page_start > 0 else "disabled")
         self.next_button.configure(state="normal" if has_pages and self._page_start + max_visible < len(group.paths) else "disabled")
-        self.skip_button.configure(text="结束所有选择" if self._group_index >= len(self._groups) - 1 else "跳过本组")
+        self.skip_button.configure(text=tr("similar.finish_all") if self._group_index >= len(self._groups) - 1 else tr("similar.skip_group"))
         self.grid_canvas.yview_moveto(0)
         self.after_idle(lambda: self.grid_canvas.configure(scrollregion=self.grid_canvas.bbox("all")))
         self._update_size_hint()
@@ -394,7 +406,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         card = ttk.Frame(parent, padding=10, relief="solid")
         card.columnconfigure(0, weight=1)
         self._bind_grid_mousewheel(card)
-        thumb = self._build_preview(path, (360, 220))
+        thumb = self._build_preview(path, (360, 180))
         if thumb is not None:
             self._thumbs.append(thumb)
             image_label = ttk.Label(card, image=thumb)
@@ -406,7 +418,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         summary_label = ttk.Label(card, text=self._analysis_summary(path), wraplength=350)
         summary_label.grid(row=2, column=0, sticky="w")
         self._bind_grid_mousewheel(summary_label)
-        delete_button = ttk.Button(card, text="删除此图", command=lambda p=path, g=group: self._delete_path(p, g))
+        delete_button = ttk.Button(card, text=tr("similar.delete_this"), command=lambda p=path, g=group: self._delete_path(p, g))
         delete_button.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         return card
 
@@ -451,8 +463,8 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         self.destroy()
 
     def _update_size_hint(self) -> None:
-        if self.winfo_width() < 980 or self.winfo_height() < 760:
-            if self.winfo_width() <= 908 or self.winfo_height() <= 648:
+        if self.winfo_width() < 1120 or self.winfo_height() < 820:
+            if self.winfo_width() <= 1128 and self.winfo_height() <= 788:
                 self._size_hint_var.set(MIN_SIZE_NOTICE)
             else:
                 self._size_hint_var.set("当前窗口空间偏小，图片区域可滚动；删除按钮和底部操作栏会保留在可达位置。")

@@ -8,6 +8,7 @@ from tkinter import ttk
 from PIL import Image, ImageOps, ImageTk
 
 from ui.display_names import display_name
+from ui.language import tr
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
@@ -31,7 +32,7 @@ class CleanupReviewResult:
 class CleanupReviewDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, entries: list[CleanupReviewEntry]) -> None:
         super().__init__(parent)
-        self.title(app_window_title("不适合保留的图片"))
+        self.title(app_window_title(tr("cleanup.title")))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self.resizable(True, True)
@@ -44,7 +45,7 @@ class CleanupReviewDialog(tk.Toplevel):
         self._item_lookup: dict[str, int] = {}
         self._thumbs: list[ImageTk.PhotoImage | None] = []
         self._size_notice_var = tk.StringVar(value="")
-        self._detail_var = tk.StringVar(value="选择一张图片后，可在这里查看完整原因。")
+        self._detail_var = tk.StringVar(value=tr("cleanup.detail_empty"))
 
         outer = ttk.Frame(self, padding=14)
         outer.pack(fill="both", expand=True)
@@ -53,7 +54,7 @@ class CleanupReviewDialog(tk.Toplevel):
 
         ttk.Label(
             outer,
-            text="以下图片可能不适合继续保留。请核对后再选择是否删除。",
+            text=tr("cleanup.intro"),
             wraplength=900,
         ).grid(row=0, column=0, sticky="w", pady=(0, 10))
 
@@ -69,15 +70,15 @@ class CleanupReviewDialog(tk.Toplevel):
             selectmode="extended",
             height=10,
         )
-        self.tree.heading("#0", text="缩略图 / 文件名")
+        self.tree.heading("#0", text=tr("cleanup.heading.file"))
         self.tree.column("#0", width=250, anchor="w")
-        self.tree.heading("pick", text="选择")
+        self.tree.heading("pick", text=tr("cleanup.heading.pick"))
         self.tree.column("pick", width=70, anchor="center")
-        self.tree.heading("severity", text="严重程度")
+        self.tree.heading("severity", text=tr("cleanup.heading.severity"))
         self.tree.column("severity", width=72, anchor="center")
-        self.tree.heading("confidence", text="置信度")
+        self.tree.heading("confidence", text=tr("cleanup.heading.confidence"))
         self.tree.column("confidence", width=72, anchor="center")
-        self.tree.heading("reason", text="主要原因")
+        self.tree.heading("reason", text=tr("cleanup.heading.reason"))
         self.tree.column("reason", width=420, anchor="w")
         scroll = ttk.Scrollbar(list_shell, orient="vertical", command=self.tree.yview)
         scroll_x = ttk.Scrollbar(list_shell, orient="horizontal", command=self.tree.xview)
@@ -89,7 +90,7 @@ class CleanupReviewDialog(tk.Toplevel):
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._refresh_detail())
 
         for index, entry in enumerate(entries):
-            checked = "待定"
+            checked = tr("cleanup.pending")
             thumb = self._build_thumbnail(entry.image_path)
             reason = self._reason_summary(entry)
             self._thumbs.append(thumb)
@@ -117,24 +118,24 @@ class CleanupReviewDialog(tk.Toplevel):
 
         action_row = ttk.Frame(outer)
         action_row.grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        ttk.Button(action_row, text="勾选当前", command=self._select_current).pack(side="left")
-        ttk.Button(action_row, text="切换所选", command=self._toggle_selected).pack(side="left", padx=6)
-        ttk.Button(action_row, text="全选", command=self._select_all).pack(side="left")
-        ttk.Button(action_row, text="取消全选", command=self._unselect_all).pack(side="left", padx=6)
-        self._hint_var = tk.StringVar(value="当前没有选择图片，可以直接取消。")
+        ttk.Button(action_row, text=tr("cleanup.select_current"), command=self._select_current).pack(side="left")
+        ttk.Button(action_row, text=tr("cleanup.toggle_selected"), command=self._toggle_selected).pack(side="left", padx=6)
+        ttk.Button(action_row, text=tr("action.select_all"), command=self._select_all).pack(side="left")
+        ttk.Button(action_row, text=tr("action.clear_all"), command=self._unselect_all).pack(side="left", padx=6)
+        self._hint_var = tk.StringVar(value=tr("cleanup.none_selected"))
         ttk.Label(action_row, textvariable=self._hint_var).pack(side="right")
 
         button_row = ttk.Frame(outer)
         button_row.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         self.delete_button = ttk.Button(
             button_row,
-            text="删除选择的图片",
+            text=tr("cleanup.delete_selected"),
             command=self._confirm_delete,
             state="disabled",
         )
         self.delete_button.pack(side="left")
         ttk.Label(button_row, textvariable=self._size_notice_var).pack(side="left", padx=(12, 0))
-        ttk.Button(button_row, text="取消", command=self._skip).pack(side="right")
+        ttk.Button(button_row, text=tr("action.cancel"), command=self._skip).pack(side="right")
 
         bind_minimum_size_notice(self, self._size_notice_var, 860, 520)
         center_window(self, 1120, 780)
@@ -153,15 +154,15 @@ class CleanupReviewDialog(tk.Toplevel):
     def _refresh_detail(self) -> None:
         index = self._current_index()
         if index is None:
-            self._detail_var.set("选择一张图片后，可在这里查看完整原因。")
+            self._detail_var.set(tr("cleanup.detail_empty"))
             return
         entry = self._entries[index]
         self._detail_var.set(
             f"{entry.display_name}\n"
-            f"状态：{'已选' if self._vars[index].get() else '待定'} | "
-            f"严重程度：{display_name('severity', entry.severity)} | "
-            f"置信度：{entry.confidence:.2f}\n"
-            f"主要原因：{self._reason_summary(entry)}"
+            f"{tr('cleanup.detail_status')}: {tr('cleanup.selected') if self._vars[index].get() else tr('cleanup.pending')} | "
+            f"{tr('cleanup.heading.severity')}: {display_name('severity', entry.severity)} | "
+            f"{tr('cleanup.heading.confidence')}: {entry.confidence:.2f}\n"
+            f"{tr('cleanup.heading.reason')}: {self._reason_summary(entry)}"
         )
 
     def _build_thumbnail(self, path: Path, size: tuple[int, int] = (90, 68)) -> ImageTk.PhotoImage | None:
@@ -195,15 +196,15 @@ class CleanupReviewDialog(tk.Toplevel):
         for item_id, index in self._item_lookup.items():
             values = list(self.tree.item(item_id, "values"))
             if values:
-                values[0] = "已选" if self._vars[index].get() else "待定"
+                values[0] = tr("cleanup.selected") if self._vars[index].get() else tr("cleanup.pending")
                 self.tree.item(item_id, values=tuple(values))
         selected_count = len([variable for variable in self._vars if variable.get()])
         if selected_count > 0:
             self.delete_button.configure(state="normal")
-            self._hint_var.set(f"已选择 {selected_count} 张图片。")
+            self._hint_var.set(tr("cleanup.selected_hint", count=selected_count))
         else:
             self.delete_button.configure(state="disabled")
-            self._hint_var.set("当前没有选择图片，可以直接取消。")
+            self._hint_var.set(tr("cleanup.none_selected"))
         self._refresh_detail()
 
     def _on_tree_click(self, event) -> None:

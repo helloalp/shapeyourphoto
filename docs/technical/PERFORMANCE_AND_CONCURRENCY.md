@@ -69,10 +69,10 @@ Console 时间戳由 `AppConsole` 统一格式化，时间模式来自 `app_sett
 
 [src/gpu_accel.py](/E:/aitools/shapeyourphoto/src/gpu_accel.py) 当前只检测可选后端并返回状态文案：
 
-- CuPy CUDA
-- OpenCV CUDA
-- torch CUDA
+- 硬件可见性
+- 加速组件准备情况
+- 当前任务使用状态
 
 GPU 状态分为硬件存在、可用运行后端和当前任务是否使用三层。硬件可通过 `nvidia-smi` 或 Windows 显卡控制器信息识别；后端检测必须有超时并允许后台执行。无论 GPU 设置为关闭、自动或开启，缺少后端时都必须安全回退 CPU。除非未来有 `/test` 真实样张证明数据搬运收益，否则不要声称默认 GPU offload 已启用。
 
-GPU 后端检测使用共享总耗时预算，不能让 CuPy、OpenCV CUDA、torch CUDA 分别等待完整超时时间后线性累加。显卡硬件可见但后端缺失时属于环境依赖缺口，不是硬件检测失败；普通运行继续使用 CPU，可选后端依赖集中记录在项目根目录 `requirements-gpu.txt`。
+GPU 检测使用共享总耗时预算，不能让不同加速组件分别等待完整超时时间后线性累加。硬件可见但加速组件未准备时属于运行环境能力未就绪，不是硬件检测失败；日常运行继续使用 CPU。

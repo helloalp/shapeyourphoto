@@ -8,7 +8,6 @@ from tkinter import messagebox
 
 from PIL import Image, ImageOps, ImageTk
 
-from developer_mode import developer_session
 from file_actions import export_cleanup_list
 from metadata_utils import summarize_image_metadata
 from models import AnalysisResult, CleanupCandidate, SimilarImageGroup
@@ -132,7 +131,7 @@ class UiFileListMixin:
         )
         for path in ordered_paths:
             candidate = primary_candidates[path]
-            checked = "已选" if self.cleanup_flags.get(path, tk.BooleanVar(value=False)).get() else "待定"
+            checked = tr("tree.selected") if self.cleanup_flags.get(path, tk.BooleanVar(value=False)).get() else tr("tree.pending")
             confidence = f"{candidate.confidence:.2f}"
             thumb = self.thumb_cache.get_tree_thumbnail(path)
             item_id = self.cleanup_tree.insert(
@@ -152,7 +151,7 @@ class UiFileListMixin:
         selected_count = len([path for path, flag in self.cleanup_flags.items() if flag.get()])
         if selected_count > 0:
             self.cleanup_delete_button.configure(state="normal")
-            self.cleanup_hint_var.set(f"已选择 {selected_count} 张图片。")
+            self.cleanup_hint_var.set(tr("cleanup.selected_count").format(count=selected_count))
         else:
             self.cleanup_delete_button.configure(state="disabled")
             self.cleanup_hint_var.set(tr("cleanup.no_selection"))
@@ -161,20 +160,20 @@ class UiFileListMixin:
         group_ids = [str(group.group_id) for group in self.similar_groups if path in group.paths and len(group.paths) >= 2]
         if not group_ids:
             return ""
-        return f"相似组#{'/'.join(group_ids[:2])}"
+        return tr("tree.similar_marker").format(ids="/".join(group_ids[:2]))
 
     def _tree_row_values(self, path: Path) -> tuple[str, str, str, str]:
         result = self.results.get(path)
         error = self.errors.get(path)
-        checked = "已选" if self.selected_flags.get(path, tk.BooleanVar(value=False)).get() else "待定"
-        status = "失败" if error else "已分析" if result else "未分析"
+        checked = tr("tree.selected") if self.selected_flags.get(path, tk.BooleanVar(value=False)).get() else tr("tree.pending")
+        status = tr("tree.failed") if error else tr("tree.analyzed") if result else tr("tree.not_analyzed")
         risk = "-" if error or not result else f"{result.overall_score:.2f}"
         if error:
-            tags = "分析失败"
+            tags = tr("tree.analysis_failed")
         elif result and result.issues:
             tags = "、".join(issue_display(issue) for issue in result.issues)
         elif result:
-            tags = "正常"
+            tags = tr("tree.normal")
         else:
             tags = ""
         similar_marker = self._similar_marker_for_path(path)
@@ -192,7 +191,14 @@ class UiFileListMixin:
         cleanup_count = len(self._primary_cleanup_candidates())
         similar_count = len([group for group in self.similar_groups if len(group.paths) >= 2])
         self.list_stats_var.set(
-            f"共 {total} 张 | 已分析 {analyzed} | 问题 {issue_count} | 失败 {failed} | 待清理 {cleanup_count} | 相似组 {similar_count}"
+            tr("list.stats").format(
+                total=total,
+                analyzed=analyzed,
+                issues=issue_count,
+                failed=failed,
+                cleanup=cleanup_count,
+                similar=similar_count,
+            )
         )
 
     def _refresh_tree_item(self, path: Path) -> bool:
@@ -291,17 +297,17 @@ class UiFileListMixin:
             cleanup_count += int(bool(result.cleanup_candidates))
 
         self.chart.update_result(None)
-        self.hud_name_var.set(f"已多选 {len(selected)} 张图片")
-        self.hud_risk_var.set(f"已分析 {analyzed_count}/{len(selected)}")
+        self.hud_name_var.set(tr("hud.multi_selected").format(count=len(selected)))
+        self.hud_risk_var.set(tr("hud.analyzed_ratio").format(done=analyzed_count, total=len(selected)))
         scene_label = "、".join(
             f"{display_name('scene_type', name)}:{count}" for name, count in list(scene_types.items())[:3]
-        ) or "待分析"
-        self.hud_tags_var.set(f"识别结果：问题图 {issue_count} 张 | 待清理 {cleanup_count} 张 | 场景 {scene_label}")
-        self.hud_methods_var.set("推荐修复：多选状态下请使用“分析选中”或“批量修复勾选”")
-        self._set_meta_summary("多选状态下不显示单张 EXIF 摘要。请切回单选查看详细属性。")
+        ) or tr("tree.not_analyzed")
+        self.hud_tags_var.set(tr("hud.multi_tags").format(issues=issue_count, cleanup=cleanup_count, scenes=scene_label))
+        self.hud_methods_var.set(tr("hud.multi_methods"))
+        self._set_meta_summary(tr("meta.multi_summary"))
         lines = [
-            f"当前多选 {len(selected)} 张图片。",
-            f"已分析 {analyzed_count} 张，其中问题图 {issue_count} 张，待清理 {cleanup_count} 张。",
+            tr("summary.multi_count").format(count=len(selected)),
+            tr("summary.multi_analyzed").format(analyzed=analyzed_count, issues=issue_count, cleanup=cleanup_count),
             "",
             "scene_type 汇总：",
         ]
@@ -513,10 +519,10 @@ class UiFileListMixin:
         self._cancel_large_preview_load()
         if hasattr(self, "large_preview_label"):
             self.large_preview_label.configure(image="", text=tr("preview.empty"))
-        self.hud_name_var.set("未选择图片")
-        self.hud_risk_var.set("风险值 --")
-        self.hud_tags_var.set("识别结果：等待分析")
-        self.hud_methods_var.set("推荐修复：等待分析")
+        self.hud_name_var.set(tr("hud.no_selection"))
+        self.hud_risk_var.set(tr("hud.risk_empty"))
+        self.hud_tags_var.set(tr("hud.tags_waiting"))
+        self.hud_methods_var.set(tr("hud.methods_waiting"))
         if hasattr(self, "meta_edit_button"):
             self.meta_edit_button.configure(state="disabled")
         self._set_meta_summary("当前列表为空，暂无可查看的属性信息。")
@@ -596,12 +602,9 @@ class UiFileListMixin:
         self._update_hud(path, None, result, error, image_size=original_size)
         meta_summary = summarize_image_metadata(path)
         if hasattr(self, "meta_edit_button"):
-            editable, reason = supports_metadata_edit(path, developer_unlocked=developer_session.unlocked)
+            editable, reason = supports_metadata_edit(path)
             self.meta_edit_button.configure(state="normal" if editable else "disabled")
-            if editable and developer_session.unlocked:
-                edit_note = "可编辑字段：安全文本字段 + 开发者高级 EXIF 字段；ShapeYourPhoto 溯源字段仍会锁定。"
-            else:
-                edit_note = "可编辑字段：标题 / 描述、作者、版权、关键词 / 备注。" if editable else f"编辑状态：只读。{reason}"
+            edit_note = tr("meta.editable_broad") if editable else tr("meta.readonly_reason").format(reason=reason)
             meta_summary = f"{meta_summary}\n\n{edit_note}"
         self._set_meta_summary(meta_summary)
 
@@ -710,25 +713,25 @@ class UiFileListMixin:
             except Exception:
                 self.hud_name_var.set(path.name)
         if error:
-            self.hud_risk_var.set("风险值 --")
-            self.hud_tags_var.set(f"识别结果：分析失败 - {error}")
-            self.hud_methods_var.set("推荐修复：请先确认图片能正常读取")
+            self.hud_risk_var.set(tr("hud.risk_empty"))
+            self.hud_tags_var.set(tr("hud.analysis_failed").format(error=error))
+            self.hud_methods_var.set(tr("hud.methods_read_failed"))
             return
         if result is None:
-            self.hud_risk_var.set("风险值 --")
-            self.hud_tags_var.set("识别结果：尚未分析")
-            self.hud_methods_var.set("推荐修复：等待分析完成")
+            self.hud_risk_var.set(tr("hud.risk_empty"))
+            self.hud_tags_var.set(tr("hud.not_analyzed"))
+            self.hud_methods_var.set(tr("hud.methods_waiting"))
             return
-        self.hud_risk_var.set(f"风险值 {result.overall_score:.2f}")
-        similar_hint = " | 相似组" if self._similar_marker_for_path(path) else ""
+        self.hud_risk_var.set(tr("hud.risk").format(score=f"{result.overall_score:.2f}"))
+        similar_hint = f" | {tr('tree.similar_group')}" if self._similar_marker_for_path(path) else ""
         if result.issues:
             tags = "、".join(issue_display(issue) for issue in result.issues[:4])
             methods = "、".join(get_method_labels(suggest_methods_for_result(result))) or "暂无明确推荐"
             face_info = f" | raw/valid/reject {result.raw_face_count}/{result.validated_face_count}/{result.rejected_face_count}" if (result.raw_face_count or result.validated_face_count or result.rejected_face_count) else ""
-            cleanup_hint = " | 可能不适合保留" if result.cleanup_candidates else ""
-            self.hud_tags_var.set(f"识别结果：{tags}{face_info}{cleanup_hint}{similar_hint}")
+            cleanup_hint = f" | {tr('hud.cleanup_hint')}" if result.cleanup_candidates else ""
+            self.hud_tags_var.set(tr("hud.tags").format(tags=f"{tags}{face_info}{cleanup_hint}{similar_hint}"))
             if result.denoise_recommended:
-                methods = f"{methods} | 降噪:{result.denoise_profile}"
+                methods = f"{methods} | {tr('hud.denoise')}:{result.denoise_profile}"
             if result.cleanup_candidates:
                 primary_cleanup = sorted(
                     result.cleanup_candidates,
@@ -736,22 +739,22 @@ class UiFileListMixin:
                     reverse=True,
                 )[0]
                 self.hud_methods_var.set(
-                    f"推荐修复：{methods} | 待核对：{display_name('cleanup_reason', primary_cleanup.reason_code)}"
+                    tr("hud.methods_review").format(methods=methods, item=display_name("cleanup_reason", primary_cleanup.reason_code))
                 )
             else:
-                self.hud_methods_var.set(f"推荐修复：{methods}")
+                self.hud_methods_var.set(tr("hud.methods").format(methods=methods))
         else:
             portrait_hint = (
                 f" | {display_name('portrait_scene_type', result.portrait_scene_type)}"
                 if result.portrait_likely and result.portrait_scene_type
                 else ""
             )
-            cleanup_hint = " | 可能不适合保留" if result.cleanup_candidates else ""
-            self.hud_tags_var.set(f"识别结果：未发现明显问题{portrait_hint}{cleanup_hint}{similar_hint}")
+            cleanup_hint = f" | {tr('hud.cleanup_hint')}" if result.cleanup_candidates else ""
+            self.hud_tags_var.set(tr("hud.tags").format(tags=f"{tr('tree.normal')}{portrait_hint}{cleanup_hint}{similar_hint}"))
             if result.portrait_rejection_reason:
-                self.hud_methods_var.set(f"推荐修复：未启用人像策略，{result.portrait_rejection_reason}")
+                self.hud_methods_var.set(tr("hud.methods_portrait_disabled").format(reason=result.portrait_rejection_reason))
             else:
-                self.hud_methods_var.set("推荐修复：可保留原图，无需额外修正")
+                self.hud_methods_var.set(tr("hud.methods_keep_original"))
 
     def _set_summary(self, text: str) -> None:
         self.summary_text.config(state="normal")
@@ -945,11 +948,11 @@ class UiFileListMixin:
         if path is None:
             messagebox.showinfo("提示", "请先选中一张图片。")
             return
-        editable, reason = supports_metadata_edit(path, developer_unlocked=developer_session.unlocked)
+        editable, reason = supports_metadata_edit(path)
         if not editable:
             messagebox.showinfo("只读", reason)
             return
-        result = show_metadata_edit_dialog(self.root, path, developer_unlocked=developer_session.unlocked)
+        result = show_metadata_edit_dialog(self.root, path)
         if result.saved:
             self._log_console(f"metadata edited: {path.name}")
             self._set_meta_summary(summarize_image_metadata(path))

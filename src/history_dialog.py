@@ -5,7 +5,7 @@ from tkinter import ttk
 import re
 
 from app_metadata import CHANGELOG, CHANGELOG_I18N
-from ui.language import get_current_language, normalize_language
+from ui.language import get_current_language, normalize_language, tr
 from ui.window_titles import app_window_title
 from window_layout import center_window
 
@@ -18,13 +18,13 @@ def _plain_history_item(value: object) -> str:
     text = _MARKDOWN_LINK_RE.sub(r"\1", text)
     text = text.replace("`", "")
     replacements = [
-        ("no-op", "未生成新的修复版本"),
-        ("cleanup candidates", "不适合保留图片"),
-        ("cleanup candidate", "不适合保留图片"),
-        ("cleanup/similar", "不适合保留图片/相似图"),
-        ("cleanup", "清理"),
-        ("critical", "极其严重"),
-        ("severe_overexposed", "严重过度曝光"),
+        ("no-op", tr("history.term.noop")),
+        ("cleanup candidates", tr("history.term.cleanup_candidates")),
+        ("cleanup candidate", tr("history.term.cleanup_candidates")),
+        ("cleanup/similar", tr("history.term.cleanup_similar")),
+        ("cleanup", tr("history.term.cleanup")),
+        ("critical", tr("history.term.critical")),
+        ("severe_overexposed", tr("history.term.severe_overexposed")),
     ]
     for raw, label in replacements:
         text = text.replace(raw, label)
@@ -33,7 +33,7 @@ def _plain_history_item(value: object) -> str:
 
 def show_history_dialog(parent: tk.Widget) -> None:
     dialog = tk.Toplevel(parent)
-    dialog.title(app_window_title("更新历史"))
+    dialog.title(app_window_title(tr("history.title")))
     dialog.minsize(680, 520)
     dialog.resizable(True, True)
     dialog.transient(parent.winfo_toplevel())
@@ -42,7 +42,7 @@ def show_history_dialog(parent: tk.Widget) -> None:
     outer = ttk.Frame(dialog, padding=14)
     outer.pack(fill="both", expand=True)
 
-    ttk.Label(outer, text="更新历史", font=("Microsoft YaHei UI", 12, "bold")).pack(anchor="w")
+    ttk.Label(outer, text=tr("history.title"), font=("Microsoft YaHei UI", 12, "bold")).pack(anchor="w")
 
     frame = ttk.Frame(outer)
     frame.pack(fill="both", expand=True, pady=(10, 0))
@@ -68,4 +68,4 @@ def show_history_dialog(parent: tk.Widget) -> None:
         text.insert("end", "\n")
     text.config(state="disabled")
 
-    ttk.Button(outer, text="关闭", command=dialog.destroy).pack(anchor="e", pady=(10, 0))
+    ttk.Button(outer, text=tr("action.close"), command=dialog.destroy).pack(anchor="e", pady=(10, 0))

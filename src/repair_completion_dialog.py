@@ -6,6 +6,7 @@ from tkinter import ttk
 
 from app_settings import REPAIR_SUMMARY_FILTER_ALL, REPAIR_SUMMARY_FILTER_OPTIONS, normalize_repair_summary_filter
 from ui.display_names import display_name
+from ui.language import tr
 from ui.window_titles import app_window_title
 from window_layout import bind_minimum_size_notice, center_window
 
@@ -57,11 +58,11 @@ class RepairCompletionDialog(tk.Toplevel):
             chip.grid(row=index // 4, column=index % 4, sticky="ew", padx=(0 if index % 4 == 0 else 6, 0), pady=(0, 6))
             summary_frame.columnconfigure(index % 4, weight=1)
         if len(summary_lines) > 8:
-            ttk.Label(summary_frame, text="更多批次信息在下方详情中查看。").grid(row=2, column=0, columnspan=4, sticky="w")
+            ttk.Label(summary_frame, text=tr("repair_completion.more_info")).grid(row=2, column=0, columnspan=4, sticky="w")
 
         filter_row = ttk.Frame(outer)
         filter_row.grid(row=1, column=0, sticky="ew", pady=(10, 8))
-        ttk.Label(filter_row, text="筛选：").pack(side="left")
+        ttk.Label(filter_row, text=tr("repair_completion.filter_label")).pack(side="left")
         filter_box = ttk.Combobox(
             filter_row,
             textvariable=self.filter_var,
@@ -71,8 +72,8 @@ class RepairCompletionDialog(tk.Toplevel):
         )
         filter_box.pack(side="left")
         filter_box.bind("<<ComboboxSelected>>", lambda _event: self._populate_tree())
-        ttk.Button(filter_row, text="复制当前筛选结果", command=self._copy_current_filter).pack(side="left", padx=(10, 0))
-        ttk.Label(filter_row, text="顶部统计固定显示全量结果，不会随筛选变化。").pack(side="right")
+        ttk.Button(filter_row, text=tr("repair_completion.copy_filter"), command=self._copy_current_filter).pack(side="left", padx=(10, 0))
+        ttk.Label(filter_row, text=tr("repair_completion.stats_fixed")).pack(side="right")
 
         body = ttk.PanedWindow(outer, orient="vertical")
         body.grid(row=2, column=0, sticky="nsew")
@@ -88,15 +89,15 @@ class RepairCompletionDialog(tk.Toplevel):
             show=("tree", "headings"),
             selectmode="browse",
         )
-        self.tree.heading("#0", text="文件名")
+        self.tree.heading("#0", text=tr("repair_completion.heading.file"))
         self.tree.column("#0", width=230, anchor="w")
-        self.tree.heading("status", text="状态")
+        self.tree.heading("status", text=tr("repair_completion.heading.status"))
         self.tree.column("status", width=190, anchor="center")
-        self.tree.heading("reason", text="主要原因")
+        self.tree.heading("reason", text=tr("repair_completion.heading.reason"))
         self.tree.column("reason", width=330, anchor="w")
-        self.tree.heading("ops", text="操作 / 跳过原因")
+        self.tree.heading("ops", text=tr("repair_completion.heading.ops"))
         self.tree.column("ops", width=320, anchor="w")
-        self.tree.heading("forced", text="强制")
+        self.tree.heading("forced", text=tr("repair_completion.heading.forced"))
         self.tree.column("forced", width=80, anchor="center")
 
         scroll_y = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
@@ -107,7 +108,7 @@ class RepairCompletionDialog(tk.Toplevel):
         scroll_x.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<<TreeviewSelect>>", self._show_selected_detail)
 
-        detail_frame = ttk.LabelFrame(body, text="选中项详情", padding=10)
+        detail_frame = ttk.LabelFrame(body, text=tr("repair_completion.detail_title"), padding=10)
         detail_frame.columnconfigure(0, weight=1)
         detail_frame.rowconfigure(0, weight=1)
         body.add(detail_frame, weight=2)
@@ -125,13 +126,13 @@ class RepairCompletionDialog(tk.Toplevel):
         self.detail_text.configure(yscrollcommand=detail_scroll.set)
         self.detail_text.grid(row=0, column=0, sticky="nsew")
         detail_scroll.grid(row=0, column=1, sticky="ns")
-        self.detail_text.insert("1.0", "请选择上方任一记录，查看更完整的原因、策略说明和警告。")
+        self.detail_text.insert("1.0", tr("repair_completion.detail_empty"))
         self.detail_text.config(state="disabled")
 
         button_row = ttk.Frame(outer)
         button_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         ttk.Label(button_row, textvariable=self._size_notice_var).pack(side="left")
-        ttk.Button(button_row, text="关闭", command=self.destroy).pack(side="right")
+        ttk.Button(button_row, text=tr("action.close"), command=self.destroy).pack(side="right")
 
         self._item_to_entry: dict[str, RepairCompletionEntry] = {}
         self._populate_tree()
@@ -156,7 +157,7 @@ class RepairCompletionDialog(tk.Toplevel):
                 "",
                 "end",
                 text=entry.file_name,
-                values=(entry.status, entry.primary_reason, entry.ops_or_skip, "是" if entry.forced else ""),
+                values=(entry.status, entry.primary_reason, entry.ops_or_skip, tr("common.yes") if entry.forced else ""),
             )
             self._item_to_entry[item_id] = entry
         if visible:
@@ -164,7 +165,7 @@ class RepairCompletionDialog(tk.Toplevel):
             self.tree.selection_set(first_id)
             self._show_selected_detail()
         else:
-            self._set_detail_text(f"当前筛选“{self.filter_var.get()}”下没有记录。")
+            self._set_detail_text(tr("repair_completion.no_records", filter=self.filter_var.get()))
 
     def _set_detail_text(self, text: str) -> None:
         self.detail_text.config(state="normal")
@@ -175,32 +176,32 @@ class RepairCompletionDialog(tk.Toplevel):
     def _show_selected_detail(self, _event=None) -> None:
         selection = self.tree.selection()
         if not selection:
-            self._set_detail_text("请选择上方任一记录查看详情。")
+            self._set_detail_text(tr("repair_completion.select_record"))
             return
         entry = self._item_to_entry.get(selection[0])
         if entry is None:
-            self._set_detail_text("未找到所选记录。")
+            self._set_detail_text(tr("repair_completion.record_missing"))
             return
         lines = [
-            f"文件名：{entry.file_name}",
-            f"状态：{entry.status}",
-            f"主要原因：{entry.primary_reason}",
-            f"操作 / 跳过原因：{entry.ops_or_skip}",
-            f"强制尝试：{'是' if entry.forced else '否'}",
+            f"{tr('repair_completion.heading.file')}: {entry.file_name}",
+            f"{tr('repair_completion.heading.status')}: {entry.status}",
+            f"{tr('repair_completion.heading.reason')}: {entry.primary_reason}",
+            f"{tr('repair_completion.heading.ops')}: {entry.ops_or_skip}",
+            f"{tr('repair_completion.forced_attempt')}: {tr('common.yes') if entry.forced else tr('common.no')}",
             "",
         ]
-        lines.extend(entry.detail_lines or ["没有额外详情。"])
+        lines.extend(entry.detail_lines or [tr("repair_completion.no_extra_detail")])
         self._set_detail_text("\n".join(lines))
 
     def _copy_current_filter(self) -> None:
         visible = self._visible_entries()
-        lines = [f"当前筛选：{self.filter_var.get()}", ""]
+        lines = [f"{tr('repair_completion.current_filter')}: {self.filter_var.get()}", ""]
         if not visible:
-            lines.append("没有可复制的记录。")
+            lines.append(tr("repair_completion.no_copy_records"))
         else:
             for entry in visible:
                 lines.append(
-                    f"{entry.file_name} | {entry.status} | {entry.primary_reason} | {entry.ops_or_skip} | 强制尝试：{'是' if entry.forced else '否'}"
+                    f"{entry.file_name} | {entry.status} | {entry.primary_reason} | {entry.ops_or_skip} | {tr('repair_completion.forced_attempt')}: {tr('common.yes') if entry.forced else tr('common.no')}"
                 )
                 for detail in entry.detail_lines:
                     lines.append(f"  {detail}")

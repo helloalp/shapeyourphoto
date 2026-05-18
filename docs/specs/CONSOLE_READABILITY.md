@@ -5,5 +5,5 @@
 - 后台线程可以排队日志，但 Tk Text 更新必须回主线程并合并刷新。
 - 长列表明细不得刷屏。扫描跳过目录、批量修复长详情、相似组细节应进入专用摘要窗口。
 - 用户摘要使用真实 wall time；worker cumulative time 必须标注为并发累计耗时，不得描述成用户等待时间。
-- 面向普通用户的状态、统计和完成摘要避免裸 `no-op`、`cleanup candidate`、`critical` 等内部词；确需保留时只放在 Console 的维护日志或技术文档中。
+- 面向用户的状态、统计和完成摘要避免裸 `no-op`、`cleanup candidate`、`critical` 等内部词；确需保留时只放在 Console 的维护日志或技术文档中。
 - 弹窗错误不展示 traceback 或长异常堆栈；弹窗给出简短可行动提示，细节写入 Console。

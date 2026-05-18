@@ -11,7 +11,6 @@ from tkinter import messagebox, ttk
 
 from PIL import ExifTags, Image
 
-from developer_mode import developer_session
 from ui.language import tr
 from ui.window_titles import app_window_title
 from window_layout import center_window
@@ -157,7 +156,7 @@ def supports_metadata_edit(path: Path, *, developer_unlocked: bool | None = None
             img.getexif()
     except Exception as exc:
         return False, f"读取元数据失败：{exc}"
-    return True, "" if not (developer_unlocked if developer_unlocked is not None else developer_session.unlocked) else "开发者模式可编辑更多 EXIF 字段。"
+    return True, ""
 
 
 def _confirm_save_metadata(parent: tk.Widget) -> bool:
@@ -208,7 +207,7 @@ class MetadataEditDialog(tk.Toplevel):
         outer.rowconfigure(2, weight=1)
 
         ttk.Label(outer, text=path.name, style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
-        mode_text = "高级 EXIF 已解锁" if developer_unlocked else "EXIF 信息编辑"
+        mode_text = tr("meta.editable_broad")
         ttk.Label(
             outer,
             text=mode_text,
@@ -233,6 +232,8 @@ class MetadataEditDialog(tk.Toplevel):
             self.vars[field.field_id] = var
             entry = ttk.Entry(form, textvariable=var)
             entry.grid(row=row, column=1, sticky="ew", pady=5)
+            entry.bind("<Button-1>", lambda event, widget=entry, value_var=var: self._place_empty_entry_cursor(event, widget, value_var))
+            entry.bind("<ButtonRelease-1>", lambda event, widget=entry, value_var=var: self._place_empty_entry_cursor(event, widget, value_var))
             if not field.editable:
                 entry.configure(state="disabled")
                 ttk.Label(form, text=field.reason, foreground="#7a4b2b", wraplength=220).grid(row=row, column=2, sticky="w", padx=(8, 0))
@@ -245,15 +246,25 @@ class MetadataEditDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         center_window(self, 780, 620)
 
+    def _place_empty_entry_cursor(self, event, entry: ttk.Entry, value_var: tk.StringVar) -> str | None:
+        if value_var.get().strip():
+            return None
+        entry.focus_set()
+        entry.icursor(0)
+        try:
+            entry.selection_clear()
+        except tk.TclError:
+            pass
+        return "break"
+
     def _read_fields(self) -> list[FieldState]:
         fields: list[FieldState] = []
         with Image.open(self.path) as img:
             exif = img.getexif()
-            exiftool_values = _read_exiftool_values(self.path) if self.developer_unlocked else {}
+            exiftool_values = _read_exiftool_values(self.path)
             exiftool_available = bool(_exiftool_path())
             specs = dict(SAFE_TEXT_TAGS)
-            if self.developer_unlocked:
-                specs.update(ADVANCED_TAGS)
+            specs.update(ADVANCED_TAGS)
             for field_id, (tag, label, encoding) in specs.items():
                 label = _field_label(field_id, label)
                 raw = _gps_summary(exif) if tag == 34853 else exif.get(tag, "")
@@ -266,20 +277,16 @@ class MetadataEditDialog(tk.Toplevel):
                 if _is_protected_field(label, raw):
                     editable = False
                     reason = tr("meta.protected")
-                if not self.developer_unlocked and field_id not in SAFE_TEXT_TAGS:
-                    editable = False
-                    reason = tr("meta.developer_required")
                 fields.append(FieldState(field_id, tag, label, value, encoding, editable, reason))
-            if self.developer_unlocked:
-                for field_id, (tool_tag, label) in EXIFTOOL_ADVANCED_FIELDS.items():
-                    label = _field_label(field_id, label)
-                    value = exiftool_values.get(tool_tag, "")
-                    editable = exiftool_available
-                    reason = "" if editable else tr("meta.exiftool_required")
-                    if _is_protected_field(label, value):
-                        editable = False
-                        reason = tr("meta.protected")
-                    fields.append(FieldState(field_id, 0, label, value, f"exiftool:{tool_tag}", editable, reason))
+            for field_id, (tool_tag, label) in EXIFTOOL_ADVANCED_FIELDS.items():
+                label = _field_label(field_id, label)
+                value = exiftool_values.get(tool_tag, "")
+                editable = exiftool_available
+                reason = "" if editable else tr("meta.exiftool_required")
+                if _is_protected_field(label, value):
+                    editable = False
+                    reason = tr("meta.protected")
+                fields.append(FieldState(field_id, 0, label, value, f"exiftool:{tool_tag}", editable, reason))
         return fields
 
     def _encode_value(self, field: FieldState, value: str) -> object:
