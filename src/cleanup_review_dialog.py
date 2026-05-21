@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import queue
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 import tkinter as tk
@@ -10,7 +12,7 @@ from PIL import Image, ImageOps, ImageTk
 from ui.display_names import display_name
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import bind_minimum_size_notice, center_window
+from window_layout import bind_minimum_size_notice, center_window, prepare_dialog_window
 
 
 @dataclass(frozen=True)
@@ -32,113 +34,136 @@ class CleanupReviewResult:
 class CleanupReviewDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, entries: list[CleanupReviewEntry]) -> None:
         super().__init__(parent)
-        self.title(app_window_title(tr("cleanup.title")))
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.resizable(True, True)
-        self.minsize(980, 640)
+        prepare_dialog_window(
+            self,
+            parent,
+            title=app_window_title(tr("cleanup.title")),
+            min_width=980,
+            min_height=640,
+        )
         self.protocol("WM_DELETE_WINDOW", self._skip)
-
         self.result: CleanupReviewResult | None = None
         self._entries = entries
         self._vars = [tk.BooleanVar(value=False) for _ in entries]
-        self._item_lookup: dict[str, int] = {}
-        self._thumbs: list[ImageTk.PhotoImage | None] = []
+        self._status_vars = [tk.StringVar(value=tr("cleanup.pending")) for _ in entries]
+        self._thumbs: list[ImageTk.PhotoImage] = []
+        self._preview_queue: queue.SimpleQueue[tuple[int, ttk.Label, Image.Image | None]] = queue.SimpleQueue()
+        self._preview_stop = threading.Event()
+        self._preview_generation = 0
+        self._preview_tasks: list[tuple[int, ttk.Label, Path, tuple[int, int]]] = []
         self._size_notice_var = tk.StringVar(value="")
-        self._detail_var = tk.StringVar(value=tr("cleanup.detail_empty"))
+        self._hint_var = tk.StringVar(value=tr("cleanup.none_selected"))
 
         outer = ttk.Frame(self, padding=14)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
 
-        ttk.Label(
-            outer,
-            text=tr("cleanup.intro"),
-            wraplength=900,
-        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        ttk.Label(outer, text=tr("cleanup.intro"), wraplength=900, justify="left").grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
-        list_shell = ttk.Frame(outer)
-        list_shell.grid(row=1, column=0, sticky="nsew")
-        list_shell.columnconfigure(0, weight=1)
-        list_shell.rowconfigure(0, weight=1)
+        shell = ttk.Frame(outer)
+        shell.grid(row=1, column=0, sticky="nsew")
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(0, weight=1)
 
-        self.tree = ttk.Treeview(
-            list_shell,
-            columns=("pick", "severity", "confidence", "reason"),
-            show=("tree", "headings"),
-            selectmode="extended",
-            height=10,
-        )
-        self.tree.heading("#0", text=tr("cleanup.heading.file"))
-        self.tree.column("#0", width=250, anchor="w")
-        self.tree.heading("pick", text=tr("cleanup.heading.pick"))
-        self.tree.column("pick", width=70, anchor="center")
-        self.tree.heading("severity", text=tr("cleanup.heading.severity"))
-        self.tree.column("severity", width=72, anchor="center")
-        self.tree.heading("confidence", text=tr("cleanup.heading.confidence"))
-        self.tree.column("confidence", width=72, anchor="center")
-        self.tree.heading("reason", text=tr("cleanup.heading.reason"))
-        self.tree.column("reason", width=420, anchor="w")
-        scroll = ttk.Scrollbar(list_shell, orient="vertical", command=self.tree.yview)
-        scroll_x = ttk.Scrollbar(list_shell, orient="horizontal", command=self.tree.xview)
-        self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=scroll_x.set)
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        scroll.grid(row=0, column=1, sticky="ns")
-        scroll_x.grid(row=1, column=0, sticky="ew")
-        self.tree.bind("<Button-1>", self._on_tree_click, add="+")
-        self.tree.bind("<<TreeviewSelect>>", lambda _event: self._refresh_detail())
+        self.canvas = tk.Canvas(shell, highlightthickness=0, background="#fbfcfa")
+        self.scrollbar = ttk.Scrollbar(shell, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
 
-        for index, entry in enumerate(entries):
-            checked = tr("cleanup.pending")
-            thumb = self._build_thumbnail(entry.image_path)
-            reason = self._reason_summary(entry)
-            self._thumbs.append(thumb)
-            item_id = self.tree.insert(
-                "",
-                "end",
-                text=entry.display_name,
-                image=thumb,
-                values=(
-                    checked,
-                    display_name("severity", entry.severity),
-                    f"{entry.confidence:.2f}",
-                    reason,
-                ),
-            )
-            self._item_lookup[item_id] = index
+        self.grid_shell = ttk.Frame(self.canvas)
+        self.window_id = self.canvas.create_window((0, 0), window=self.grid_shell, anchor="nw")
+        self.grid_shell.bind("<Configure>", lambda _event: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self._bind_mousewheel(self.canvas)
+        self._bind_mousewheel(self.grid_shell)
 
-        detail = ttk.Label(
-            outer,
-            textvariable=self._detail_var,
-            wraplength=900,
-            justify="left",
-        )
-        detail.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        footer = ttk.Frame(outer)
+        footer.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        footer.columnconfigure(2, weight=1)
+        ttk.Button(footer, text=tr("action.select_all"), command=self._select_all).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(footer, text=tr("action.clear_all"), command=self._unselect_all).grid(row=0, column=1, padx=(0, 10))
+        ttk.Label(footer, textvariable=self._hint_var).grid(row=0, column=2, sticky="w")
+        ttk.Label(footer, textvariable=self._size_notice_var).grid(row=0, column=3, sticky="e", padx=(10, 10))
+        self.delete_button = ttk.Button(footer, text=tr("cleanup.delete_selected"), command=self._confirm_delete, state="disabled")
+        self.delete_button.grid(row=0, column=4, padx=(0, 8))
+        ttk.Button(footer, text=tr("action.cancel"), command=self._skip).grid(row=0, column=5)
 
-        action_row = ttk.Frame(outer)
-        action_row.grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        ttk.Button(action_row, text=tr("cleanup.select_current"), command=self._select_current).pack(side="left")
-        ttk.Button(action_row, text=tr("cleanup.toggle_selected"), command=self._toggle_selected).pack(side="left", padx=6)
-        ttk.Button(action_row, text=tr("action.select_all"), command=self._select_all).pack(side="left")
-        ttk.Button(action_row, text=tr("action.clear_all"), command=self._unselect_all).pack(side="left", padx=6)
-        self._hint_var = tk.StringVar(value=tr("cleanup.none_selected"))
-        ttk.Label(action_row, textvariable=self._hint_var).pack(side="right")
+        for variable in self._vars:
+            variable.trace_add("write", lambda *_args: self._refresh_controls())
+        self._render_cards()
+        bind_minimum_size_notice(self, self._size_notice_var, 980, 640)
+        center_window(self, 1180, 820)
+        self.after(30, self._drain_preview_queue)
 
-        button_row = ttk.Frame(outer)
-        button_row.grid(row=4, column=0, sticky="ew", pady=(12, 0))
-        self.delete_button = ttk.Button(
-            button_row,
-            text=tr("cleanup.delete_selected"),
-            command=self._confirm_delete,
-            state="disabled",
-        )
-        self.delete_button.pack(side="left")
-        ttk.Label(button_row, textvariable=self._size_notice_var).pack(side="left", padx=(12, 0))
-        ttk.Button(button_row, text=tr("action.cancel"), command=self._skip).pack(side="right")
+    def _bind_mousewheel(self, widget: tk.Widget) -> None:
+        widget.bind("<MouseWheel>", self._on_mousewheel, add="+")
 
-        bind_minimum_size_notice(self, self._size_notice_var, 860, 520)
-        center_window(self, 1120, 780)
+    def _on_mousewheel(self, event) -> str:
+        self.canvas.yview_scroll((-1 if event.delta > 0 else 1) * 3, "units")
+        return "break"
+
+    def _on_canvas_configure(self, event) -> None:
+        self.canvas.itemconfigure(self.window_id, width=max(1, event.width))
+        self.after_idle(self._render_cards)
+
+    def _columns(self) -> int:
+        width = max(720, self.canvas.winfo_width() or self.winfo_width() - 80)
+        count = max(1, len(self._entries))
+        if width >= 1320 and count >= 4:
+            return 4
+        if width >= 1040 and count >= 3:
+            return 3
+        if width >= 720 and count >= 2:
+            return 2
+        return 1
+
+    def _preview_size(self, columns: int) -> tuple[int, int]:
+        width = max(680, self.canvas.winfo_width() or self.winfo_width() - 90)
+        card_width = max(300, int(width / max(1, columns)) - 28)
+        preview_width = min(440, max(280, card_width - 24))
+        return preview_width, max(210, int(preview_width * 0.66))
+
+    def _render_cards(self) -> None:
+        columns = self._columns()
+        existing_columns = getattr(self, "_rendered_columns", None)
+        if existing_columns == columns and self.grid_shell.winfo_children():
+            return
+        self._rendered_columns = columns
+        self._preview_generation += 1
+        generation = self._preview_generation
+        self._preview_tasks = []
+        self._thumbs.clear()
+        for child in self.grid_shell.winfo_children():
+            child.destroy()
+        for column in range(columns):
+            self.grid_shell.columnconfigure(column, weight=1)
+        preview_size = self._preview_size(columns)
+        for index, entry in enumerate(self._entries):
+            row = index // columns
+            column = index % columns
+            card = self._build_card(index, entry, preview_size)
+            card.grid(row=row, column=column, sticky="nsew", padx=6, pady=6)
+        if self._preview_tasks:
+            threading.Thread(target=self._preview_worker, args=(generation, list(self._preview_tasks)), daemon=True, name="ShapeYourPhotoCleanupReviewPreview").start()
+        self._refresh_controls()
+
+    def _build_card(self, index: int, entry: CleanupReviewEntry, preview_size: tuple[int, int]) -> ttk.Frame:
+        card = ttk.Frame(self.grid_shell, padding=10, relief="solid")
+        card.columnconfigure(0, weight=1)
+        self._bind_mousewheel(card)
+        image_label = ttk.Label(card)
+        image_label.grid(row=0, column=0, sticky="n")
+        self._bind_mousewheel(image_label)
+        self._preview_tasks.append((index, image_label, entry.image_path, preview_size))
+        wrap = max(260, preview_size[0] - 8)
+        ttk.Checkbutton(card, text=tr("cleanup.heading.pick"), variable=self._vars[index]).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(card, text=entry.display_name, font=("Microsoft YaHei UI", 10, "bold"), wraplength=wrap).grid(row=2, column=0, sticky="w", pady=(6, 2))
+        ttk.Label(card, text=f"{tr('cleanup.heading.severity')}: {display_name('severity', entry.severity)}", wraplength=wrap).grid(row=3, column=0, sticky="w")
+        ttk.Label(card, text=f"{tr('cleanup.heading.reason')}: {self._reason_summary(entry)}", wraplength=wrap, justify="left").grid(row=4, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(card, textvariable=self._status_vars[index], wraplength=wrap).grid(row=5, column=0, sticky="w", pady=(4, 0))
+        return card
 
     def _reason_summary(self, entry: CleanupReviewEntry) -> str:
         label = display_name("cleanup_reason", entry.reason_code)
@@ -151,21 +176,34 @@ class CleanupReviewDialog(tk.Toplevel):
             return label
         return f"{label}：{detail}"
 
-    def _refresh_detail(self) -> None:
-        index = self._current_index()
-        if index is None:
-            self._detail_var.set(tr("cleanup.detail_empty"))
-            return
-        entry = self._entries[index]
-        self._detail_var.set(
-            f"{entry.display_name}\n"
-            f"{tr('cleanup.detail_status')}: {tr('cleanup.selected') if self._vars[index].get() else tr('cleanup.pending')} | "
-            f"{tr('cleanup.heading.severity')}: {display_name('severity', entry.severity)} | "
-            f"{tr('cleanup.heading.confidence')}: {entry.confidence:.2f}\n"
-            f"{tr('cleanup.heading.reason')}: {self._reason_summary(entry)}"
-        )
+    def _preview_worker(self, generation: int, tasks: list[tuple[int, ttk.Label, Path, tuple[int, int]]]) -> None:
+        for index, label, path, size in tasks:
+            if self._preview_stop.is_set() or generation != self._preview_generation:
+                return
+            self._preview_queue.put((generation, label, self._decode_preview(path, size)))
 
-    def _build_thumbnail(self, path: Path, size: tuple[int, int] = (90, 68)) -> ImageTk.PhotoImage | None:
+    def _drain_preview_queue(self) -> None:
+        drained = 0
+        try:
+            while drained < 12:
+                generation, label, image = self._preview_queue.get_nowait()
+                if generation == self._preview_generation and image is not None and label.winfo_exists():
+                    thumb = ImageTk.PhotoImage(image)
+                    self._thumbs.append(thumb)
+                    label.configure(image=thumb)
+                drained += 1
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return
+        try:
+            alive = self.winfo_exists()
+        except tk.TclError:
+            return
+        if not self._preview_stop.is_set() and alive:
+            self.after(10 if drained >= 12 else 40, self._drain_preview_queue)
+
+    def _decode_preview(self, path: Path, size: tuple[int, int]) -> Image.Image | None:
         try:
             with Image.open(path) as img:
                 try:
@@ -175,76 +213,26 @@ class CleanupReviewDialog(tk.Toplevel):
                 image = ImageOps.exif_transpose(img).convert("RGB")
         except Exception:
             return None
-
         image.thumbnail(size)
-        thumb = Image.new("RGB", size, (237, 242, 238))
-        offset_x = (size[0] - image.width) // 2
-        offset_y = (size[1] - image.height) // 2
-        thumb.paste(image, (offset_x, offset_y))
-        return ImageTk.PhotoImage(thumb)
+        canvas = Image.new("RGB", size, (237, 242, 238))
+        canvas.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2))
+        return canvas
 
-    def _current_index(self) -> int | None:
-        selection = self.tree.selection()
-        if not selection:
-            return None
-        return self._item_lookup.get(selection[0])
-
-    def _selected_indices(self) -> list[int]:
-        return [self._item_lookup[item_id] for item_id in self.tree.selection() if item_id in self._item_lookup]
-
-    def _refresh_checks(self) -> None:
-        for item_id, index in self._item_lookup.items():
-            values = list(self.tree.item(item_id, "values"))
-            if values:
-                values[0] = tr("cleanup.selected") if self._vars[index].get() else tr("cleanup.pending")
-                self.tree.item(item_id, values=tuple(values))
-        selected_count = len([variable for variable in self._vars if variable.get()])
-        if selected_count > 0:
-            self.delete_button.configure(state="normal")
-            self._hint_var.set(tr("cleanup.selected_hint", count=selected_count))
-        else:
-            self.delete_button.configure(state="disabled")
-            self._hint_var.set(tr("cleanup.none_selected"))
-        self._refresh_detail()
-
-    def _on_tree_click(self, event) -> None:
-        item_id = self.tree.identify_row(event.y)
-        column = self.tree.identify_column(event.x)
-        if not item_id:
-            return
-        self.tree.selection_set(item_id)
-        index = self._item_lookup.get(item_id)
-        if index is None:
-            return
-        if column == "#1":
-            self._vars[index].set(not self._vars[index].get())
-            self._refresh_checks()
-
-    def _select_current(self) -> None:
-        index = self._current_index()
-        if index is None:
-            return
-        self._vars[index].set(True)
-        self._refresh_checks()
-
-    def _toggle_selected(self) -> None:
-        indices = self._selected_indices()
-        if not indices:
-            return
-        target_state = not self._vars[indices[0]].get()
-        for index in indices:
-            self._vars[index].set(target_state)
-        self._refresh_checks()
+    def _refresh_controls(self) -> None:
+        count = len([variable for variable in self._vars if variable.get()])
+        self.delete_button.configure(state="normal" if count else "disabled")
+        self._hint_var.set(tr("cleanup.selected_hint").format(count=count) if count else tr("cleanup.none_selected"))
+        for status_var, variable in zip(self._status_vars, self._vars):
+            state = tr("cleanup.selected") if variable.get() else tr("cleanup.pending")
+            status_var.set(f"{tr('cleanup.detail_status')}: {state}")
 
     def _select_all(self) -> None:
         for variable in self._vars:
             variable.set(True)
-        self._refresh_checks()
 
     def _unselect_all(self) -> None:
         for variable in self._vars:
             variable.set(False)
-        self._refresh_checks()
 
     def _confirm_delete(self) -> None:
         chosen_paths = [entry.image_path for entry, variable in zip(self._entries, self._vars) if variable.get()]
@@ -252,10 +240,12 @@ class CleanupReviewDialog(tk.Toplevel):
             self._skip()
             return
         self.result = CleanupReviewResult(action="delete", chosen_paths=chosen_paths)
+        self._preview_stop.set()
         self.destroy()
 
     def _skip(self) -> None:
         self.result = CleanupReviewResult(action="skip", chosen_paths=[])
+        self._preview_stop.set()
         self.destroy()
 
 

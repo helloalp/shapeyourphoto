@@ -13,30 +13,30 @@ from gpu_accel import GPUBackendStatus, gpu_console_label, resolve_gpu_status
 from models import AnalysisResult, SimilarImageGroup
 from similar_detector import detect_similar_groups
 from stats_store import record_analysis_batch, record_analysis_result, save_stats
+from ui.display_names import display_name, issue_display
 from ui.language import tr
 from ui_constants import ANALYSIS_PROGRESS_STEPS, AnalysisCanceled
 
 
 class UiAnalysisActionsMixin:
     def analyze_all(self) -> None:
-        if not self.image_paths:
-            self._auto_analyze_after_scan = True
-            self.scan_folder()
+        targets = self.resolve_analysis_targets("all")
+        if not targets:
+            self._auto_analyze_after_scan = False
+            messagebox.showinfo(tr("analysis.no_targets_title"), tr("analysis.no_targets_all"))
+            self._log_console("analysis skipped: no current list targets")
             return
         self._auto_analyze_after_scan = False
-        if self.image_paths:
-            self._run_analysis(self.image_paths)
+        self._run_analysis(targets)
 
     def analyze_selected(self) -> None:
-        targets = [path for path in self._selected_tree_paths() if path in self.image_paths]
-        if not targets:
-            targets = [path for path, flag in self.selected_flags.items() if flag.get() and path in self.image_paths]
+        targets = self.resolve_analysis_targets("selected")
         if not targets:
             path = self._current_path()
-            if path is not None:
+            if path is not None and path in self.image_paths and path.exists():
                 targets = [path]
         if not targets:
-            messagebox.showinfo("提示", "请先选择至少一张图片。")
+            messagebox.showinfo(tr("analysis.no_targets_title"), tr("analysis.no_targets_selected"))
             return
         self._run_analysis(targets)
 
@@ -45,14 +45,18 @@ class UiAnalysisActionsMixin:
             messagebox.showinfo("提示", "当前已有任务正在运行。")
             return
 
+        current_paths = set(self.get_current_list_paths())
+        targets = [path for path in targets if path in current_paths]
         total = len(targets)
         if total == 0:
+            messagebox.showinfo(tr("analysis.no_targets_title"), tr("analysis.no_targets_all"))
             return
         self._analysis_run_id += 1
         run_id = self._analysis_run_id
         cancel_event = threading.Event()
         self._analysis_cancel_event = cancel_event
         self._analysis_cancel_targets = list(targets)
+        self._analysis_allowed_targets = set(targets)
         self.analysis_phase_progress = {path: 0 for path in targets}
         self._last_analysis_targets = list(targets)
         worker_plan = self._analysis_worker_plan(total)
@@ -252,7 +256,8 @@ class UiAnalysisActionsMixin:
         if current is not None:
             self.show_preview(current)
         elif targets:
-            self._select_path(targets[0])
+            if targets[0] in self.image_paths:
+                self._select_path(targets[0])
 
     def _analysis_cancel_worker_finished(
         self,
@@ -284,6 +289,10 @@ class UiAnalysisActionsMixin:
     ) -> None:
         if run_id != self._analysis_run_id or (self._analysis_cancel_event is not None and self._analysis_cancel_event.is_set()):
             return
+        allowed = getattr(self, "_analysis_allowed_targets", set())
+        if path not in allowed or path not in self.image_paths:
+            self._log_console(f"analysis result ignored: removed from list | {path.name}")
+            return
         with self.worker_lock:
             if error:
                 self.errors[path] = error
@@ -292,26 +301,22 @@ class UiAnalysisActionsMixin:
             elif result is not None:
                 self.results[path] = result
                 self.errors.pop(path, None)
-                labels = ",".join(issue.code for issue in result.issues) if result.issues else "ok"
+                labels = "、".join(issue_display(issue) for issue in result.issues) if result.issues else tr("tree.normal")
                 face_total = result.face_count
                 face_validated = result.validated_face_count
                 self._log_console(
                     f"analysis done: {path.name} | score={result.overall_score:.2f} | {labels} | "
                     f"faces={face_total}/{face_validated} | portrait={result.portrait_likely}"
                 )
-                for candidate in result.face_candidates:
-                    if candidate.accepted or not candidate.rejection_reasons:
-                        continue
-                    self._log_console(
-                        f"face candidate rejected: {path.name} | box={candidate.box} | "
-                        f"conf={candidate.confidence:.2f} | {' / '.join(candidate.rejection_reasons)}"
-                    )
+                rejected = len([candidate for candidate in result.face_candidates if not candidate.accepted and candidate.rejection_reasons])
+                if rejected:
+                    self._log_console(f"face candidate review: {path.name} | ignored={rejected}")
                 if result.portrait_rejection_reason:
                     self._log_console(f"portrait-aware skipped: {path.name} | {result.portrait_rejection_reason}")
                 for cleanup_candidate in result.cleanup_candidates:
                     self._log_console(
-                        f"不适合保留提示：{path.name} | {cleanup_candidate.reason_code} | "
-                        f"{cleanup_candidate.severity} | 可信度={cleanup_candidate.confidence:.2f}"
+                        f"不适合保留提示：{path.name} | {display_name('cleanup_reason', cleanup_candidate.reason_code)} | "
+                        f"{display_name('severity', cleanup_candidate.severity)}"
                     )
                 for note in result.perf_notes:
                     self._log_console(f"analysis perf: {path.name} | {note}")
@@ -326,7 +331,6 @@ class UiAnalysisActionsMixin:
                     issue_codes=[issue.code for issue in result.issues],
                     cleanup_candidate_count=len(result.cleanup_candidates),
                 )
-                save_stats(self.stats)
 
         ui_started_at = time.perf_counter()
         self.progress_controller.update(
@@ -368,6 +372,8 @@ class UiAnalysisActionsMixin:
 
     def _update_analysis_phase(self, path: Path, step: int, steps: int, phase: str, total_images: int, run_id: int) -> None:
         if run_id != self._analysis_run_id or (self._analysis_cancel_event is not None and self._analysis_cancel_event.is_set()):
+            return
+        if path not in getattr(self, "_analysis_allowed_targets", set()) or path not in self.image_paths:
             return
         normalized_step = max(0, min(ANALYSIS_PROGRESS_STEPS, int(round(step * ANALYSIS_PROGRESS_STEPS / max(1, steps)))))
         previous = self.analysis_phase_progress.get(path, 0)
@@ -435,6 +441,7 @@ class UiAnalysisActionsMixin:
     ) -> None:
         if run_id != self._analysis_run_id or (self._analysis_cancel_event is not None and self._analysis_cancel_event.is_set()):
             return
+        current_paths = set(self.image_paths)
         batch_timings = dict(batch_timings or {})
         worker_plan = worker_plan or AnalysisWorkerPlan(
             mode=getattr(self.settings, "analysis_concurrency_mode", ANALYSIS_CONCURRENCY_AUTO),
@@ -442,16 +449,18 @@ class UiAnalysisActionsMixin:
             actual_workers=1,
         )
         gpu_status = resolve_gpu_status(getattr(self.settings, "gpu_acceleration_mode", GPU_ACCELERATION_OFF))
-        target_paths = list(self._last_analysis_targets)
+        target_paths = [path for path in self._last_analysis_targets if path in current_paths]
         issue_count = sum(1 for path in target_paths if path in self.results and self.results[path].issues)
         error_count = sum(1 for path in target_paths if path in self.errors)
         success_count = sum(1 for path in target_paths if path in self.results)
         similar_groups = similar_groups or []
-        target_set = set(self._last_analysis_targets)
+        target_set = set(target_paths)
         self.similar_groups = [
             group for group in self.similar_groups if not any(path in target_set for path in group.paths)
         ]
-        self.similar_groups.extend(similar_groups)
+        self.similar_groups.extend(
+            group for group in similar_groups if len([path for path in group.paths if path in current_paths]) >= 2
+        )
         similar_count = len(similar_groups)
         detail = tr("analysis.finished_detail").format(issues=issue_count, failed=error_count, similar=similar_count)
         self._log_console(f"analysis finished: count={total} issues={issue_count} errors={error_count} similar_groups={similar_count}")
@@ -491,6 +500,7 @@ class UiAnalysisActionsMixin:
         self._finish_task(tr("analysis.finished_title").format(done=total, total=total), detail)
         self._analysis_cancel_event = None
         self._analysis_cancel_targets = []
+        self._analysis_allowed_targets = set()
         current = self._current_path()
         if current is not None:
             self.show_preview(current)

@@ -768,7 +768,7 @@ dependencies = [
 
 [[package]]
 name = "shapeyourphoto_gpu_core"
-version = "1.2.6"
+version = "1.2.7"
 dependencies = [
  "bytemuck",
  "pollster",

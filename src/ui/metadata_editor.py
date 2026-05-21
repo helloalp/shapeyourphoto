@@ -13,7 +13,7 @@ from PIL import ExifTags, Image
 
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import center_window
+from window_layout import center_window, prepare_dialog_window
 
 
 SHAPEYOURPHOTO_MARKER = "shapeyourphoto"
@@ -24,7 +24,6 @@ SAFE_TEXT_TAGS = {
     "artist": (315, "作者", "str"),
     "copyright": (33432, "版权", "str"),
     "keywords": (40094, "关键词 / 备注", "xp"),
-    "image_unique_id": (42016, "图片唯一标识", "str"),
     "user_comment": (37510, "用户备注", "str"),
 }
 
@@ -43,23 +42,19 @@ ADVANCED_TAGS = {
 }
 
 EXIFTOOL_ADVANCED_FIELDS = {
-    "gps_latitude": ("GPSLatitude", "GPS 纬度"),
-    "gps_longitude": ("GPSLongitude", "GPS 经度"),
-    "gps_altitude": ("GPSAltitude", "GPS 高度"),
     "xmp_title": ("XMP-dc:Title", "XMP 标题"),
     "xmp_description": ("XMP-dc:Description", "XMP 描述"),
     "xmp_creator": ("XMP-dc:Creator", "XMP 作者"),
     "xmp_rights": ("XMP-dc:Rights", "XMP 版权"),
     "iptc_keywords": ("IPTC:Keywords", "IPTC 关键词"),
     "iptc_caption": ("IPTC:Caption-Abstract", "IPTC 说明"),
-    "iptc_credit": ("IPTC:Credit", "IPTC 来源/署名"),
 }
 
 ALWAYS_PROTECTED_TAGS = {
-    274: "Orientation 会影响图像方向归一化。",
-    305: "Software 是软件完整性/溯源字段。",
-    34675: "ICC Profile 不通过 EXIF 编辑器修改。",
-    37500: "MakerNote 是厂商私有数据，修改风险高。",
+    274: "meta.readonly_orientation",
+    305: "meta.protected",
+    34675: "meta.readonly_binary",
+    37500: "meta.readonly_makernote",
 }
 
 
@@ -161,7 +156,7 @@ def supports_metadata_edit(path: Path, *, developer_unlocked: bool | None = None
 
 def _confirm_save_metadata(parent: tk.Widget) -> bool:
     dialog = tk.Toplevel(parent)
-    dialog.title(app_window_title("确认保存"))
+    dialog.title(app_window_title(tr("meta.confirm_title")))
     dialog.transient(parent.winfo_toplevel())
     dialog.grab_set()
     dialog.resizable(False, False)
@@ -169,7 +164,7 @@ def _confirm_save_metadata(parent: tk.Widget) -> bool:
 
     outer = ttk.Frame(dialog, padding=18)
     outer.pack(fill="both", expand=True)
-    ttk.Label(outer, text="确认保存这些修改吗？", wraplength=320).pack(anchor="w")
+    ttk.Label(outer, text=tr("meta.confirm_body"), wraplength=320).pack(anchor="w")
 
     actions = ttk.Frame(outer)
     actions.pack(fill="x", pady=(16, 0))
@@ -191,13 +186,15 @@ class MetadataEditDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, path: Path, *, developer_unlocked: bool = False) -> None:
         super().__init__(parent)
         self.path = path
-        self.developer_unlocked = developer_unlocked
+        self.developer_unlocked = False
         self.result = MetadataEditResult()
-        self.title(app_window_title("编辑属性 / EXIF"))
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.resizable(True, True)
-        self.minsize(700, 520)
+        prepare_dialog_window(
+            self,
+            parent,
+            title=app_window_title(tr("meta.dialog_title")),
+            min_width=700,
+            min_height=520,
+        )
         self.vars: dict[str, tk.StringVar] = {}
         self.fields: dict[str, FieldState] = {}
 
@@ -206,8 +203,8 @@ class MetadataEditDialog(tk.Toplevel):
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(2, weight=1)
 
-        ttk.Label(outer, text=path.name, style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
-        mode_text = tr("meta.editable_broad")
+        ttk.Label(outer, text=tr("meta.dialog_title"), style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+        mode_text = tr("meta.editable_whitelist")
         ttk.Label(
             outer,
             text=mode_text,
@@ -235,8 +232,8 @@ class MetadataEditDialog(tk.Toplevel):
             entry.bind("<Button-1>", lambda event, widget=entry, value_var=var: self._place_empty_entry_cursor(event, widget, value_var))
             entry.bind("<ButtonRelease-1>", lambda event, widget=entry, value_var=var: self._place_empty_entry_cursor(event, widget, value_var))
             if not field.editable:
-                entry.configure(state="disabled")
-                ttk.Label(form, text=field.reason, foreground="#7a4b2b", wraplength=220).grid(row=row, column=2, sticky="w", padx=(8, 0))
+                entry.configure(state="readonly")
+                ttk.Label(form, text=field.reason, foreground="#666666", wraplength=220).grid(row=row, column=2, sticky="w", padx=(8, 0))
 
         actions = ttk.Frame(outer)
         actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(16, 0))
@@ -263,6 +260,17 @@ class MetadataEditDialog(tk.Toplevel):
             exif = img.getexif()
             exiftool_values = _read_exiftool_values(self.path)
             exiftool_available = bool(_exiftool_path())
+            fields.append(
+                FieldState(
+                    "filename",
+                    -1,
+                    _field_label("filename", "文件名"),
+                    self.path.name,
+                    "readonly",
+                    False,
+                    tr("meta.filename_readonly"),
+                )
+            )
             specs = dict(SAFE_TEXT_TAGS)
             specs.update(ADVANCED_TAGS)
             for field_id, (tag, label, encoding) in specs.items():
@@ -270,10 +278,13 @@ class MetadataEditDialog(tk.Toplevel):
                 raw = _gps_summary(exif) if tag == 34853 else exif.get(tag, "")
                 value = _clean_text(raw, encoding=encoding)
                 reason = ""
-                editable = encoding != "readonly"
+                editable = field_id in SAFE_TEXT_TAGS
+                if not editable:
+                    reason = tr("meta.readonly_camera")
                 if tag in ALWAYS_PROTECTED_TAGS:
                     editable = False
-                    reason = tr("meta.protected")
+                    reason_key = ALWAYS_PROTECTED_TAGS[tag]
+                    reason = tr(reason_key) if reason_key != "meta.protected" else tr("meta.protected")
                 if _is_protected_field(label, raw):
                     editable = False
                     reason = tr("meta.protected")
@@ -302,16 +313,19 @@ class MetadataEditDialog(tk.Toplevel):
             return
         backup = self.path.with_name(f"{self.path.stem}.metadata-bak{self.path.suffix}")
         try:
+            backup_dir = self.path.parent / ".metadata-bak"
+            backup_dir.mkdir(exist_ok=True)
+            backup = backup_dir / f"{self.path.stem}{self.path.suffix}"
             index = 1
             while backup.exists():
-                backup = self.path.with_name(f"{self.path.stem}.metadata-bak-{index}{self.path.suffix}")
+                backup = backup_dir / f"{self.path.stem}-{index}{self.path.suffix}"
                 index += 1
             shutil.copy2(self.path, backup)
             with Image.open(self.path) as img:
                 exif = img.getexif()
                 exiftool_updates: list[tuple[str, str]] = []
                 for field_id, field in self.fields.items():
-                    if not field.editable:
+                    if not field.editable or field.tag < 0:
                         continue
                     if field.encoding.startswith("exiftool:"):
                         tool_tag = field.encoding.split(":", 1)[1]
@@ -349,9 +363,9 @@ class MetadataEditDialog(tk.Toplevel):
                     shutil.copy2(backup, self.path)
             except Exception:
                 pass
-            messagebox.showerror("保存失败", f"写入失败，原文件已尽量恢复：\n{exc}", parent=self)
+            messagebox.showerror(tr("meta.save_failed_title"), tr("meta.save_failed_body").format(error=exc), parent=self)
             return
-        self.result = MetadataEditResult(True, f"已保存，备份：{backup}")
+        self.result = MetadataEditResult(True, tr("meta.saved").format(backup=backup))
         self.destroy()
 
     def _cancel(self) -> None:

@@ -414,6 +414,7 @@ def _build_exposure_issues(
         subject_luma_estimate = portrait_data["subject_luma_estimate"]
         background_luma_estimate = portrait_data["background_luma_estimate"]
         portrait_scene_type = str(portrait_data["portrait_scene_type"])
+        face_exposure_status = str(portrait_data.get("face_exposure_status", "unknown"))
         if portrait_exposure_status == "subject_normal":
             portrait_under_relief += 0.50
             if face_luma_mean is not None:
@@ -428,6 +429,8 @@ def _build_exposure_issues(
             subject_reference = face_luma_mean if face_luma_mean is not None else subject_luma_estimate
             if subject_reference is not None:
                 subject_dark_push += max(0.0, 0.36 - float(subject_reference)) * 2.5
+            if face_exposure_status in {"normal", "bright"} and face_luma_mean is not None and float(face_luma_mean) >= 0.32:
+                portrait_under_relief += 0.58 + max(0.0, float(face_luma_mean) - 0.34) * 1.2
             if portrait_scene_type == "backlit_portrait":
                 subject_dark_push += 0.10
 
@@ -628,7 +631,6 @@ def analyze_image(
     scale_x = original_width / max(1, working_size[0])
     scale_y = original_height / max(1, working_size[1])
 
-    basic_stats_started_at = time.perf_counter()
     started_at = time.perf_counter()
     arr = np.asarray(rgb, dtype=np.float32)
     gray = (arr[:, :, 0] * 0.299 + arr[:, :, 1] * 0.587 + arr[:, :, 2] * 0.114) / 255.0
@@ -715,7 +717,6 @@ def analyze_image(
         neutral_balance = max(abs(neutral_r - neutral_g), abs(neutral_g - neutral_b), abs(neutral_r - neutral_b))
     hdr_hint = 1.0 if "HDR" in image_path.name.upper() else 0.0
     add_timing(perf_timings, "color", started_at)
-    add_timing(perf_timings, "basic_stats", basic_stats_started_at)
 
     started_at = time.perf_counter()
     portrait_detect = detect_portrait_regions(rgb)

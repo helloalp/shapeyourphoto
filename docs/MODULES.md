@@ -4,11 +4,12 @@
 
 ## 启动链路
 
-- [start.bat](/E:/aitools/shapeyourphoto/start.bat)：普通 Windows 用户双击入口，负责查找 Python 并进入启动 helper。
+- [ShapeYourPhoto.exe](/E:/aitools/shapeyourphoto/ShapeYourPhoto.exe)：根目录主启动入口，负责定位 Python 并委托现有启动 helper。
+- [tools/launcher/start.bat](/E:/aitools/shapeyourphoto/tools/launcher/start.bat)：源码包兼容入口；未构建原生启动器或旧路径兼容时使用。
 - [tools/launcher/start_helper.py](/E:/aitools/shapeyourphoto/tools/launcher/start_helper.py)：显示中英文阶段提示，检查运行依赖，缺少依赖时按需安装，然后启动 GUI。
 - [tools/launcher/python_missing.ps1](/E:/aitools/shapeyourphoto/tools/launcher/python_missing.ps1)：Python 缺失时的可读提示窗口。
-- [app.py](/E:/aitools/shapeyourphoto/app.py)：源码包 GUI 薄启动器，加入 `src/` 模块路径并创建 Tk 根窗口。
-- [app.pyw](/E:/aitools/shapeyourphoto/app.pyw)：无控制台 GUI 入口。
+- [tools/entry/app.py](/E:/aitools/shapeyourphoto/tools/entry/app.py)：源码包 GUI 薄启动器，加入 `src/` 模块路径并创建 Tk 根窗口。
+- [tools/entry/app.pyw](/E:/aitools/shapeyourphoto/tools/entry/app.pyw)：无控制台 GUI 入口。
 - [tools/legacy/](/E:/aitools/shapeyourphoto/tools/legacy)：旧 `setup_deps.bat`、`start_app.bat` 和 `start_app.vbs` 兼容入口，普通用户不需要使用。
 
 ## 应用代码
@@ -26,6 +27,8 @@
 ## 工具、构建与文档
 
 - [tools/benchmark/benchmark_test_images.py](/E:/aitools/shapeyourphoto/tools/benchmark/benchmark_test_images.py)：本地性能基准工具；`test/` 为空时安全跳过，不属于日常启动流程。
+- [native/gpu-core](/E:/aitools/shapeyourphoto/native/gpu-core)：Rust/wgpu native GPU backend，当前用于大图亮度统计。
+- [native/launcher](/E:/aitools/shapeyourphoto/native/launcher)：Rust native launcher，当前托管早期启动链路并保留 Python/Tk GUI 能力。
 - [build/](/E:/aitools/shapeyourphoto/build)：PyInstaller、Inno Setup 和 dmg 构建脚本。
 - [assets/](/E:/aitools/shapeyourphoto/assets)：图标和更新验签公钥等资源。
 - [docs/](/E:/aitools/shapeyourphoto/docs/README.md)：正式维护文档体系。

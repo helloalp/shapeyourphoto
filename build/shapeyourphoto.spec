@@ -82,7 +82,7 @@ excludes = [
 
 
 a = Analysis(
-    [str(PROJECT_ROOT / "app.py")],
+    [str(PROJECT_ROOT / "tools" / "entry" / "app.py")],
     pathex=[str(PROJECT_ROOT), str(PACKAGE_DIR)],
     binaries=binaries,
     datas=datas,

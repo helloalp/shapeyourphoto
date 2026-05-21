@@ -186,9 +186,15 @@ class UiScanActionsMixin:
         def worker() -> None:
             merged_paths = list(initial)
             scan_results: list[ScanResult] = []
+            last_progress_dispatch = 0.0
             try:
                 for root, mode in requests:
                     def progress_callback(done: int, total: int, found: int, current: Path | None, scan_root: Path = root, scan_mode: str = mode) -> None:
+                        nonlocal last_progress_dispatch
+                        now = time.monotonic()
+                        if current is not None and now - last_progress_dispatch < 0.10:
+                            return
+                        last_progress_dispatch = now
                         current_label = "准备扫描..."
                         if current is not None:
                             try:

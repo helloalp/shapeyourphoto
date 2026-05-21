@@ -36,14 +36,18 @@ def path_within(root: Path, target: Path) -> bool:
 
 ROOT_KEEP_FILES = {
     ".gitignore",
+    "app_settings.json",
+    "README.md",
+    "ShapeYourPhoto.exe",
+    "usage_stats.json",
+}
+
+LEGACY_ROOT_FILES = {
     "app.py",
     "app.pyw",
-    "app_settings.json",
     "CHANGELOG.md",
-    "README.md",
     "requirements.txt",
     "start.bat",
-    "usage_stats.json",
 }
 
 LEGACY_ENTRY_FILES = {
@@ -75,6 +79,8 @@ def _candidate_reason(root: Path, path: Path) -> str | None:
         return None
     if name in PROTECTED_TOP_LEVEL:
         return None
+    if name in LEGACY_ROOT_FILES:
+        return "root compatibility file moved to the organized project layout"
     if name in LEGACY_ENTRY_FILES:
         return "旧启动入口已移入隔离目录"
     if path.is_dir() and name == "__pycache__":

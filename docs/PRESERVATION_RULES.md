@@ -1,53 +1,22 @@
-# Preservation Rules
+﻿# Preservation Rules
 
-这是 ShapeYourPhoto 的正式文档保留规则。它本身也属于不可删除文档。
+杩欐槸 ShapeYourPhoto 鐨勬寮忔枃妗ｄ繚鐣欒鍒欍€傚畠鏈韩涔熷睘浜庝笉鍙垹闄ゆ枃妗ｃ€?
+## 寮哄埗瑕佹眰
 
-## 强制要求
+1. 涓嶅緱鍒犻櫎 `docs/`銆?2. 涓嶅緱鍒犻櫎 `docs/technical/`銆?3. 涓嶅緱鍒犻櫎 `docs/updates/`銆?4. 涓嶅緱娓呯┖姝ｅ紡鏂囨。銆?5. 涓嶅緱鐢ㄤ复鏃?handover銆佽亰澶╂憳褰曟垨涓€娆℃€т氦鎺ユ枃瀛楁浛浠ｆ寮忔枃妗ｃ€?6. 涓嶅緱鍦ㄧ己灏戜唬鐮佹牳楠岀殑鎯呭喌涓嬶紝浠呬緷鎹棫鏂囨。缁х画寮€鍙戙€?7. 涓嶅緱鎶婃湰鍦版牱寮犮€佽皟璇曡緭鍑恒€乸atch銆乣__pycache__` 鎴栦复鏃舵枃浠朵綔涓烘枃妗ｆ垨鐗堟湰璁板綍鎻愪氦銆?8. 涓嶅緱鍦ㄤ换浣曞叕寮€鎴栫鏈夋枃妗ｄ腑鍔犲叆闄愬埗浜у搧鏈潵鍙戝睍鏂瑰悜銆侀€傜敤浜虹兢銆佷娇鐢ㄥ満鏅€丄I 鑳藉姏鎺ュ叆鎴栦笓涓氬寲鍔熻兘鎵╁睍鐨勮〃杩帮紱浠讳綍鏂囨。淇敼銆佸鍒犮€佹洿鏂般€佸崌绾ч兘鍙兘瀹㈣璁板綍褰撳墠瀹炵幇銆佸綋鍓嶅疄鐜扮害鏉熷拰瀹夊叏瑕佹眰锛屼笉鑳芥妸闃舵鎬х姸鎬佸啓鎴愰暱鏈熶骇鍝佽竟鐣屻€?9. 鏇存柊鍘嗗彶銆佹牴 README 鍜屽簲鐢ㄥ唴 `app_metadata` 鏉＄洰涓嶅緱璁板綍寮€鍙戣€呰澶囧瀷鍙枫€佺鏈夋祴璇曠幆澧冦€佸唴閮ㄤ緷璧栨爤銆丄I 鍗忎綔杩囩▼銆佹彁绀鸿瘝銆佺淮鎶よ€呬复鏃舵搷浣滄垨閫傜敤瀵硅薄鏍囩锛涢渶瑕佹帓鏌ョ殑鍐呴儴浜嬪疄鍐欏叆绉佹湁缁存姢鏂囨。鎴栨妧鏈枃妗ｏ紝闈㈠悜鐢ㄦ埛鐨勭増鏈褰曞彧鍐欏姛鑳戒笌浣撻獙缁撴灉銆?
+## 鍏佽鐨勭淮鎶ゆ柟寮?
+- 淇鏂囨。涓殑杩囨椂鎴栭敊璇唴瀹广€?- 鎶婇噸澶嶅唴瀹硅縼绉诲埌鏇村悎閫傜殑涓撻鏂囨。銆?- 鍦ㄦ棫鐗堟湰璇存槑鍓嶈ˉ鍏?鍘嗗彶璇存槑锛屼互褰撳墠鏂囨。涓哄噯"銆?- 鏂板鎶€鏈笓棰樻枃妗ｃ€?- 鍦ㄦ洿鏂版枃妗ｄ腑杩藉姞琛ュ厖璁板綍銆?
+## 褰撳墠鏉冨▉椤哄簭
 
-1. 不得删除 `docs/`。
-2. 不得删除 `docs/technical/`。
-3. 不得删除 `docs/updates/`。
-4. 不得清空正式文档。
-5. 不得用临时 handover、聊天摘录或一次性交接文字替代正式文档。
-6. 不得在缺少代码核验的情况下，仅依据旧文档继续开发。
-7. 不得把本地样张、调试输出、patch、`__pycache__` 或临时文件作为文档或版本记录提交。
-8. 不得在任何公开或私有文档中加入限制产品未来发展方向、适用人群、使用场景、AI 能力接入或专业化功能扩展的表述；任何文档修改、增删、更新、升级都只能客观记录当前实现、当前实现约束和安全要求，不能把阶段性状态写成长期产品边界。
-9. 更新历史、根 README 和应用内 `app_metadata` 条目不得记录开发者设备型号、私有测试环境、内部依赖栈、AI 协作过程、提示词、维护者临时操作或适用对象标签；需要排查的内部事实写入私有维护文档或技术文档，面向用户的版本记录只写功能与体验结果。
+褰撴枃妗ｄ箣闂村嚭鐜板啿绐佹椂锛屾寜浠ヤ笅椤哄簭鍒ゆ柇锛?
+1. 褰撳墠浠ｇ爜銆?2. 1.2.5 鐨?`docs/` 鍜?`docs/technical/` 鏂囨。锛堟湰鏂囨。鍙?MAINTENANCE_GUIDE.md 绛夛級銆?3. [docs/updates/1.2.5.md](/E:/aitools/shapeyourphoto/docs/updates/1.2.5.md)銆?4. 杈冩棭鐗堟湰鐨?`docs/updates/` 鍘嗗彶璇存槑銆?
+鏃х増鏈枃妗ｅ簲淇濈暀鍘嗗彶鑳屾櫙锛屼絾涓嶅簲瑕嗙洊褰撳墠缁存姢瑙勫垯銆?
+## 鏂板鏂囨。绾﹀畾
 
-## 允许的维护方式
+- 妯″潡鑱岃矗鍙樺寲锛氭洿鏂?[MODULE_REFERENCE.md](/E:/aitools/shapeyourphoto/docs/MODULE_REFERENCE.md)銆?- UI 涓绘祦绋嬪彉鍖栵細鏇存柊 [UI_AND_WORKFLOWS.md](/E:/aitools/shapeyourphoto/docs/UI_AND_WORKFLOWS.md)銆?- 骞跺彂銆佹€ц兘銆佹壂鎻忋€乧leanup銆佺浉浼煎浘銆佸垎鏋愰摼璺彉鍖栵細浼樺厛鍦?`docs/technical/` 鏂板鎴栦慨璁笓棰樸€?- 鐗堟湰鍗囩骇锛氭洿鏂?[docs/CHANGELOG.md](/E:/aitools/shapeyourphoto/docs/CHANGELOG.md)銆乕src/app_metadata.py](/E:/aitools/shapeyourphoto/src/app_metadata.py) 鍜?`docs/updates/<version>.md`銆?
+## 鐗堟湰璁板綍璇█瑙勫垯
 
-- 修正文档中的过时或错误内容。
-- 把重复内容迁移到更合适的专题文档。
-- 在旧版本说明前补充"历史说明，以当前文档为准"。
-- 新增技术专题文档。
-- 在更新文档中追加补充记录。
-
-## 当前权威顺序
-
-当文档之间出现冲突时，按以下顺序判断：
-
-1. 当前代码。
-2. 1.2.5 的 `docs/` 和 `docs/technical/` 文档（本文档及 MAINTENANCE_GUIDE.md 等）。
-3. [docs/updates/1.2.5.md](/E:/aitools/shapeyourphoto/docs/updates/1.2.5.md)。
-4. 较早版本的 `docs/updates/` 历史说明。
-
-旧版本文档应保留历史背景，但不应覆盖当前维护规则。
-
-## 新增文档约定
-
-- 模块职责变化：更新 [MODULE_REFERENCE.md](/E:/aitools/shapeyourphoto/docs/MODULE_REFERENCE.md)。
-- UI 主流程变化：更新 [UI_AND_WORKFLOWS.md](/E:/aitools/shapeyourphoto/docs/UI_AND_WORKFLOWS.md)。
-- 并发、性能、扫描、cleanup、相似图、分析链路变化：优先在 `docs/technical/` 新增或修订专题。
-- 版本升级：更新 [CHANGELOG.md](/E:/aitools/shapeyourphoto/CHANGELOG.md)、[src/app_metadata.py](/E:/aitools/shapeyourphoto/src/app_metadata.py) 和 `docs/updates/<version>.md`。
-
-## 版本记录语言规则
-
-- `src/app_metadata.py` 的 `CHANGELOG` 属于应用内用户可见版本历史，默认必须使用中文。
-- 根 `CHANGELOG.md` 与 `docs/updates/<version>.md` 默认必须使用中文，并与 `app_metadata.CHANGELOG` 同步同一批事实。
-- 同一个版本号只能有一个版本块；准备发布期间的新条目必须追加到既有版本块中，不得拆出第二个同版本记录。
-- 英文只用于技术标识原文，例如文件名、函数名、模块名、环境变量、协议字段、第三方库名、内部 code/enum/storage value。
-- 不得把整条英文 release note 直接放进 `app_metadata.CHANGELOG` 作为正式版本记录。
-
+- `src/app_metadata.py` 鐨?`CHANGELOG` 灞炰簬搴旂敤鍐呯敤鎴峰彲瑙佺増鏈巻鍙诧紝榛樿蹇呴』浣跨敤涓枃銆?- 鏍?`docs/CHANGELOG.md` 涓?`docs/updates/<version>.md` 榛樿蹇呴』浣跨敤涓枃锛屽苟涓?`app_metadata.CHANGELOG` 鍚屾鍚屼竴鎵逛簨瀹炪€?- 鍚屼竴涓増鏈彿鍙兘鏈変竴涓増鏈潡锛涘噯澶囧彂甯冩湡闂寸殑鏂版潯鐩繀椤昏拷鍔犲埌鏃㈡湁鐗堟湰鍧椾腑锛屼笉寰楁媶鍑虹浜屼釜鍚岀増鏈褰曘€?- 鑻辨枃鍙敤浜庢妧鏈爣璇嗗師鏂囷紝渚嬪鏂囦欢鍚嶃€佸嚱鏁板悕銆佹ā鍧楀悕銆佺幆澧冨彉閲忋€佸崗璁瓧娈点€佺涓夋柟搴撳悕銆佸唴閮?code/enum/storage value銆?- 涓嶅緱鎶婃暣鏉¤嫳鏂?release note 鐩存帴鏀捐繘 `app_metadata.CHANGELOG` 浣滀负姝ｅ紡鐗堟湰璁板綍銆?
 # 1.1.8 Public / Private Documentation Rule
 
 Starting with 1.1.8, public docs must remain useful but should not contain private server operation details, signing private-key handling, internal release scripts, commercial maintenance strategy or deep private AI-agent prompts. Those belong in ignored `private_docs/for_developer/` and `private_docs/for_developai/`.

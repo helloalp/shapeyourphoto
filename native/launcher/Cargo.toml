@@ -1,0 +1,11 @@
+[package]
+name = "shapeyourphoto_launcher"
+version = "1.2.7"
+edition = "2021"
+build = "build.rs"
+
+[[bin]]
+name = "ShapeYourPhoto"
+path = "src/main.rs"
+
+[dependencies]

@@ -217,8 +217,6 @@ def _iter_scanned_paths(
                 if canceled():
                     break
                 child = current_dir / filename
-                if not child.is_file():
-                    continue
                 if not scan_files_here:
                     continue
                 discovered_files += 1

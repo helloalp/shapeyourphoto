@@ -165,7 +165,7 @@ class RepairCompletionDialog(tk.Toplevel):
             self.tree.selection_set(first_id)
             self._show_selected_detail()
         else:
-            self._set_detail_text(tr("repair_completion.no_records", filter=self.filter_var.get()))
+            self._set_detail_text(tr("repair_completion.no_records").format(filter=self.filter_var.get()))
 
     def _set_detail_text(self, text: str) -> None:
         self.detail_text.config(state="normal")

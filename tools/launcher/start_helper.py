@@ -11,9 +11,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_DIR = ROOT / "src"
-REQUIREMENTS = ROOT / "requirements.txt"
-APP_PYW = ROOT / "app.pyw"
-APP_PY = ROOT / "app.py"
+REQUIREMENTS = ROOT / "requirements" / "runtime.txt"
+LEGACY_REQUIREMENTS = ROOT / "requirements.txt"
+APP_PYW = ROOT / "tools" / "entry" / "app.pyw"
+APP_PY = ROOT / "tools" / "entry" / "app.py"
 GPU_CORE_EXE = ROOT / "native" / "gpu-core" / "target" / "release" / (
     "shapeyourphoto_gpu_core.exe" if sys.platform == "win32" else "shapeyourphoto_gpu_core"
 )
@@ -51,14 +52,15 @@ def check_imports() -> list[str]:
 
 
 def install_dependencies() -> None:
-    if not REQUIREMENTS.exists():
-        raise RuntimeError(f"requirements.txt not found: {REQUIREMENTS}")
+    requirements = REQUIREMENTS if REQUIREMENTS.exists() else LEGACY_REQUIREMENTS
+    if not requirements.exists():
+        raise RuntimeError(f"runtime requirements not found: {REQUIREMENTS}")
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "--version"], cwd=str(ROOT))
     except subprocess.CalledProcessError:
         stage("正在准备 pip", "Preparing pip")
         subprocess.check_call([sys.executable, "-m", "ensurepip", "--upgrade"], cwd=str(ROOT))
-    cmd = [sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS)]
+    cmd = [sys.executable, "-m", "pip", "install", "-r", str(requirements)]
     subprocess.check_call(cmd, cwd=str(ROOT))
 
 
@@ -175,7 +177,7 @@ if __name__ == "__main__":
         print()
         print("依赖安装失败。/ Dependency installation failed.")
         print(f"Command exited with code {exc.returncode}: {' '.join(map(str, exc.cmd))}")
-        print("请检查网络连接，或稍后重新运行 start.bat。/ Check your network connection, then run start.bat again.")
+        print("请检查网络连接，或稍后重新运行 ShapeYourPhoto.exe。/ Check your network connection, then run ShapeYourPhoto.exe again.")
         raise SystemExit(exc.returncode or 1)
     except Exception as exc:
         print()

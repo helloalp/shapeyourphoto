@@ -32,9 +32,40 @@ class UiFileListMixin:
         paths: list[Path] = []
         for item_id in self.tree.selection():
             path = self.item_lookup.get(item_id)
-            if path is not None:
+            if path is not None and path in self.image_paths:
                 paths.append(path)
         return paths
+
+    def get_current_list_paths(self) -> list[Path]:
+        return [path for path in self.image_paths if path.exists()]
+
+    def get_selected_paths_from_current_list(self) -> list[Path]:
+        current_paths = set(self.get_current_list_paths())
+        return [path for path in self._selected_tree_paths() if path in current_paths]
+
+    def get_checked_paths_from_current_list(self) -> list[Path]:
+        current_paths = set(self.get_current_list_paths())
+        return [
+            path
+            for path in self.image_paths
+            if path in current_paths and self.selected_flags.get(path) and self.selected_flags[path].get()
+        ]
+
+    def resolve_analysis_targets(self, mode: str) -> list[Path]:
+        if mode == "all":
+            return self.get_current_list_paths()
+        if mode == "selected":
+            targets = self.get_selected_paths_from_current_list()
+            if not targets:
+                targets = self.get_checked_paths_from_current_list()
+            return targets
+        return []
+
+    def resolve_conversion_targets(self) -> list[Path]:
+        targets = self.get_checked_paths_from_current_list()
+        if not targets:
+            targets = self.get_selected_paths_from_current_list()
+        return targets
 
     def _visible_tree_item_ids(self) -> list[str]:
         return list(self.tree.get_children(""))
@@ -133,14 +164,13 @@ class UiFileListMixin:
         for path in ordered_paths:
             candidate = primary_candidates[path]
             checked = tr("tree.selected") if self.cleanup_flags.get(path, tk.BooleanVar(value=False)).get() else tr("tree.pending")
-            confidence = f"{candidate.confidence:.2f}"
             thumb = self.thumb_cache.get_tree_thumbnail(path)
             item_id = self.cleanup_tree.insert(
                 "",
                 "end",
                 text=path.name,
                 image=thumb,
-                values=(checked, display_name("severity", candidate.severity), confidence, self._cleanup_reason_summary(candidate)),
+                values=(checked, display_name("severity", candidate.severity), self._cleanup_reason_summary(candidate)),
             )
             self.cleanup_item_lookup[item_id] = path
             if path == current_path:
@@ -258,7 +288,10 @@ class UiFileListMixin:
         selection = self.tree.selection()
         if not selection:
             return None
-        return self.item_lookup.get(selection[0])
+        path = self.item_lookup.get(selection[0])
+        if path is None or path not in self.image_paths:
+            return None
+        return path
 
     def _select_path(self, path: Path) -> None:
         for item_id, item_path in self.item_lookup.items():
@@ -502,9 +535,16 @@ class UiFileListMixin:
         self.errors.pop(path, None)
         self.selected_flags.pop(path, None)
         self.cleanup_flags.pop(path, None)
+        self.analysis_phase_progress.pop(path, None)
+        if hasattr(self, "_analysis_allowed_targets"):
+            self._analysis_allowed_targets.discard(path)
+        if hasattr(self, "_repair_cancel_targets"):
+            self._repair_cancel_targets = [item for item in self._repair_cancel_targets if item != path]
         self.thumb_cache.evict(path)
         self._prune_similar_groups()
-        self._log_console(f"removed from list: {path}")
+        if path == getattr(self, "_current_preview_path", None):
+            self._clear_hud_and_summary()
+        self._log_console(f"removed from list: {path.name}")
         if refresh:
             self.refresh_tree()
             if self.image_paths:
@@ -655,7 +695,7 @@ class UiFileListMixin:
                 lines.append("不适合保留的图片：")
                 lines.append(
                     f"- {display_name('cleanup_reason', primary_cleanup.reason_code)} | "
-                    f"{display_name('severity', primary_cleanup.severity)} | {primary_cleanup.confidence:.2f}"
+                    f"{display_name('severity', primary_cleanup.severity)}"
                 )
                 lines.append(f"  原因：{self._cleanup_reason_summary(primary_cleanup)}")
             similar_marker = self._similar_marker_for_path(path)

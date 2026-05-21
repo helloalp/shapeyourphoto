@@ -117,7 +117,7 @@ class UiCloudActionsMixin:
         pending = user_data_dir() / "pending_update_manifest.json"
         pending.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         app_dir = Path(__file__).resolve().parents[2]
-        restart_cmd = [sys.executable, str(app_dir / "app.py")]
+        restart_cmd = [sys.executable, str(app_dir / "tools" / "entry" / "app.py")]
         updater_entry = app_dir / "src" / "updater_bootstrap.py"
         if not updater_entry.exists():
             updater_entry = app_dir / "src" / "updater.py"

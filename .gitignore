@@ -64,10 +64,16 @@ _debug/
 .pytest_cache/
 
 # Native build outputs
-native/gpu-core/target/
+native/*/target/
 *.pdb
 
 # Local app/user state
 
 # Private docs and secrets
 *_private_key.pem
+*.pem
+*.pfx
+*.key
+*.crt
+*.cer
+**/target/

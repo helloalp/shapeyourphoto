@@ -11,7 +11,6 @@ from PIL import Image, ImageOps, PngImagePlugin
 
 from app_settings import GPU_ACCELERATION_AUTO
 from file_actions import build_repaired_output_path
-from gpu_accel import accelerated_luma_stats
 from models import AnalysisResult, RepairPlan, RepairRecord, RepairSelection
 from repair_planner import build_repair_plan
 from repair_ops import (
@@ -148,13 +147,6 @@ def _candidate_metrics(
     gpu_mode: str = GPU_ACCELERATION_AUTO,
 ) -> dict[str, object]:
     started_at = time.perf_counter()
-    gpu_luma = accelerated_luma_stats(image, gpu_mode)
-    if gpu_luma is not None:
-        perf_timings["repair_gpu_luma_stats"] = perf_timings.get("repair_gpu_luma_stats", 0.0) + gpu_luma.timings.get("python_total_ms", gpu_luma.elapsed_ms)
-        perf_timings["repair_gpu_luma_native"] = perf_timings.get("repair_gpu_luma_native", 0.0) + gpu_luma.elapsed_ms
-        perf_timings["repair_gpu_luma_accelerated"] = 1.0 if gpu_luma.accelerated else perf_timings.get("repair_gpu_luma_accelerated", 0.0)
-        if gpu_luma.fallback_reason:
-            perf_timings["repair_gpu_luma_fallback"] = perf_timings.get("repair_gpu_luma_fallback", 0.0) + gpu_luma.elapsed_ms
     metric_image = _resize_for_metrics(image)
     arr = as_array(metric_image)
     luma = luma_map(arr)
@@ -374,13 +366,18 @@ def _assess_repair_safety(
     fixed: Image.Image,
     result: AnalysisResult | None,
     gpu_mode: str = GPU_ACCELERATION_AUTO,
+    *,
+    original_metrics: dict[str, object] | None = None,
+    fixed_metrics: dict[str, object] | None = None,
 ) -> list[str]:
     if result is None:
         return []
 
     perf_timings: dict[str, float] = {}
-    original_metrics = _candidate_metrics(original, result, perf_timings, gpu_mode)
-    fixed_metrics = _candidate_metrics(fixed, result, perf_timings, gpu_mode)
+    if original_metrics is None:
+        original_metrics = _candidate_metrics(original, result, perf_timings, gpu_mode)
+    if fixed_metrics is None:
+        fixed_metrics = _candidate_metrics(fixed, result, perf_timings, gpu_mode)
     warnings: list[str] = []
 
     face_lift = float(fixed_metrics["face_luma"]) - float(original_metrics["face_luma"])
@@ -604,13 +601,6 @@ def _summarize_perf_notes(perf_timings: dict[str, float], result: AnalysisResult
         notes.append("保存输出耗时较长")
     if perf_timings.get("metadata_preserve", 0.0) > 120.0:
         notes.append("元数据写回耗时较长")
-    if perf_timings.get("repair_gpu_luma_accelerated", 0.0) >= 1.0:
-        notes.append(
-            "GPU 加速已用于修复候选亮度统计："
-            f"native={perf_timings.get('repair_gpu_luma_native', 0.0):.1f}ms"
-        )
-    elif perf_timings.get("repair_gpu_luma_fallback", 0.0) > 0.0:
-        notes.append("GPU 修复统计已自动回退 CPU")
     if result is not None and result.validated_face_count >= 3:
         notes.append(f"检测到 {result.validated_face_count} 张有效人脸")
     if result is not None and result.raw_face_candidates and not result.portrait_likely and result.portrait_rejection_reason:
@@ -677,7 +667,14 @@ def _select_portrait_candidate(
             best_score = score
             best_image = candidate
             best_strength = strength
-            best_warnings = _assess_repair_safety(image, candidate, result, gpu_mode)
+            best_warnings = _assess_repair_safety(
+                image,
+                candidate,
+                result,
+                gpu_mode,
+                original_metrics=original_metrics,
+                fixed_metrics=candidate_metrics,
+            )
         else:
             reason = "、".join(notes) if notes else ("局部增强收益不足" if result.portrait_scene_type == "high_key_portrait" else "未优于原图")
             prefix = "候选被降级" if best_image is not None else "候选已回退"
@@ -762,7 +759,14 @@ def _select_scene_candidate(
             best_score = score
             best_image = candidate
             best_scale = scale
-            best_warnings = _assess_repair_safety(image, candidate, result, gpu_mode)
+            best_warnings = _assess_repair_safety(
+                image,
+                candidate,
+                result,
+                gpu_mode,
+                original_metrics=original_metrics,
+                fixed_metrics=candidate_metrics,
+            )
         else:
             rejected.append(f"候选已回退：scale={scale:.2f} | {'、'.join(notes) if notes else '未优于原图'}")
 

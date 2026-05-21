@@ -17,6 +17,7 @@ from models import AnalysisResult, SimilarImageGroup
 
 _EXIF_DATETIME_TAGS = (36867, 36868, 306)
 _MAX_ALL_PAIR_FEATURE_COMPARE = 220
+_FEATURE_MAX_SIDE = 768
 _LOW_CONFIDENCE_LEVEL = "low"
 _MEDIUM_LEVEL = "medium"
 _HIGH_LEVEL = "high"
@@ -248,13 +249,14 @@ def _extract_features_parallel(paths: list[Path], max_workers: int | None = None
 def _extract_feature(path: Path) -> _ImageFeature | None:
     with Image.open(path) as raw:
         exif_time = _read_capture_time(raw)
+        width, height = _oriented_image_size(raw)
         try:
-            raw.draft("RGB", (512, 512))
+            raw.draft("RGB", (_FEATURE_MAX_SIDE, _FEATURE_MAX_SIDE))
         except Exception:
             pass
         image = ImageOps.exif_transpose(raw).convert("RGB")
+    image.thumbnail((_FEATURE_MAX_SIDE, _FEATURE_MAX_SIDE), Image.Resampling.BILINEAR)
 
-    width, height = image.size
     scene_image = image.resize((48, 48), Image.Resampling.BILINEAR)
     scene_arr = np.asarray(scene_image, dtype=np.float32) / 255.0
     gray = _gray(scene_arr)
@@ -294,6 +296,17 @@ def _extract_feature(path: Path) -> _ImageFeature | None:
         sequence_prefix=prefix,
         sequence_number=sequence_number,
     )
+
+
+def _oriented_image_size(image: Image.Image) -> tuple[int, int]:
+    width, height = image.size
+    try:
+        orientation = int(image.getexif().get(274, 1))
+    except Exception:
+        orientation = 1
+    if orientation in {5, 6, 7, 8}:
+        return height, width
+    return width, height
 
 
 def _read_capture_time(image: Image.Image) -> float | None:

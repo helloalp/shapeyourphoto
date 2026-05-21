@@ -59,27 +59,28 @@ class UiRepairActionsMixin:
         self._open_repair_dialog(targets, f"批量修复 {len(targets)} 张图片")
 
     def _batch_repair_targets(self) -> tuple[list[Path], str]:
-        multi_selected = self._validate_repair_targets(self._selected_tree_paths(), source="multi_select")
+        multi_selected = self._validate_repair_targets(self.get_selected_paths_from_current_list(), source="multi_select", require_analysis=True)
         if len(multi_selected) > 1:
             return self._dedupe_repair_targets(multi_selected), "multi_select"
         checked = self._validate_repair_targets(
-            [path for path in self.image_paths if self.selected_flags.get(path) and self.selected_flags[path].get()],
+            self.get_checked_paths_from_current_list(),
             source="checked",
+            require_analysis=True,
         )
         if checked:
             return self._dedupe_repair_targets(checked), "checked"
         return [], "empty"
 
     def _selected_repair_targets(self) -> list[Path]:
-        selected = self._validate_repair_targets(self._selected_tree_paths(), source="selected")
+        selected = self._validate_repair_targets(self.get_selected_paths_from_current_list(), source="selected", require_analysis=True)
         if selected:
             return self._dedupe_repair_targets(selected)
         current = self._current_path()
         if current is None:
             return []
-        return self._validate_repair_targets([current], source="current")
+        return self._validate_repair_targets([current], source="current", require_analysis=True)
 
-    def _validate_repair_targets(self, paths: list[Path], *, source: str) -> list[Path]:
+    def _validate_repair_targets(self, paths: list[Path], *, source: str, require_analysis: bool = True) -> list[Path]:
         current_paths = set(self.image_paths)
         valid: list[Path] = []
         stale = missing_analysis = missing_file = 0
@@ -90,7 +91,7 @@ class UiRepairActionsMixin:
             if not path.exists():
                 missing_file += 1
                 continue
-            if path not in self.results:
+            if require_analysis and path not in self.results:
                 missing_analysis += 1
                 continue
             valid.append(path)
@@ -112,11 +113,11 @@ class UiRepairActionsMixin:
         return targets
 
     def _open_repair_dialog(self, targets: list[Path], title: str) -> None:
-        targets = self._validate_repair_targets(targets, source="final")
+        targets = self._validate_repair_targets(targets, source="final", require_analysis=True)
         if not targets:
-            messagebox.showinfo("提示", "当前没有可修复目标。修复只能处理仍在当前列表内且已有分析结果的图片。")
+            messagebox.showinfo("提示", "当前没有可修复目标。修复只能处理仍在当前列表内且文件存在的图片。")
             return
-        existing_results = [self.results[path] for path in targets]
+        existing_results = [self.results[path] for path in targets if path in self.results]
         recommended = suggest_methods_for_results(existing_results)
         selection = show_repair_dialog(
             self.root,
@@ -173,12 +174,12 @@ class UiRepairActionsMixin:
         if self.is_busy:
             messagebox.showinfo("提示", "当前已有任务正在运行。")
             return
-        targets = self._validate_repair_targets(targets, source="run_start")
+        targets = self._validate_repair_targets(targets, source="run_start", require_analysis=True)
         if not targets:
             messagebox.showinfo("提示", "当前没有可修复目标。请先分析当前列表内的图片。")
             return
 
-        missing: list[Path] = []
+        missing = [path for path in targets if path not in self.results]
         total_steps = len(missing) + len(targets)
         analysis_worker_plan = self._analysis_worker_plan(len(missing)) if missing else None
         analysis_workers = analysis_worker_plan.actual_workers if analysis_worker_plan is not None else 0

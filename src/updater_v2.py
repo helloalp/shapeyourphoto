@@ -489,8 +489,12 @@ class UpdaterWindow(tk.Tk):
         scroll.grid(row=1, column=1, sticky="ns", pady=(12, 10))
         self.button = ttk.Button(outer, text="取消并关闭", command=self._cancel_and_close)
         self.button.grid(row=2, column=0, sticky="e")
+        self._ui_queue: queue.SimpleQueue[object] = queue.SimpleQueue()
         self.after(100, self._drain_log)
         threading.Thread(target=self._worker, daemon=True).start()
+
+    def _dispatch_ui(self, callback) -> None:
+        self._ui_queue.put(callback)
 
     def _drain_log(self) -> None:
         while True:
@@ -500,7 +504,18 @@ class UpdaterWindow(tk.Tk):
                 break
             self.text.insert("end", message + "\n")
             self.text.see("end")
-        self.after(100, self._drain_log)
+        while True:
+            try:
+                callback = self._ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            callback()
+        try:
+            exists = bool(self.winfo_exists())
+        except tk.TclError:
+            return
+        if exists:
+            self.after(100, self._drain_log)
 
     def _cancel_and_close(self) -> None:
         self.ctx.cancel_requested.set()
@@ -517,11 +532,11 @@ class UpdaterWindow(tk.Tk):
                     cwd=str(self.ctx.app_dir),
                     close_fds=True,
                 )
-                self.after(500, self.destroy)
+                self._dispatch_ui(lambda: self.after(500, self.destroy))
             else:
                 self.ctx.emit("正在重新启动 ShapeYourPhoto")
                 subprocess.Popen(self.ctx.restart_cmd, cwd=str(self.ctx.app_dir), close_fds=True)
-                self.after(700, self.destroy)
+                self._dispatch_ui(lambda: self.after(700, self.destroy))
         except Exception as exc:
             self.ctx.emit(f"更新未完成：{exc}")
             try:
@@ -529,9 +544,8 @@ class UpdaterWindow(tk.Tk):
                 self.ctx.emit("已恢复到更新前状态")
             except Exception as rollback_exc:
                 self.ctx.emit(f"恢复失败：{rollback_exc}")
-                self.after(0, self._enable_close)
-                self.after(
-                    0,
+                self._dispatch_ui(self._enable_close)
+                self._dispatch_ui(
                     lambda: messagebox.showerror(
                         "回滚失败",
                         f"更新失败且回滚未完全成功：\n{rollback_exc}\n\n请从完整安装包恢复程序目录。",
@@ -540,9 +554,9 @@ class UpdaterWindow(tk.Tk):
                 )
                 return
             if self.ctx.cancel_requested.is_set():
-                self.after(0, self._finish_cancelled)
+                self._dispatch_ui(self._finish_cancelled)
             else:
-                self.after(0, lambda err=exc: self._finish_failed(err))
+                self._dispatch_ui(lambda err=exc: self._finish_failed(err))
 
     def _finish_cancelled(self) -> None:
         messagebox.showinfo("更新已取消", "更新已取消，程序已尽量恢复到更新前状态。", parent=self)

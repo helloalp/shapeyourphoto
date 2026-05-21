@@ -1,6 +1,6 @@
 # Native GPU Backend
 
-ShapeYourPhoto 1.2.6 uses a bundled native GPU backend instead of asking ordinary users to install Python GPU packages.
+ShapeYourPhoto 1.2.7 uses a bundled native GPU backend instead of asking ordinary users to install Python GPU packages.
 
 ## Architecture
 

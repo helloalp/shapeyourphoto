@@ -28,7 +28,6 @@ STAGE_LABELS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("exif_transpose", ("exif_transpose",)),
     ("resize", ("resize", "working_resize")),
     ("array_convert", ("array_convert",)),
-    ("basic_stats", ("basic_stats",)),
     ("exposure", ("exposure",)),
     ("color", ("color",)),
     ("sharpness", ("sharpness",)),
@@ -192,6 +191,7 @@ def _run_mode(paths: list[Path], mode: str, manifest: dict[str, object] | None =
         "worker_cumulative_ms": worker_cumulative_ms,
         "parallel_efficiency": worker_cumulative_ms / max(1.0, wall_ms),
         "queue_wait_ms": queue_wait_ms,
+        "avg_queue_wait_ms": queue_wait_ms / max(1, len(results)),
         "similar_ms": similar_ms,
         "similar_groups": len(similar_groups),
         "slow_stages": _stage_totals(results, similar_ms)[:5],
@@ -267,8 +267,8 @@ def _format_markdown_report(report: dict[str, object]) -> str:
         "",
         "## Modes",
         "",
-        "| mode | workers | wall | avg/img | worker cumulative | issues | cleanup | similar |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| mode | workers | wall | avg/img | worker cumulative | avg queue/img | issues | cleanup | similar |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for item in report.get("modes", []):
         if not isinstance(item, dict):
@@ -276,7 +276,7 @@ def _format_markdown_report(report: dict[str, object]) -> str:
         lines.append(
             f"| {item['mode']} | {item['requested_workers']}/{item['actual_workers']} | "
             f"{_format_ms(float(item['wall_ms']))} | {_format_ms(float(item['avg_wall_ms']))} | "
-            f"{_format_ms(float(item['worker_cumulative_ms']))} | {item['issues']} | "
+            f"{_format_ms(float(item['worker_cumulative_ms']))} | {_format_ms(float(item.get('avg_queue_wait_ms', 0.0)))} | {item['issues']} | "
             f"{item['cleanup_candidates']} | {item['similar_groups']} |"
         )
         lines.append("")
@@ -324,7 +324,7 @@ def main() -> int:
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
     mode_results: list[dict[str, object]] = []
     print(f"Local test image benchmark: root={root.resolve()} images={len(paths)}")
-    print("mode | workers(requested/actual) | wall | avg wall/img | worker cumulative | efficiency | queue/wait | similar | groups | issues | cleanup")
+    print("mode | workers(requested/actual) | wall | avg wall/img | worker cumulative | efficiency | avg queue/img | queue cumulative | similar | groups | issues | cleanup")
     for mode in modes:
         result = _run_mode(paths, mode, manifest)
         mode_results.append(result)
@@ -333,7 +333,8 @@ def main() -> int:
             f"{result['mode']} | {result['requested_workers']}/{result['actual_workers']}{reason} | "
             f"{_format_ms(float(result['wall_ms']))} | {_format_ms(float(result['avg_wall_ms']))} | "
             f"{_format_ms(float(result['worker_cumulative_ms']))} | {float(result['parallel_efficiency']):.2f}x | "
-            f"{_format_ms(float(result['queue_wait_ms']))} | {_format_ms(float(result['similar_ms']))} | "
+            f"{_format_ms(float(result['avg_queue_wait_ms']))} | {_format_ms(float(result['queue_wait_ms']))} | "
+            f"{_format_ms(float(result['similar_ms']))} | "
             f"{result['similar_groups']} | {result['issues']} | {result['cleanup_candidates']}"
         )
         print("  slow stages top5: " + " | ".join(f"{label} {_format_ms(value)}" for label, value in result["slow_stages"]))

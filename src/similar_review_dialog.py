@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import queue
+import threading
 import tkinter as tk
 from tkinter import ttk
 
@@ -38,7 +40,7 @@ class SimilarGroupListDialog(tk.Toplevel):
         self.grab_set()
         self.resizable(True, True)
         self.minsize(900, 560)
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.protocol("WM_DELETE_WINDOW", self._close)
 
         self._groups = groups
         self._results = results
@@ -48,6 +50,10 @@ class SimilarGroupListDialog(tk.Toplevel):
         self._filter_label_var = tk.StringVar(value=tr("similar.filter.all"))
         self._selected_vars: dict[int, tk.BooleanVar] = {}
         self._thumbs: list[ImageTk.PhotoImage] = []
+        self._thumbnail_queue: queue.SimpleQueue[tuple[int, ttk.Label, Image.Image | None]] = queue.SimpleQueue()
+        self._thumbnail_stop = threading.Event()
+        self._thumbnail_generation = 0
+        self._thumbnail_tasks: list[tuple[ttk.Label, Path, tuple[int, int]]] = []
         self._hint_var = tk.StringVar()
         self._size_notice_var = tk.StringVar(value="")
 
@@ -98,11 +104,12 @@ class SimilarGroupListDialog(tk.Toplevel):
         self.start_button = ttk.Button(footer, text="开始抉择", command=self._start_decision, state="disabled")
         self.start_button.grid(row=0, column=0, sticky="w")
         ttk.Label(footer, textvariable=self._size_notice_var).grid(row=0, column=1, sticky="w", padx=(12, 0))
-        ttk.Button(footer, text=tr("similar.skip_all"), command=self.destroy).grid(row=0, column=2, sticky="e")
+        ttk.Button(footer, text=tr("similar.skip_all"), command=self._close).grid(row=0, column=2, sticky="e")
 
         self._render_groups()
         bind_minimum_size_notice(self, self._size_notice_var, 780, 460)
         self._fit_to_screen(1080, 720)
+        self.after(30, self._drain_thumbnail_queue)
 
     def _filter_label_map(self) -> dict[str, str]:
         return {
@@ -160,6 +167,9 @@ class SimilarGroupListDialog(tk.Toplevel):
         return groups
 
     def _render_groups(self) -> None:
+        self._thumbnail_generation += 1
+        generation = self._thumbnail_generation
+        self._thumbnail_tasks = []
         for child in self.inner.winfo_children():
             child.destroy()
         self._thumbs.clear()
@@ -174,12 +184,19 @@ class SimilarGroupListDialog(tk.Toplevel):
                 variable = tk.BooleanVar(value=False)
                 variable.trace_add("write", lambda *_args: self._update_controls())
                 self._selected_vars[group.group_id] = variable
-            self._build_group_card(group)
+            self._build_group_card(group, generation)
         self.canvas.yview_moveto(0)
         self._update_controls()
         self.after_idle(lambda: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        if self._thumbnail_tasks:
+            threading.Thread(
+                target=self._thumbnail_worker,
+                args=(generation, list(self._thumbnail_tasks)),
+                daemon=True,
+                name="ShapeYourPhotoSimilarThumbs",
+            ).start()
 
-    def _build_group_card(self, group: SimilarImageGroup) -> None:
+    def _build_group_card(self, group: SimilarImageGroup, generation: int) -> None:
         existing_paths = [path for path in group.paths if path.exists()]
         card = ttk.Frame(self.inner, padding=10, relief="solid")
         card.pack(fill="x", expand=False, pady=(0, 10), padx=(0, 8))
@@ -200,13 +217,10 @@ class SimilarGroupListDialog(tk.Toplevel):
         self._bind_mousewheel(thumbs_frame)
         preview_paths = existing_paths[:6]
         for path in preview_paths:
-            thumb = self._build_thumbnail(path, (112, 78))
-            if thumb is None:
-                continue
-            self._thumbs.append(thumb)
-            label = ttk.Label(thumbs_frame, image=thumb)
+            label = ttk.Label(thumbs_frame)
             label.pack(side="left", padx=(0, 6))
             self._bind_mousewheel(label)
+            self._thumbnail_tasks.append((label, path, (112, 78)))
         if len(existing_paths) > len(preview_paths):
             more = ttk.Label(thumbs_frame, text=tr("similar.more_count").format(count=len(existing_paths) - len(preview_paths)))
             more.pack(side="left", padx=(4, 0))
@@ -252,7 +266,34 @@ class SimilarGroupListDialog(tk.Toplevel):
         self._decision_callback(selected)
         self._render_groups()
 
-    def _build_thumbnail(self, path: Path, size: tuple[int, int]) -> ImageTk.PhotoImage | None:
+    def _thumbnail_worker(self, generation: int, tasks: list[tuple[ttk.Label, Path, tuple[int, int]]]) -> None:
+        for label, path, size in tasks:
+            if self._thumbnail_stop.is_set() or generation != self._thumbnail_generation:
+                return
+            self._thumbnail_queue.put((generation, label, self._decode_thumbnail(path, size)))
+
+    def _drain_thumbnail_queue(self) -> None:
+        drained = 0
+        try:
+            while drained < 30:
+                generation, label, image = self._thumbnail_queue.get_nowait()
+                if generation == self._thumbnail_generation and image is not None and label.winfo_exists():
+                    thumb = ImageTk.PhotoImage(image)
+                    self._thumbs.append(thumb)
+                    label.configure(image=thumb)
+                drained += 1
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return
+        try:
+            alive = self.winfo_exists()
+        except tk.TclError:
+            return
+        if not self._thumbnail_stop.is_set() and alive:
+            self.after(10 if drained >= 30 else 40, self._drain_thumbnail_queue)
+
+    def _decode_thumbnail(self, path: Path, size: tuple[int, int]) -> Image.Image | None:
         try:
             with Image.open(path) as img:
                 try:
@@ -265,7 +306,11 @@ class SimilarGroupListDialog(tk.Toplevel):
         image.thumbnail(size)
         thumb = Image.new("RGB", size, (237, 242, 238))
         thumb.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2))
-        return ImageTk.PhotoImage(thumb)
+        return thumb
+
+    def _close(self) -> None:
+        self._thumbnail_stop.set()
+        self.destroy()
 
 
 class SimilarGroupDecisionDialog(tk.Toplevel):
@@ -292,6 +337,10 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         self._group_index = 0
         self._page_start = 0
         self._thumbs: list[ImageTk.PhotoImage] = []
+        self._preview_queue: queue.SimpleQueue[tuple[int, ttk.Label, Image.Image | None]] = queue.SimpleQueue()
+        self._preview_stop = threading.Event()
+        self._preview_generation = 0
+        self._preview_tasks: list[tuple[ttk.Label, Path, tuple[int, int]]] = []
         self._size_hint_var = tk.StringVar()
         self._title_var = tk.StringVar()
         self._reason_var = tk.StringVar()
@@ -334,6 +383,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         self._render_group()
         bind_minimum_size_notice(self, self._size_hint_var, 1120, 780)
         self._fit_to_screen(1180, 900)
+        self.after(30, self._drain_preview_queue)
 
     def _fit_to_screen(self, preferred_width: int, preferred_height: int) -> None:
         self.update_idletasks()
@@ -371,6 +421,9 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         return None
 
     def _render_group(self) -> None:
+        self._preview_generation += 1
+        generation = self._preview_generation
+        self._preview_tasks = []
         for child in self.grid_shell.winfo_children():
             child.destroy()
         self._thumbs.clear()
@@ -381,10 +434,12 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
 
         self._title_var.set(tr("similar.decision_group_title").format(id=group.group_id, index=self._group_index + 1, total=len(self._groups), count=len(group.paths)))
         self._reason_var.set(group.reason)
-        max_visible = 2
+        columns = self._preview_columns(len(group.paths))
+        rows = 1 if len(group.paths) <= columns else 2
+        max_visible = max(1, columns * rows)
         page_paths = group.paths[self._page_start : self._page_start + max_visible]
-        columns = 2 if len(page_paths) > 1 else 1
-        for row in range(2):
+        columns = min(columns, max(1, len(page_paths)))
+        for row in range(rows):
             self.grid_shell.rowconfigure(row, weight=1)
         for column in range(columns):
             self.grid_shell.columnconfigure(column, weight=1)
@@ -392,7 +447,14 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         for index, path in enumerate(page_paths):
             row = index // columns
             column = index % columns
-            self._build_image_card(self.grid_shell, group, path).grid(row=row, column=column, sticky="nsew", padx=6, pady=6)
+            self._build_image_card(self.grid_shell, group, path, columns=columns).grid(row=row, column=column, sticky="nsew", padx=6, pady=6)
+        if self._preview_tasks:
+            threading.Thread(
+                target=self._preview_worker,
+                args=(generation, list(self._preview_tasks)),
+                daemon=True,
+                name="ShapeYourPhotoSimilarDecisionPreview",
+            ).start()
 
         has_pages = len(group.paths) > max_visible
         self.prev_button.configure(state="normal" if has_pages and self._page_start > 0 else "disabled")
@@ -402,20 +464,38 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         self.after_idle(lambda: self.grid_canvas.configure(scrollregion=self.grid_canvas.bbox("all")))
         self._update_size_hint()
 
-    def _build_image_card(self, parent: tk.Widget, group: SimilarImageGroup, path: Path) -> ttk.Frame:
+    def _preview_columns(self, count: int) -> int:
+        width = max(900, self.grid_canvas.winfo_width() or self.winfo_width() - 80)
+        if count <= 1:
+            return 1
+        if width >= 1320 and count >= 4:
+            return 4
+        if width >= 1040 and count >= 3:
+            return 3
+        if width >= 720:
+            return 2
+        return 1
+
+    def _preview_size(self, columns: int) -> tuple[int, int]:
+        width = max(680, self.grid_canvas.winfo_width() or self.winfo_width() - 90)
+        card_width = max(260, int(width / max(1, columns)) - 36)
+        preview_width = min(430, max(260, card_width - 24))
+        return preview_width, max(190, int(preview_width * 0.62))
+
+    def _build_image_card(self, parent: tk.Widget, group: SimilarImageGroup, path: Path, *, columns: int) -> ttk.Frame:
         card = ttk.Frame(parent, padding=10, relief="solid")
         card.columnconfigure(0, weight=1)
         self._bind_grid_mousewheel(card)
-        thumb = self._build_preview(path, (360, 180))
-        if thumb is not None:
-            self._thumbs.append(thumb)
-            image_label = ttk.Label(card, image=thumb)
-            image_label.grid(row=0, column=0, sticky="n")
-            self._bind_grid_mousewheel(image_label)
-        name_label = ttk.Label(card, text=path.name, font=("Microsoft YaHei UI", 10, "bold"), wraplength=350)
+        image_label = ttk.Label(card)
+        image_label.grid(row=0, column=0, sticky="n")
+        self._bind_grid_mousewheel(image_label)
+        preview_size = self._preview_size(columns)
+        self._preview_tasks.append((image_label, path, preview_size))
+        wrap = max(240, preview_size[0] - 10)
+        name_label = ttk.Label(card, text=path.name, font=("Microsoft YaHei UI", 10, "bold"), wraplength=wrap)
         name_label.grid(row=1, column=0, sticky="w", pady=(8, 2))
         self._bind_grid_mousewheel(name_label)
-        summary_label = ttk.Label(card, text=self._analysis_summary(path), wraplength=350)
+        summary_label = ttk.Label(card, text=self._analysis_summary(path), wraplength=wrap)
         summary_label.grid(row=2, column=0, sticky="w")
         self._bind_grid_mousewheel(summary_label)
         delete_button = ttk.Button(card, text=tr("similar.delete_this"), command=lambda p=path, g=group: self._delete_path(p, g))
@@ -444,14 +524,17 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
             self._render_group()
 
     def _prev_page(self) -> None:
-        self._page_start = max(0, self._page_start - 4)
+        group = self._active_group()
+        step = max(1, self._preview_columns(len(group.paths)) if group is not None else 2)
+        self._page_start = max(0, self._page_start - step)
         self._render_group()
 
     def _next_page(self) -> None:
         group = self._active_group()
         if group is None:
             return
-        self._page_start = min(max(0, len(group.paths) - 1), self._page_start + 4)
+        step = max(1, self._preview_columns(len(group.paths)))
+        self._page_start = min(max(0, len(group.paths) - 1), self._page_start + step)
         self._render_group()
 
     def _skip_group(self) -> None:
@@ -460,6 +543,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         self._render_group()
 
     def _skip_all(self) -> None:
+        self._preview_stop.set()
         self.destroy()
 
     def _update_size_hint(self) -> None:
@@ -471,7 +555,34 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         else:
             self._size_hint_var.set("")
 
-    def _build_preview(self, path: Path, size: tuple[int, int]) -> ImageTk.PhotoImage | None:
+    def _preview_worker(self, generation: int, tasks: list[tuple[ttk.Label, Path, tuple[int, int]]]) -> None:
+        for label, path, size in tasks:
+            if self._preview_stop.is_set() or generation != self._preview_generation:
+                return
+            self._preview_queue.put((generation, label, self._decode_preview(path, size)))
+
+    def _drain_preview_queue(self) -> None:
+        drained = 0
+        try:
+            while drained < 10:
+                generation, label, image = self._preview_queue.get_nowait()
+                if generation == self._preview_generation and image is not None and label.winfo_exists():
+                    thumb = ImageTk.PhotoImage(image)
+                    self._thumbs.append(thumb)
+                    label.configure(image=thumb)
+                drained += 1
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return
+        try:
+            alive = self.winfo_exists()
+        except tk.TclError:
+            return
+        if not self._preview_stop.is_set() and alive:
+            self.after(10 if drained >= 10 else 40, self._drain_preview_queue)
+
+    def _decode_preview(self, path: Path, size: tuple[int, int]) -> Image.Image | None:
         try:
             with Image.open(path) as img:
                 try:
@@ -484,7 +595,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         image.thumbnail(size)
         canvas = Image.new("RGB", size, (237, 242, 238))
         canvas.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2))
-        return ImageTk.PhotoImage(canvas)
+        return canvas
 
 
 def show_similar_group_list_dialog(

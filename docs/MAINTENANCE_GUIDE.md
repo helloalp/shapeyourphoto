@@ -1,210 +1,191 @@
-# Maintenance Guide
+﻿# Maintenance Guide
 
-本文是 1.2.6 当前维护规则。旧版本附录保留在 `docs/updates/`；如旧说明与本文冲突，以本文和当前代码为准。
+鏈枃鏄?1.2.6 褰撳墠缁存姢瑙勫垯銆傛棫鐗堟湰闄勫綍淇濈暀鍦?`docs/updates/`锛涘鏃ц鏄庝笌鏈枃鍐茬獊锛屼互鏈枃鍜屽綋鍓嶄唬鐮佷负鍑嗐€?
 
-## 基本原则
+## 鍩烘湰鍘熷垯
 
-1. 先核代码，再改文档或实现。
-2. 小步修改、可验证，不借维护任务重构核心算法。
-3. 保留用户数据安全边界：不上传图片、不永久删除、不暗改输出规则。
-4. 功能变化必须同步文档、CHANGELOG 和 `src/app_metadata.py`。
-5. 不提交本地样张、缓存、patch、`__pycache__`、调试输出或临时文件。
-6. 不得写入限制产品未来发展方向、适用人群、使用场景、AI 能力接入或专业化功能扩展的表述；任何文档修改、增删、更新、升级都只能描述当前实现事实、当前实现约束和当前安全要求，不能把阶段性功能状态写成长期产品边界。
-7. 更新历史、根 README 和应用内版本记录不得暴露开发者设备型号、私有测试环境、内部依赖栈、AI 协作过程、提示词或适用对象标签；版本记录只写用户能感知的功能结果和安全结果。
+1. 鍏堟牳浠ｇ爜锛屽啀鏀规枃妗ｆ垨瀹炵幇銆?
+2. 灏忔淇敼銆佸彲楠岃瘉锛屼笉鍊熺淮鎶や换鍔￠噸鏋勬牳蹇冪畻娉曘€?
+3. 淇濈暀鐢ㄦ埛鏁版嵁瀹夊叏杈圭晫锛氫笉涓婁紶鍥剧墖銆佷笉姘镐箙鍒犻櫎銆佷笉鏆楁敼杈撳嚭瑙勫垯銆?4. 鍔熻兘鍙樺寲蹇呴』鍚屾鏂囨。銆丆HANGELOG 鍜?`src/app_metadata.py`銆?5. 涓嶆彁浜ゆ湰鍦版牱寮犮€佺紦瀛樸€乸atch銆乣__pycache__`銆佽皟璇曡緭鍑烘垨涓存椂鏂囦欢銆?6. 涓嶅緱鍐欏叆闄愬埗浜у搧鏈潵鍙戝睍鏂瑰悜銆侀€傜敤浜虹兢銆佷娇鐢ㄥ満鏅€丄I 鑳藉姏鎺ュ叆鎴栦笓涓氬寲鍔熻兘鎵╁睍鐨勮〃杩帮紱浠讳綍鏂囨。淇敼銆佸鍒犮€佹洿鏂般€佸崌绾ч兘鍙兘鎻忚堪褰撳墠瀹炵幇浜嬪疄銆佸綋鍓嶅疄鐜扮害鏉熷拰褰撳墠瀹夊叏瑕佹眰锛屼笉鑳芥妸闃舵鎬у姛鑳界姸鎬佸啓鎴愰暱鏈熶骇鍝佽竟鐣屻€?7. 鏇存柊鍘嗗彶銆佹牴 README 鍜屽簲鐢ㄥ唴鐗堟湰璁板綍涓嶅緱鏆撮湶寮€鍙戣€呰澶囧瀷鍙枫€佺鏈夋祴璇曠幆澧冦€佸唴閮ㄤ緷璧栨爤銆丄I 鍗忎綔杩囩▼銆佹彁绀鸿瘝鎴栭€傜敤瀵硅薄鏍囩锛涚増鏈褰曞彧鍐欑敤鎴疯兘鎰熺煡鐨勫姛鑳界粨鏋滃拰瀹夊叏缁撴灉銆?
+## 鍚姩閾捐矾淇濇姢
 
-## 启动链路保护
+- 鏃ュ父鍚姩鍏ュ彛鏄彂甯冨寘鏍圭洰褰曠殑 `ShapeYourPhoto.exe`銆?- `start.bat` 浠呬綔涓烘簮鐮佸寘鍏煎鍏ュ彛锛屼繚鎸?ASCII-only 鍜岀煭閫昏緫锛氬彧鏌ユ壘 Python锛屽苟杩涘叆 `tools/launcher/start_helper.py`銆?- `tools/launcher/start_helper.py` 鍙互鍋氳交閲忕幆澧冩鏌ュ拰鎸夐渶渚濊禆瀹夎锛涗緷璧栭綈鍏ㄦ椂蹇呴』蹇€熻繘鍏?GUI銆?
+- 涓嶅緱鎶?benchmark銆佺洰褰曟壂鎻忋€佹竻鐞嗐€佹洿鏂板寘涓嬭浇鎴栧叾浠栦笌鍚姩鏃犲叧鐨勯噸浠诲姟鏀惧叆鍚姩閾捐矾銆?
+- `tools/legacy/setup_deps.bat` / `tools/legacy/start_app.bat` 鍙綔涓哄吋瀹瑰叆鍙ｏ紝鐢ㄦ埛鏂囨。涓嶅緱瑕佹眰鍏堣繍琛屽畠浠€?- 婧愮爜鍖呭湪鏃?Python 璁惧涓婁笉鑳界洿鎺ヨ繍琛岋紱`ShapeYourPhoto.exe` / `start.bat` 蹇呴』淇濈暀鍙鎻愮ず绐楀彛锛屼笉鑳介棯閫€銆?
+## Tk 涓荤嚎绋嬭鍒?
 
-- 日常启动入口是根目录 `start.bat`。
-- `start.bat` 保持 ASCII-only 和短逻辑：只查找 Python，并进入 `tools/launcher/start_helper.py`。
-- `tools/launcher/start_helper.py` 可以做轻量环境检查和按需依赖安装；依赖齐全时必须快速进入 GUI。
-- 不得把 benchmark、目录扫描、清理、更新包下载或其他与启动无关的重任务放入启动链路。
-- `tools/legacy/setup_deps.bat` / `tools/legacy/start_app.bat` 只作为兼容入口，用户文档不得要求先运行它们。
-- 源码包在无 Python 设备上不能直接运行；`start.bat` 必须保留可读提示窗口，不能闪退。
+- Tk 鎺т欢鍙兘鍦ㄤ富绾跨▼鏇存柊銆?
+- 鍚庡彴绾跨▼涓嶅緱鐩存帴鍐?Treeview銆乀ext銆丩abel銆丳rogressbar 鎴栧脊绐椼€?
+- 鐩綍鎵弿銆佹壒閲忓垎鏋愩€佹壒閲忎慨澶嶅拰鐩镐技妫€娴嬪簲閫氳繃鍥炶皟/闃熷垪/`root.after()` 鍥炰富绾跨▼銆?
+- Console Text 鍒锋柊蹇呴』淇濇寔鍚堝苟鍒锋柊锛岄伩鍏嶆瘡鏉℃棩蹇楅噸缁樻暣鍧楀唴瀹广€?
+- 鍒嗘瀽/淇杩涘害绐楀彛鍙樉绀哄浐瀹氶珮搴﹂樁娈垫憳瑕侊紱闀块樁娈佃鎯呭拰鎬ц兘缁嗚妭杩涘叆 Console锛屼笉寰楁拺寮€寮圭獥鍐呴儴甯冨眬銆?
+- 杩涘害绐楀彛鍙厑璁镐竴涓槑纭彇娑堝叆鍙ｏ紝鍏抽棴鍙夊彿涓庢寜閽簲璧板悓涓€鍙栨秷璺緞銆?
 
-## Tk 主线程规则
+## UI 涓荤被鎷嗗垎瑙勫垯
 
-- Tk 控件只能在主线程更新。
-- 后台线程不得直接写 Treeview、Text、Label、Progressbar 或弹窗。
-- 目录扫描、批量分析、批量修复和相似检测应通过回调/队列/`root.after()` 回主线程。
-- Console Text 刷新必须保持合并刷新，避免每条日志重绘整块内容。
-- 分析/修复进度窗口只显示固定高度阶段摘要；长阶段详情和性能细节进入 Console，不得撑开弹窗内部布局。
-- 进度窗口只允许一个明确取消入口，关闭叉号与按钮应走同一取消路径。
+- `src/ui_app.py` 鍙礋璐ｄ富绐楀彛鐘舵€併€佹帶浠惰閰嶅拰楂樺眰鍗忚皟銆?
+- 鎵弿/瀵煎叆銆佸垎鏋愪换鍔°€佷慨澶嶄换鍔°€佷富鍒楄〃銆丆onsole/perf銆佷笉閫傚悎淇濈暀鍊欓€?鐩镐技缁勫鏍稿垎鍒淮鎶ゅ湪 `src/ui_scan_actions.py`銆乣src/ui_analysis_actions.py`銆乣src/ui_repair_actions.py`銆乣src/ui_file_list.py`銆乣src/ui_task_console.py`銆乣src/ui_review_actions.py`銆?
+- `src/ui/` 鍖呮壙杞界獥鍙ｆ爣棰樸€乨isplay mapping銆佷富棰樸€丠iDPI銆丼plash 鍜?EXIF 瀹夊叏缂栬緫绛夊叡浜?UI 鍩虹璁炬柦銆?
+- 鏂板 UI 琛屼负鏃朵紭鍏堟斁鍏ュ搴?mixin 鎴?`src/ui/` 鍖咃紱鍙湁甯冨眬瑁呴厤銆佽彍鍗?wiring 鍜屾牴绐楀彛鐢熷懡鍛ㄦ湡閫傚悎鐣欏湪 `src/ui_app.py`銆?
+- mixin 妯″潡涓嶅緱 import `ui_app.py`锛屽叡浜父閲忔斁鍦?`ui_constants.py`锛岄伩鍏嶅惊鐜緷璧栥€?
+- 鎷嗗垎 UI 浠ｇ爜鏃跺繀椤讳繚鎸佸悗鍙板洖璋冨洖涓荤嚎绋嬨€乺un_id/cancel_event 闃叉棫鍐欏洖鍜?Console 鍚堝苟鍒锋柊瑙勫垯銆?
 
-## UI 主类拆分规则
+## 鍚庡彴绾跨▼銆乺un_id 涓庡彇娑堣鍒?
 
-- `src/ui_app.py` 只负责主窗口状态、控件装配和高层协调。
-- 扫描/导入、分析任务、修复任务、主列表、Console/perf、不适合保留候选/相似组复核分别维护在 `src/ui_scan_actions.py`、`src/ui_analysis_actions.py`、`src/ui_repair_actions.py`、`src/ui_file_list.py`、`src/ui_task_console.py`、`src/ui_review_actions.py`。
-- `src/ui/` 包承载窗口标题、display mapping、主题、HiDPI、Splash 和 EXIF 安全编辑等共享 UI 基础设施。
-- 新增 UI 行为时优先放入对应 mixin 或 `src/ui/` 包；只有布局装配、菜单 wiring 和根窗口生命周期适合留在 `src/ui_app.py`。
-- mixin 模块不得 import `ui_app.py`，共享常量放在 `ui_constants.py`，避免循环依赖。
-- 拆分 UI 代码时必须保持后台回调回主线程、run_id/cancel_event 防旧写回和 Console 合并刷新规则。
+- 姣忚疆鎵归噺鍒嗘瀽閮藉簲鏈夊敮涓€ run_id銆?
+- 鍙栨秷鍒嗘瀽閫氳繃 cancel_event 琛ㄨ揪銆?
+- 鍚庡彴浠诲姟鍐欏洖缁撴灉銆佽繘搴︺€佷笉閫傚悎淇濈暀鎻愮ず銆佺浉浼煎浘鎻愮ず鎴栨渶缁堟憳瑕佸墠蹇呴』鏍￠獙 run_id 鍜?cancel_event銆?
+- 鍙栨秷鍚庝繚鐣欐枃浠跺垪琛紝娓呯┖鏈疆鐩爣宸插啓鍏ョ殑缁撴灉銆侀敊璇€佽繘搴︺€佷笉閫傚悎淇濈暀鏍囪鍜岀浉浼肩粍鏍囪銆?
+- 宸插彇娑?worker 鍙互瀹屾垚 CPU 宸ヤ綔锛屼絾缁撴灉蹇呴』涓㈠純銆?
+- 姣忚疆鎵归噺淇涔熷簲鏈夊敮涓€ run_id 鍜?cancel_event銆?
+- 鍙栨秷淇涓嶅緱娓呯┖淇鍓嶅凡缁忓瓨鍦ㄧ殑鍒嗘瀽缁撴灉銆侀敊璇€佷笉閫傚悎淇濈暀/鐩镐技鍥剧姸鎬佹垨淇寤鸿锛涘淇娴佺▼琛ュ垎鏋愪簡缂哄け鍥剧墖锛屽彇娑堟椂蹇呴』鎸変慨澶嶅墠蹇収鎭㈠銆?
+- 淇鍙栨秷鍚庝笉寰椾繚鐣欏凡鍙栨秷鎵规鐨勫畬鎴愮粺璁°€佽皟璇曟墦寮€鍒楄〃鎴栦慨澶嶅畬鎴愯鎯呫€?
+- 宸插啓鍑虹殑闈炶鐩栦慨澶嶈緭鍑哄繀椤诲垹闄わ紱鍒犻櫎澶辫触鏃剁Щ鍏?`_repair_canceled_outputs` 闅旂鐩綍骞舵彁绀恒€?
+- 瑕嗙洊鍘熸枃浠朵慨澶嶉渶瑕佸厛鍒涘缓 `_repair_cancel_backups` 澶囦唤锛屽彇娑堟椂鎭㈠澶囦唤锛屾甯稿畬鎴愬悗娓呯悊澶囦唤銆?
 
-## 后台线程、run_id 与取消规则
+## perf_timings / perf_notes 瑙勫垯
 
-- 每轮批量分析都应有唯一 run_id。
-- 取消分析通过 cancel_event 表达。
-- 后台任务写回结果、进度、不适合保留提示、相似图提示或最终摘要前必须校验 run_id 和 cancel_event。
-- 取消后保留文件列表，清空本轮目标已写入的结果、错误、进度、不适合保留标记和相似组标记。
-- 已取消 worker 可以完成 CPU 工作，但结果必须丢弃。
-- 每轮批量修复也应有唯一 run_id 和 cancel_event。
-- 取消修复不得清空修复前已经存在的分析结果、错误、不适合保留/相似图状态或修复建议；如修复流程补分析了缺失图片，取消时必须按修复前快照恢复。
-- 修复取消后不得保留已取消批次的完成统计、调试打开列表或修复完成详情。
-- 已写出的非覆盖修复输出必须删除；删除失败时移入 `_repair_canceled_outputs` 隔离目录并提示。
-- 覆盖原文件修复需要先创建 `_repair_cancel_backups` 备份，取消时恢复备份，正常完成后清理备份。
+- 鍒嗘瀽鍜屼慨澶嶈€楁椂缁熶竴鍐欏叆 `perf_timings`銆?
+- 闈㈠悜缁存姢鑰呯殑杞婚噺鐡堕鎻愮ず鍐欏叆 `perf_notes`銆?
+- 涓嶈鏂板缓骞宠璁℃椂浣撶郴銆?
+- 鍒嗘瀽寤鸿璁板綍璇诲彇銆丒XIF 杞銆亀orking image銆佸熀纭€缁熻銆佹洕鍏夈€侀攼搴︺€佽壊褰┿€佸櫔澹般€佷汉鍍忋€佷笉閫傚悎淇濈暀鍊欓€夈€佺浉浼煎浘妫€娴嬬瓑闃舵銆?
+- 淇寤鸿璁板綍 planner銆佽鍙栥€佸悇 op銆佸€欓€夌敓鎴?璇勫垎銆佸畨鍏ㄦ鏌ャ€佷繚瀛樿緭鍑哄拰鍏冩暟鎹繚鐣欍€?
+- Console 浠?`total_wall_time` 涓轰富锛沗worker_cumulative_time` 鏄苟鍙?worker 绱宸ヤ綔閲忥紝涓嶆槸鐢ㄦ埛绛夊緟鏃堕棿銆?
+- 濡傛灉鍚屾椂鏄剧ず骞冲潎鑰楁椂锛屽繀椤诲尯鍒?`average_wall_time_per_image` 鍜?`average_worker_time_per_image`銆?
+- 涓嶅緱鎶婃瘡寮犲浘鑰楁椂鐩稿姞鍚庝綔涓洪潰鍚戠敤鎴风殑"鏈疆鎬昏€楁椂"銆?
 
-## perf_timings / perf_notes 规则
+## EXIF Orientation 褰掍竴
 
-- 分析和修复耗时统一写入 `perf_timings`。
-- 面向维护者的轻量瓶颈提示写入 `perf_notes`。
-- 不要新建平行计时体系。
-- 分析建议记录读取、EXIF 转正、working image、基础统计、曝光、锐度、色彩、噪声、人像、不适合保留候选、相似图检测等阶段。
-- 修复建议记录 planner、读取、各 op、候选生成/评分、安全检查、保存输出和元数据保留。
-- Console 以 `total_wall_time` 为主；`worker_cumulative_time` 是并发 worker 累计工作量，不是用户等待时间。
-- 如果同时显示平均耗时，必须区分 `average_wall_time_per_image` 和 `average_worker_time_per_image`。
-- 不得把每张图耗时相加后作为面向用户的"本轮总耗时"。
+- 璇诲彇鍥剧墖鏃朵娇鐢?`ImageOps.exif_transpose` 灏嗗儚绱犳柟鍚戣浆姝ｃ€?
+- 淇濆瓨 JPEG/WebP 鍓嶅皢 EXIF Orientation 褰掍竴涓?`1`銆?
+- 鍥炲綊鏃舵鏌ュ師鍥炬樉绀烘柟鍚戙€佽緭鍑虹墿鐞嗗昂瀵稿拰杈撳嚭 Orientation銆?
 
-## EXIF Orientation 归一
+## 涓嶉€傚悎淇濈暀鍊欓€夊畨鍏ㄥ垹闄よ鍒?
 
-- 读取图片时使用 `ImageOps.exif_transpose` 将像素方向转正。
-- 保存 JPEG/WebP 前将 EXIF Orientation 归一为 `1`。
-- 回归时检查原图显示方向、输出物理尺寸和输出 Orientation。
+- 涓嶉€傚悎淇濈暀鍊欓€夋槸寤鸿锛屼笉鏄嚜鍔ㄥ垹闄ゅ懡浠ゃ€?
+- UI 榛樿涓嶅嬀閫夊€欓€夈€?
+- 鍒犻櫎鍓嶅繀椤讳簩娆＄‘璁ゃ€?
+- 鍒犻櫎蹇呴』璧?`safe_cleanup_paths()`銆?
+- 浼樺厛绉诲叆绯荤粺鍥炴敹绔欙紱澶辫触鏃剁Щ鍏ラ」鐩唴 `_cleanup_candidates` 闅旂鐩綍銆?
+- 涓嶅緱鍦ㄤ笉閫傚悎淇濈暀鎴栫浉浼煎浘澶嶆牳绐楀彛涓洿鎺?`unlink()` 鎴栨案涔呭垹闄ゃ€?
 
-## 不适合保留候选安全删除规则
+## 淇鐩爣闆嗗悎瑙勫垯
 
-- 不适合保留候选是建议，不是自动删除命令。
-- UI 默认不勾选候选。
-- 删除前必须二次确认。
-- 删除必须走 `safe_cleanup_paths()`。
-- 优先移入系统回收站；失败时移入项目内 `_cleanup_candidates` 隔离目录。
-- 不得在不适合保留或相似图复核窗口中直接 `unlink()` 或永久删除。
+- "淇褰撳墠"鍙鍙栧綋鍓嶇劍鐐瑰浘鐗囥€?
+- "鎵归噺淇鍕鹃€?浼樺厛浣跨敤鐪熸鐨?Treeview 澶氶€夐泦鍚堬紱鍙湁褰撳閫夋暟閲忓浜?1 寮犳椂鎵嶈涓烘壒閲忓閫夈€?
+- 娌℃湁鐪熸澶氶€夋椂锛屾壒閲忓叆鍙ｅ洖閫€鍒板嬀閫夐泦鍚堬紱鍗曚釜钃濊壊楂樹寒琛屼笉寰楄鐩栧嬀閫夐泦鍚堛€?
+- 鎵归噺淇蹇呴』閫愬浘璋冪敤 `repair_engine.repair_image_file()`锛屽苟璁?`repair_planner.build_repair_plan()` 鍩轰簬璇ュ浘鑷繁鐨?`AnalysisResult` 鐢熸垚 `method_ids`銆乣op_strengths` 鍜?policy notes銆?
+- 涓嶅緱鎶婂綋鍓嶇劍鐐瑰浘鐨勬帹鑽愭柟娉曘€佸弬鏁版垨鍔涘害濂楃敤鍒版暣鎵瑰浘鐗囥€?
+- 淇瀹屾垚璇︽儏鐨勬垚鍔熴€佽烦杩囥€佸け璐ャ€佸€欓€夊洖閫€/no-op 缁熻蹇呴』鏉ヨ嚜鐪熷疄鎵归噺鐩爣缁撴灉銆?
 
-## 修复目标集合规则
+## 寮圭獥灏哄瑙勫垯
 
-- "修复当前"只读取当前焦点图片。
-- "批量修复勾选"优先使用真正的 Treeview 多选集合；只有当多选数量多于 1 张时才视为批量多选。
-- 没有真正多选时，批量入口回退到勾选集合；单个蓝色高亮行不得覆盖勾选集合。
-- 批量修复必须逐图调用 `repair_engine.repair_image_file()`，并让 `repair_planner.build_repair_plan()` 基于该图自己的 `AnalysisResult` 生成 `method_ids`、`op_strengths` 和 policy notes。
-- 不得把当前焦点图的推荐方法、参数或力度套用到整批图片。
-- 修复完成详情的成功、跳过、失败、候选回退/no-op 统计必须来自真实批量目标结果。
+- 鍒嗘瀽/淇杩涘害銆佹壂鎻忓洓閫夐」銆佷慨澶嶅畬鎴愯鎯呫€佷笉閫傚悎淇濈暀鍊欓€夈€佺浉浼煎浘鍒楄〃銆佺浉浼煎浘缁勫唴瀵规瘮鍜岃缃獥鍙ｉ兘搴旀湁鏄庣‘ `minsize()` 鎴栧浐瀹?婊氬姩绛栫暐銆?
+- 搴曢儴鍏抽敭鎸夐挳搴旀斁鍦ㄥ浐瀹氭寜閽尯锛屽唴瀹硅繃闀挎椂婊氬姩鍐呭鍖猴紝涓嶅帇缂╂寜閽尯銆?
+- 杩涘害绐楀彛鐨勫簳閮ㄦ彁绀轰笌鍙栨秷鎸夐挳蹇呴』浣跨敤鐙珛甯冨眬鍗曞厓锛屼笉鑳戒簰鐩歌鐩栵紱鍏抽棴鍙夊彿蹇呴』绛夊悓鍙栨秷鎴栨槑纭鐢紝浣嗗彇娑堟寜閽繀椤诲彲杈俱€?
+- 鍙缉鏀剧獥鍙ｈ揪鍒版渶灏忓昂瀵搁檮杩戞椂锛岀粺涓€鏄剧ず"宸茶揪鍒版渶灏忓彲鐢ㄧ獥鍙ｅぇ灏?銆?
+- 浜岀骇绐楀彛榛樿灏哄蹇呴』鍙楀睆骞曞彲鐢ㄥ尯鍩熼檺鍒讹紝涓嶈兘涓轰簡灞曠ず瀹屾暣鍐呭瓒呭嚭灞忓箷銆?
 
-## 弹窗尺寸规则
+## 鐩镐技鍥剧淮鎶よ鍒?
 
-- 分析/修复进度、扫描四选项、修复完成详情、不适合保留候选、相似图列表、相似图组内对比和设置窗口都应有明确 `minsize()` 或固定/滚动策略。
-- 底部关键按钮应放在固定按钮区，内容过长时滚动内容区，不压缩按钮区。
-- 进度窗口的底部提示与取消按钮必须使用独立布局单元，不能互相覆盖；关闭叉号必须等同取消或明确禁用，但取消按钮必须可达。
-- 可缩放窗口达到最小尺寸附近时，统一显示"已达到最小可用窗口大小"。
-- 二级窗口默认尺寸必须受屏幕可用区域限制，不能为了展示完整内容超出屏幕。
+- 鐩镐技鍥惧彧浣滀负鍒嗘瀽鎵规闄勫姞缁撴灉銆?
+- `SimilarImageGroup` 涓嶅啓鍥炲崟寮?`AnalysisResult.issues`銆乣scene_type`銆佷汉鍍忓瓧娈点€佷慨澶嶅缓璁垨涓嶉€傚悎淇濈暀鍊欓€夈€?
+- 鍚屼竴寮犲浘鍙互鍚屾椂鍑虹幇鍦ㄤ笉閫傚悎淇濈暀鍊欓€夊拰 similar group 涓紱UI 鍙兘鎻愮ず锛屼笉鑷姩澶勭悊銆?
+- 鐩镐技鍥惧垹闄ゅ鐢ㄥ叏灞€瀹夊叏娓呯悊銆?
 
-## 相似图维护规则
+## 璁剧疆涓庢壂鎻忚鍒?
 
-- 相似图只作为分析批次附加结果。
-- `SimilarImageGroup` 不写回单张 `AnalysisResult.issues`、`scene_type`、人像字段、修复建议或不适合保留候选。
-- 同一张图可以同时出现在不适合保留候选和 similar group 中；UI 只能提示，不自动处理。
-- 相似图删除复用全局安全清理。
+- 搴旂敤璁剧疆缁熶竴鐢?`app_settings.py` 瀹氫箟銆佹牎楠屽拰淇濆瓨銆?
+- UI 璁剧疆缁熶竴鐢?`settings_dialog.py` 绠＄悊锛屼笉鏂板闆舵暎鑿滃崟椤广€?
+- Console 鏃堕棿妯″紡鍜屽瑙備富棰樹篃灞炰簬 app_settings schema锛屼笉鑳藉湪 UI 鍐呯鏈変繚瀛樸€?
+- 鎵弿榛樿鑷冲皯蹇界暐 `_repair` 鍓嶇紑锛屼换鎰忓眰绾т互 `_repair` 寮€澶寸殑鐩綍閮借烦杩囥€?
+- 鎵弿缁撴灉搴斿啓鍏?Console 绠€鎶ュ拰"鏈€杩戞壂鎻忔憳瑕?鏄庣粏锛涘畬鏁磋烦杩囩洰褰曟槑缁嗕笉寰楀埛灞忓埌 Console銆?
+- 鎵弿鍜屾壂鎻忓悗鐨勫浘鐗囧姞杞介樁娈甸兘蹇呴』鏄剧ず杩涘害寮圭獥锛涙棤娉曢鐭ユ€绘暟鏃舵樉绀哄凡澶勭悊鏁伴噺锛屼笉閫犲亣杩涘害銆?
+- 淇敼鎵弿閫昏緫鏃跺悓鏃堕獙璇佹寜閽壂鎻忋€佹嫋鎷芥枃浠跺す銆佽ˉ鎵€侀粯璁ゆ壂鎻忔ā寮忓拰蹇界暐鍓嶇紑銆?
 
-## 设置与扫描规则
+## 鐢ㄦ埛鏁版嵁涓庣粺璁¤鍒?
 
-- 应用设置统一由 `app_settings.py` 定义、校验和保存。
-- UI 设置统一由 `settings_dialog.py` 管理，不新增零散菜单项。
-- Console 时间模式和外观主题也属于 app_settings schema，不能在 UI 内私有保存。
-- 扫描默认至少忽略 `_repair` 前缀，任意层级以 `_repair` 开头的目录都跳过。
-- 扫描结果应写入 Console 简报和"最近扫描摘要"明细；完整跳过目录明细不得刷屏到 Console。
-- 扫描和扫描后的图片加载阶段都必须显示进度弹窗；无法预知总数时显示已处理数量，不造假进度。
-- 修改扫描逻辑时同时验证按钮扫描、拖拽文件夹、补扫、默认扫描模式和忽略前缀。
+- 鐢ㄦ埛鏁版嵁鍐欏叆琚拷鐣ョ殑 `data/` 鐩綍銆?
+- 缁熻鍙繚瀛樿仛鍚堟暟鎹紝涓嶄繚瀛樺畬鏁村浘鐗囪矾寰勩€?
+- Windows 浣跨敤鐢ㄦ埛绾?DPAPI 淇濇姢 `data/usage_stats.dpapi`锛涗笉鍙敤鏃朵笉寰楃敤 base64 鎴栫畝鍗曠紪鐮佸啋鍏呭姞瀵嗐€?
+- 鏃?`usage_stats.json` 杩佺Щ鏃跺厛鍐欏叆鏂?store锛屾垚鍔熷悗淇濈暀 migrated 澶囦唤鎴栨爣璁帮紝涓嶇洿鎺ュ垹闄ゃ€?
 
-## 用户数据与统计规则
+## UI 鏄剧ず鍚嶈鍒?
 
-- 用户数据写入被忽略的 `data/` 目录。
-- 统计只保存聚合数据，不保存完整图片路径。
-- Windows 使用用户级 DPAPI 保护 `data/usage_stats.dpapi`；不可用时不得用 base64 或简单编码冒充加密。
-- 旧 `usage_stats.json` 迁移时先写入新 store，成功后保留 migrated 备份或标记，不直接删除。
+- 鍐呴儴鑻辨枃 code/enum/storage 淇濇寔涓嶅彉銆?
+- UI 閫氳繃 `ui/display_names.py` 鏄剧ず涓枃鎴栦腑鑻辩粨鍚堝悕绉帮紝涓嶆妸涓枃鍚嶅啓鍥炰笟鍔″垽鏂€?
+- 鏈煡鍊煎繀椤绘樉绀轰负甯?raw value 鐨勫厹搴曟枃妗堬紝涓嶈兘寮傚父涓柇 UI銆?
 
-## UI 显示名规则
+## HiDPI 涓?EXIF 缂栬緫瑙勫垯
 
-- 内部英文 code/enum/storage 保持不变。
-- UI 通过 `ui/display_names.py` 显示中文或中英结合名称，不把中文名写回业务判断。
-- 未知值必须显示为带 raw value 的兜底文案，不能异常中断 UI。
+- Windows GUI 鍚姩鍓嶅惎鐢?DPI awareness锛孴k scaling 涓庣郴缁熷瓧浣撴寜 DPI 閰嶇疆銆?
+- 鎵嬪伐楠屾敹 100% / 125% / 150% / 200% 缂╂斁涓嬩富绐楀彛銆佽缃€佽繘搴︺€佷慨澶嶈鎯呭拰 Console 瀛椾綋娓呮櫚搴︺€?
+- ClearType銆佹樉鍗￠┍鍔ㄥ拰杩滅▼妗岄潰缂╂斁涓嶅畬鍏ㄥ彈搴旂敤鎺у埗锛屾枃妗ｉ渶璇存槑杈圭晫銆?
+- EXIF 缂栬緫榛樿鍙锛屼繚瀛樺墠澶囦唤锛涘彧鍏佽鏍囬/鎻忚堪銆佷綔鑰呫€佺増鏉冦€佸叧閿瘝/澶囨敞绛夊畨鍏ㄦ枃鏈瓧娈点€?
+- 绂佹淇敼鐩告満/闀滃ご銆佹媿鎽勬椂闂淬€丱rientation銆両CC 鍜屽唴閮ㄦ爣璁般€?
 
-## HiDPI 与 EXIF 编辑规则
+## GPU fallback 瑙勫垯
 
-- Windows GUI 启动前启用 DPI awareness，Tk scaling 与系统字体按 DPI 配置。
-- 手工验收 100% / 125% / 150% / 200% 缩放下主窗口、设置、进度、修复详情和 Console 字体清晰度。
-- ClearType、显卡驱动和远程桌面缩放不完全受应用控制，文档需说明边界。
-- EXIF 编辑默认只读，保存前备份；只允许标题/描述、作者、版权、关键词/备注等安全文本字段。
-- 禁止修改相机/镜头、拍摄时间、Orientation、ICC 和内部标记。
+- GPU 鏄彲閫夊姞閫熻兘鍔涳紝涓嶆槸纭緷璧栥€?- 鏅€氱敤鎴蜂富璺緞蹇呴』浣跨敤闅忓寘鍒嗗彂鐨?native GPU backend锛屼笉寰楄姹傜敤鎴疯嚜琛屽畨瑁?CUDA銆乼orch銆丆uPy 鎴?OpenCV CUDA 鎵嶈兘鍚敤 GPU銆?- native backend 缂哄け銆佽澶囦笉鍙敤銆佽秴鏃舵垨浠诲姟瑙勬ā涓嶅垝绠楁椂锛屽簲鐢ㄥ繀椤绘甯稿惎鍔ㄥ苟鍥為€€ CPU銆?- 鍙湁 benchmark 璇佹槑鐪熷疄鏀剁泭鐨勪换鍔℃墠鑳介粯璁や娇鐢?GPU锛涘綋鍓嶅ぇ鍥惧垎鏋愪寒搴︾粺璁″彲璧?Rust/wgpu 鍚庣锛屽皬鍥俱€佷慨澶嶅€欓€夎瘎鍒嗗拰鐩镐技鍥剧缉鐣ョ壒寰佺户缁寜鎬ц兘闂ㄦ帶鍥?CPU銆?
+## `/test` 鏈湴鏍峰紶瑙勫垯
 
-## GPU fallback 规则
+- `test/` 鐢ㄤ簬鏈湴鐪熷疄鍥剧墖 benchmark 鍜屽洖褰掋€?
+- 鍥剧墖鏂囦欢鐢?`.gitignore` 蹇界暐锛屼笉寰楁彁浜ゃ€?
+- 鐪熷疄 `test/manifest.json` 涔熼粯璁ゅ拷鐣ワ紝鍥犱负鍙兘鍖呭惈鐢ㄦ埛鍥剧墖鏂囦欢鍚嶃€?
+- 鍙彁浜ょ殑妯℃澘鏄?`test/manifest.example.json`銆?
+- `tools/benchmark/benchmark_test_images.py` 蹇呴』鍏佽 `test/` 涓虹┖鏃跺畨鍏ㄨ烦杩囥€?
+- benchmark 鎽樿搴旇褰?wall time銆亀orker cumulative銆乹ueue/wait銆佹參鍥俱€佹參闃舵銆佺浉浼兼娴嬨€侀棶棰樺浘鍜屼笉閫傚悎淇濈暀鍊欓€夋暟閲忋€?
+- benchmark 鎶ュ憡鍐欏叆琚拷鐣ョ殑 `benchmark_reports/`锛屼笉寰楁彁浜ゆ姤鍛婃枃浠躲€?
 
-- GPU 是可选加速能力，不是硬依赖。
-- 普通用户主路径必须使用随包分发的 native GPU backend，不得要求用户自行安装 CUDA、torch、CuPy 或 OpenCV CUDA 才能启用 GPU。
-- native backend 缺失、设备不可用、超时或任务规模不划算时，应用必须正常启动并回退 CPU。
-- 只有 benchmark 证明真实收益的任务才能默认使用 GPU；当前大图分析亮度统计可走 Rust/wgpu 后端，小图、修复候选评分和相似图缩略特征继续按性能门控回 CPU。
+## 鏂囨。鏇存柊瑙勫垯
 
-## `/test` 本地样张规则
+- 涓嶅緱鍒犻櫎 `docs/`銆乣docs/technical/`銆乣docs/updates/`銆?
+- 涓嶅緱娓呯┖姝ｅ紡鏂囨。銆?
+- 杩囨椂鍐呭搴斾慨璁€佽縼绉汇€佹爣娉ㄥ巻鍙蹭笂涓嬫枃鎴栨寚鍚戝綋鍓嶈鏄庛€?
+- 鏂板妯″潡鎴栬亴璐ｅ彉鍖栵細鏇存柊 `MODULE_REFERENCE.md`銆?
+- UI 娴佺▼鍙樺寲锛氭洿鏂?`UI_AND_WORKFLOWS.md`銆?
+- 鎶€鏈摼璺彉鍖栵細鏇存柊鎴栨柊澧?`docs/technical/` 涓撻銆?
+- 浜у搧鍜岀晫闈㈣鑼冨彉鍖栵細鏇存柊鎴栨柊澧?`docs/specs/` 涓撻銆?
+- 鐗堟湰鍗囩骇锛氭洿鏂?`docs/CHANGELOG.md`銆乣src/app_metadata.py` 鍜?`docs/updates/<version>.md`銆?
 
-- `test/` 用于本地真实图片 benchmark 和回归。
-- 图片文件由 `.gitignore` 忽略，不得提交。
-- 真实 `test/manifest.json` 也默认忽略，因为可能包含用户图片文件名。
-- 可提交的模板是 `test/manifest.example.json`。
-- `tools/benchmark/benchmark_test_images.py` 必须允许 `test/` 为空时安全跳过。
-- benchmark 摘要应记录 wall time、worker cumulative、queue/wait、慢图、慢阶段、相似检测、问题图和不适合保留候选数量。
-- benchmark 报告写入被忽略的 `benchmark_reports/`，不得提交报告文件。
+## 鐗堟湰璁板綍璇█瑙勮寖
 
-## 文档更新规则
+- `src/app_metadata.py` 鍐呯疆 `CHANGELOG` 浼氬湪搴旂敤鍐呭睍绀猴紝榛樿蹇呴』浣跨敤涓枃涔﹀啓銆?- 鏍圭洰褰?`docs/CHANGELOG.md` 鍜?`docs/updates/<version>.md` 榛樿涔熶娇鐢ㄤ腑鏂囦功鍐欙紝骞朵笌 `app_metadata.CHANGELOG` 淇濇寔鍚屼竴浜嬪疄鍙ｅ緞銆?- 鍚屼竴涓増鏈彿鍦?`docs/CHANGELOG.md`銆乣src/app_metadata.py` 鐨?`CHANGELOG` / `CHANGELOG_I18N` 涓彧鑳芥湁涓€涓増鏈潡锛涚増鏈噯澶囨湡闂寸殑鍚庣画琛ュ厖蹇呴』杩藉姞鍒版棦鏈夌増鏈潡鐨?`items` 鍚庨潰锛屼笉寰楀洜涓烘棩鏈熴€佸垎鐐规暟閲忔垨闃舵涓嶅悓鏂板紑绗簩涓悓鐗堟湰鏉＄洰銆?- 鍐呴儴妯″潡鍚嶃€佹枃浠跺悕銆佸嚱鏁板悕銆佸瓧娈靛悕銆乧ode銆乪num銆乻torage key銆佺幆澧冨彉閲忓拰鍗忚瀛楁缁х画淇濈暀鑻辨枃鍘熸枃锛屼笉涓轰簡涓枃鍖栬€屾敼鍐欐妧鏈爣璇嗐€?- 濡傚繀椤诲紩鐢ㄨ嫳鏂囧簱鍚嶃€佸紓甯稿悕銆佸懡浠ゅ悕鎴栧崗璁瓧娈碉紝鍙洿鎺ヤ繚鐣欒嫳鏂囷紱瑙ｉ噴鎬ф枃妗堜粛浣跨敤涓枃銆?
+- 鍙戝竷鍓嶆鏌?1.1.8 鍙婁箣鍚庣殑鏂板鐗堟湰璁板綍锛屼笉寰楀嚭鐜版暣鏉¤嫳鏂囨洿鏂拌鏄庢贩鍏ヤ腑鏂囩増鏈巻鍙层€?
 
-- 不得删除 `docs/`、`docs/technical/`、`docs/updates/`。
-- 不得清空正式文档。
-- 过时内容应修订、迁移、标注历史上下文或指向当前说明。
-- 新增模块或职责变化：更新 `MODULE_REFERENCE.md`。
-- UI 流程变化：更新 `UI_AND_WORKFLOWS.md`。
-- 技术链路变化：更新或新增 `docs/technical/` 专题。
-- 产品和界面规范变化：更新或新增 `docs/specs/` 专题。
-- 版本升级：更新 `CHANGELOG.md`、`src/app_metadata.py` 和 `docs/updates/<version>.md`。
-
-## 版本记录语言规范
-
-- `src/app_metadata.py` 内置 `CHANGELOG` 会在应用内展示，默认必须使用中文书写。
-- 根目录 `CHANGELOG.md` 和 `docs/updates/<version>.md` 默认也使用中文书写，并与 `app_metadata.CHANGELOG` 保持同一事实口径。
-- 同一个版本号在 `CHANGELOG.md`、`src/app_metadata.py` 的 `CHANGELOG` / `CHANGELOG_I18N` 中只能有一个版本块；版本准备期间的后续补充必须追加到既有版本块的 `items` 后面，不得因为日期、分点数量或阶段不同新开第二个同版本条目。
-- 内部模块名、文件名、函数名、字段名、code、enum、storage key、环境变量和协议字段继续保留英文原文，不为了中文化而改写技术标识。
-- 如必须引用英文库名、异常名、命令名或协议字段，可直接保留英文；解释性文案仍使用中文。
-- 发布前检查 1.1.8 及之后的新增版本记录，不得出现整条英文更新说明混入中文版本历史。
-
-## 推荐验证顺序
+## 鎺ㄨ崘楠岃瘉椤哄簭
 
 1. `python -m compileall -q .`
-2. 静态检查 `start.bat` / `tools/launcher/start_helper.py` 未加入 benchmark、扫描、更新包下载或其他启动无关重任务。
-3. 搜索旧入口描述：`single_image_window`、孤立"去噪当前"、普通 `messagebox` 长修复详情。
-4. 检查文档是否存在明显乱码。
-5. 检查 `git status --short`，确认没有本地样张、`__pycache__`、patch、tmp 或 debug 输出进入版本控制。
+2. 闈欐€佹鏌?`start.bat` / `tools/launcher/start_helper.py` 鏈姞鍏?benchmark銆佹壂鎻忋€佹洿鏂板寘涓嬭浇鎴栧叾浠栧惎鍔ㄦ棤鍏抽噸浠诲姟銆?
+3. 鎼滅储鏃у叆鍙ｆ弿杩帮細`single_image_window`銆佸绔?鍘诲櫔褰撳墠"銆佹櫘閫?`messagebox` 闀夸慨澶嶈鎯呫€?
+4. 妫€鏌ユ枃妗ｆ槸鍚﹀瓨鍦ㄦ槑鏄句贡鐮併€?
+5. 妫€鏌?`git status --short`锛岀‘璁ゆ病鏈夋湰鍦版牱寮犮€乣__pycache__`銆乸atch銆乼mp 鎴?debug 杈撳嚭杩涘叆鐗堟湰鎺у埗銆?
 
-## 高风险修改点
+## 楂橀闄╀慨鏀圭偣
 
-- `src/ui_app.py` 与 `src/ui_*` mixin：主线程、run_id、取消、列表刷新、Console 合并刷新和弹窗入口。
-- `src/analysis/core.py` / `src/analysis/portrait.py`：分析结论与人像误判。
-- `repair_ops.py` / `repair_engine.py`：视觉风格、输出安全和元数据。
-- `file_actions.py`：扫描忽略、清理安全和输出路径。
-- `app_settings.py`：设置兼容、默认值和 worker 规划。
-- `similar_detector.py` / `similar_review_dialog.py`：相似图算法与安全删除。
+- `src/ui_app.py` 涓?`src/ui_*` mixin锛氫富绾跨▼銆乺un_id銆佸彇娑堛€佸垪琛ㄥ埛鏂般€丆onsole 鍚堝苟鍒锋柊鍜屽脊绐楀叆鍙ｃ€?
+- `src/analysis/core.py` / `src/analysis/portrait.py`锛氬垎鏋愮粨璁轰笌浜哄儚璇垽銆?
+- `repair_ops.py` / `repair_engine.py`锛氳瑙夐鏍笺€佽緭鍑哄畨鍏ㄥ拰鍏冩暟鎹€?
+- `file_actions.py`锛氭壂鎻忓拷鐣ャ€佹竻鐞嗗畨鍏ㄥ拰杈撳嚭璺緞銆?
+- `app_settings.py`锛氳缃吋瀹广€侀粯璁ゅ€煎拰 worker 瑙勫垝銆?
+- `similar_detector.py` / `similar_review_dialog.py`锛氱浉浼煎浘绠楁硶涓庡畨鍏ㄥ垹闄ゃ€?
 
-# 1.2.5 维护补充说明
+# 1.2.5 缁存姢琛ュ厖璇存槑
 
-- UI 所有内部名词如 `cleanup candidate`、`no-op` 等面向用户展示时必须通过 `display_names.py` 转为"不适合保留"、"未生成新版本"等中文；上述文档已将描述更新为中文化词汇。
-- `start.bat` 已支持按需安装 `requirements.txt` 中的依赖（包括正式依赖 `cryptography`），但依然禁止包含任何其他重型操作。
-- 开发者私有文件如部署流程、AI协作提示词等归档于 `private_docs/`，严禁提交到公开仓库或发版包中。
-- UI/云端操作相关的网络调用必须放置于后台线程，超时和重试必须不阻塞主界面的重绘和用户操作，关闭窗口时必须能安全切断关联。
+- UI 鎵€鏈夊唴閮ㄥ悕璇嶅 `cleanup candidate`銆乣no-op` 绛夐潰鍚戠敤鎴峰睍绀烘椂蹇呴』閫氳繃 `display_names.py` 杞负"涓嶉€傚悎淇濈暀"銆?鏈敓鎴愭柊鐗堟湰"绛変腑鏂囷紱涓婅堪鏂囨。宸插皢鎻忚堪鏇存柊涓轰腑鏂囧寲璇嶆眹銆?
+- `start.bat` 浠呬綔涓烘簮鐮佸吋瀹瑰叆鍙ｏ紝宸叉敮鎸佹寜闇€瀹夎 `requirements/runtime.txt` 涓殑渚濊禆锛堝寘鎷寮忎緷璧?`cryptography`锛夛紝浣嗕緷鐒剁姝㈠寘鍚换浣曞叾浠栭噸鍨嬫搷浣溿€?- 寮€鍙戣€呯鏈夋枃浠跺閮ㄧ讲娴佺▼銆丄I鍗忎綔鎻愮ず璇嶇瓑褰掓。浜?`private_docs/`锛屼弗绂佹彁浜ゅ埌鍏紑浠撳簱鎴栧彂鐗堝寘涓€?
+- UI/浜戠鎿嶄綔鐩稿叧鐨勭綉缁滆皟鐢ㄥ繀椤绘斁缃簬鍚庡彴绾跨▼锛岃秴鏃跺拰閲嶈瘯蹇呴』涓嶉樆濉炰富鐣岄潰鐨勯噸缁樺拰鐢ㄦ埛鎿嶄綔锛屽叧闂獥鍙ｆ椂蹇呴』鑳藉畨鍏ㄥ垏鏂叧鑱斻€?
 
-# 1.2.6 维护补充说明
+# 1.2.6 缁存姢琛ュ厖璇存槑
 
-- 设置页保存动作应立即应用配置但保留窗口，方便用户连续调整；只有取消或关闭才退出设置页。
-- 右侧预览图必须从原图生成，不复用列表缩略图；首次选择图片时需在布局稳定后重绘，避免首屏小图。超高清图片预览应按显示区域降采样解码，后台完成像素解码，并缓存当前路径、尺寸和文件时间戳，避免主线程等待完整解码或重复解码。
-- 主列表缩略图缓存必须有容量上限并带文件时间戳；大文件夹浏览不能让 `PhotoImage` 缓存无限增长，原图修改后也不能继续复用旧缩略图。
-- 列表、清理复核和相似图复核的缩略图应按目标尺寸解码，不得为了小缩略图完整解码大 JPEG。
-- GPU 状态必须区分硬件检测、native 组件是否随包存在、当前任务是否实际使用三层。硬件可见但 native 组件缺失时继续 CPU 回退，并提示重新安装完整版本或获取 GPU 组件包，不得把 Python GPU 依赖作为普通用户主解决方案。
-- GPU 后端探测必须使用共享总耗时预算，不能让多个可选库串行累积完整超时。
+- 璁剧疆椤典繚瀛樺姩浣滃簲绔嬪嵆搴旂敤閰嶇疆浣嗕繚鐣欑獥鍙ｏ紝鏂逛究鐢ㄦ埛杩炵画璋冩暣锛涘彧鏈夊彇娑堟垨鍏抽棴鎵嶉€€鍑鸿缃〉銆?
+- 鍙充晶棰勮鍥惧繀椤讳粠鍘熷浘鐢熸垚锛屼笉澶嶇敤鍒楄〃缂╃暐鍥撅紱棣栨閫夋嫨鍥剧墖鏃堕渶鍦ㄥ竷灞€绋冲畾鍚庨噸缁橈紝閬垮厤棣栧睆灏忓浘銆傝秴楂樻竻鍥剧墖棰勮搴旀寜鏄剧ず鍖哄煙闄嶉噰鏍疯В鐮侊紝鍚庡彴瀹屾垚鍍忕礌瑙ｇ爜锛屽苟缂撳瓨褰撳墠璺緞銆佸昂瀵稿拰鏂囦欢鏃堕棿鎴筹紝閬垮厤涓荤嚎绋嬬瓑寰呭畬鏁磋В鐮佹垨閲嶅瑙ｇ爜銆?
+- 涓诲垪琛ㄧ缉鐣ュ浘缂撳瓨蹇呴』鏈夊閲忎笂闄愬苟甯︽枃浠舵椂闂存埑锛涘ぇ鏂囦欢澶规祻瑙堜笉鑳借 `PhotoImage` 缂撳瓨鏃犻檺澧為暱锛屽師鍥句慨鏀瑰悗涔熶笉鑳界户缁鐢ㄦ棫缂╃暐鍥俱€?
+- 鍒楄〃銆佹竻鐞嗗鏍稿拰鐩镐技鍥惧鏍哥殑缂╃暐鍥惧簲鎸夌洰鏍囧昂瀵歌В鐮侊紝涓嶅緱涓轰簡灏忕缉鐣ュ浘瀹屾暣瑙ｇ爜澶?JPEG銆?
+- GPU 鐘舵€佸繀椤诲尯鍒嗙‖浠舵娴嬨€乶ative 缁勪欢鏄惁闅忓寘瀛樺湪銆佸綋鍓嶄换鍔℃槸鍚﹀疄闄呬娇鐢ㄤ笁灞傘€傜‖浠跺彲瑙佷絾 native 缁勪欢缂哄け鏃剁户缁?CPU 鍥為€€锛屽苟鎻愮ず閲嶆柊瀹夎瀹屾暣鐗堟湰鎴栬幏鍙?GPU 缁勪欢鍖咃紝涓嶅緱鎶?Python GPU 渚濊禆浣滀负鏅€氱敤鎴蜂富瑙ｅ喅鏂规銆?- GPU 鍚庣鎺㈡祴蹇呴』浣跨敤鍏变韩鎬昏€楁椂棰勭畻锛屼笉鑳借澶氫釜鍙€夊簱涓茶绱Н瀹屾暣瓒呮椂銆?
 
 ---
-> 下方内容为旧版本的维护规范英文历史记录，供追溯使用。
+> 涓嬫柟鍐呭涓烘棫鐗堟湰鐨勭淮鎶よ鑼冭嫳鏂囧巻鍙茶褰曪紝渚涜拷婧娇鐢ㄣ€?
 
 # 1.1.8 Maintenance Addendum
 
@@ -212,7 +193,7 @@
 - Update and cloud-message UI orchestration lives in `ui/cloud_actions.py` and `ui/cloud_dialogs.py`; do not move protocol logic into `ui_app.py`.
 - Developer mode is session-only and backed by `developer_mode.py`; never store an unlocked flag in `app_settings.json`.
 - EXIF edits must preserve ShapeYourPhoto provenance fields and block any value containing `shapeyourphoto`.
-- Startup scripts must stay fast; 1.2.6 allows only on-demand runtime dependency installation from `requirements.txt`, and still forbids benchmarks, scans or update-package downloads during startup.
+- Startup scripts must stay fast; current source builds allow only on-demand runtime dependency installation from `requirements/runtime.txt`, and still forbid benchmarks, scans or update-package downloads during startup.
 - GitHub auto-packaging workflow is paused in 1.1.8; release/server steps live in ignored private docs.
 
 # 1.1.9 Maintenance Addendum
@@ -224,8 +205,7 @@
 
 # 1.2.0 Maintenance Addendum
 
-- `cryptography` 是 updater 验签的正式依赖，必须通过 `requirements.txt`、`tools/launcher/start_helper.py` 和打包配置进入发布流程。
-- 1.2.5 起 `start.bat` 可以触发按需依赖安装；但仍不得加入更新下载、benchmark、扫描或其他启动无关重任务。
-- 正式包应包含 `assets/update_public_key.pem`；开发测试可用 `SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE` 覆盖公钥文件。
-- `update_private_key.pem` 永远不得进入仓库、源码包、安装包或普通项目目录。
-- 文档中的历史版本号可保留上下文；下一次真实 updater 测试流程使用 `1.2.0 -> 1.2.1`。
+- `cryptography` 鏄?updater 楠岀鐨勬寮忎緷璧栵紝蹇呴』閫氳繃 `requirements/runtime.txt`銆乣tools/launcher/start_helper.py` 鍜屾墦鍖呴厤缃繘鍏ュ彂甯冩祦绋嬨€?- 1.2.5 璧?`start.bat` 鍙互瑙﹀彂鎸夐渶渚濊禆瀹夎锛涗絾浠嶄笉寰楀姞鍏ユ洿鏂颁笅杞姐€乥enchmark銆佹壂鎻忔垨鍏朵粬鍚姩鏃犲叧閲嶄换鍔°€?
+- 姝ｅ紡鍖呭簲鍖呭惈 `assets/update_public_key.pem`锛涘紑鍙戞祴璇曞彲鐢?`SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE` 瑕嗙洊鍏挜鏂囦欢銆?
+- `update_private_key.pem` 姘歌繙涓嶅緱杩涘叆浠撳簱銆佹簮鐮佸寘銆佸畨瑁呭寘鎴栨櫘閫氶」鐩洰褰曘€?
+- 鏂囨。涓殑鍘嗗彶鐗堟湰鍙峰彲淇濈暀涓婁笅鏂囷紱涓嬩竴娆＄湡瀹?updater 娴嬭瘯娴佺▼浣跨敤 `1.2.0 -> 1.2.1`銆?

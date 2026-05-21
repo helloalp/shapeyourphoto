@@ -2,9 +2,9 @@
 
 `docs/updates/` 存放按版本归档的更新记录。旧版本记录不得删除；如果旧记录与当前行为冲突，以最新版本文档、当前 `docs/technical/` 专题和代码为准。
 
-从 1.1.8 起，新增版本记录默认使用中文，并与根 `CHANGELOG.md`、`src/app_metadata.py` 内置 `CHANGELOG` 保持同一事实口径。文件名、模块名、函数名、环境变量、协议字段、内部 code/enum/storage value 等技术标识保留英文原文。
+从 1.1.8 起，新增版本记录默认使用中文，并与`docs/CHANGELOG.md`、`src/app_metadata.py` 内置 `CHANGELOG` 保持同一事实口径。文件名、模块名、函数名、环境变量、协议字段、内部 code/enum/storage value 等技术标识保留英文原文。
 
-同一个版本号只能有一个版本记录块。版本准备期间如果继续补充功能、修复或打包变更，必须累计追加到既有版本的条目后面，不得因为日期变化、分点过多或维护阶段不同，在 `CHANGELOG.md` 或 `src/app_metadata.py` 中再开第二个同版本条目。
+同一个版本号只能有一个版本记录块。版本准备期间如果继续补充功能、修复或打包变更，必须累计追加到既有版本的条目后面，不得因为日期变化、分点过多或维护阶段不同，在 `docs/CHANGELOG.md` 或 `src/app_metadata.py` 中再开第二个同版本条目。
 
 ## 规则
 
@@ -22,6 +22,7 @@
 
 ## 当前版本更新文档
 
+- [1.2.7](/E:/aitools/shapeyourphoto/docs/updates/1.2.7.md)
 - [1.2.6](/E:/aitools/shapeyourphoto/docs/updates/1.2.6.md)
 - [1.2.5](/E:/aitools/shapeyourphoto/docs/updates/1.2.5.md)
 - [1.2.4](/E:/aitools/shapeyourphoto/docs/updates/1.2.4.md)

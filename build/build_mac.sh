@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 本地 macOS 一键构建：从 PyInstaller 到 .dmg
 # 前置：python3 安装带 Tk（推荐 python.org 安装包 或 brew install python-tk）
-#       已 pip install -r requirements.txt pyinstaller
+#       已 pip install -r requirements/runtime.txt pyinstaller
 #       已 brew install create-dmg
 
 set -euo pipefail

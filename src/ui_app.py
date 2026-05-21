@@ -124,6 +124,7 @@ class PhotoAnalyzerApp(
         self._analysis_run_id = 0
         self._analysis_cancel_event: threading.Event | None = None
         self._analysis_cancel_targets: list[Path] = []
+        self._analysis_allowed_targets: set[Path] = set()
         self._repair_run_id = 0
         self._repair_cancel_event: threading.Event | None = None
         self._repair_cancel_targets: list[Path] = []
@@ -407,7 +408,6 @@ class PhotoAnalyzerApp(
             self.cleanup_tree.heading("#0", text=tr("cleanup.tree_name"))
             self.cleanup_tree.heading("pick", text=tr("cleanup.state"))
             self.cleanup_tree.heading("severity", text=tr("cleanup.severity"))
-            self.cleanup_tree.heading("confidence", text=tr("cleanup.confidence"))
             self.cleanup_tree.heading("reason", text=tr("cleanup.reason"))
         if hasattr(self, "right_info_book"):
             for tab, key in getattr(self, "_right_info_tabs", []):
@@ -662,7 +662,7 @@ class PhotoAnalyzerApp(
 
         self.cleanup_tree = ttk.Treeview(
             cleanup_tree_frame,
-            columns=("pick", "severity", "confidence", "reason"),
+            columns=("pick", "severity", "reason"),
             show=("tree", "headings"),
             selectmode="extended",
             height=5,
@@ -673,10 +673,8 @@ class PhotoAnalyzerApp(
         self.cleanup_tree.column("pick", width=72, anchor="center")
         self.cleanup_tree.heading("severity", text=tr("cleanup.severity"))
         self.cleanup_tree.column("severity", width=72, anchor="center")
-        self.cleanup_tree.heading("confidence", text=tr("cleanup.confidence"))
-        self.cleanup_tree.column("confidence", width=72, anchor="center")
         self.cleanup_tree.heading("reason", text=tr("cleanup.reason"))
-        self.cleanup_tree.column("reason", width=360, anchor="w")
+        self.cleanup_tree.column("reason", width=430, anchor="w")
         cleanup_scroll = ttk.Scrollbar(cleanup_tree_frame, orient="vertical", command=self.cleanup_tree.yview)
         self.cleanup_tree.configure(yscrollcommand=cleanup_scroll.set)
         self.cleanup_tree.grid(row=0, column=0, sticky="nsew")
@@ -791,7 +789,9 @@ class PhotoAnalyzerApp(
         self.console_text.configure(yscrollcommand=console_scroll.set)
         self.console_text.grid(row=0, column=0, sticky="nsew")
         console_scroll.grid(row=0, column=1, sticky="ns")
-        self.console_text.insert("1.0", self.console.dump())
+        self.console_text.tag_configure("time", font=("Consolas", 9, "bold"), foreground="#203827")
+        self.console_text.tag_configure("event", foreground="#33443a")
+        self._render_console_text()
         self.console_text.config(state="disabled")
 
         preview_tab.columnconfigure(0, weight=1)
@@ -1003,16 +1003,14 @@ class PhotoAnalyzerApp(
         show_stats_dialog(self.root, self.stats)
 
     def open_format_conversion(self) -> None:
-        current_paths = set(self.image_paths)
-        targets = [path for path, flag in self.selected_flags.items() if flag.get() and path in current_paths and path.exists()]
-        if not targets:
-            targets = [path for path in self._selected_tree_paths() if path in current_paths and path.exists()]
+        targets = self.resolve_conversion_targets()
         if not targets:
             current = self._current_path()
-            if current is not None and current in current_paths and current.exists():
+            if current is not None and current in self.image_paths and current.exists():
                 targets = [current]
         if not targets:
             messagebox.showinfo(tr("format.title"), tr("format.no_selection"), parent=self.root)
+            self._log_console("format conversion skipped: no current list targets")
             return
         self._log_console(f"format conversion dialog opened: count={len(targets)}")
         show_format_conversion_dialog(self.root, targets, log_callback=self._log_console)

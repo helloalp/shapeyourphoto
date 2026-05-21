@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import os
+import queue
 import tempfile
 import threading
 import time
@@ -132,6 +133,7 @@ class FormatConversionDialog(tk.Toplevel):
         self._running = False
         self._created_outputs: list[Path] = []
         self._started_at = 0.0
+        self._ui_queue: queue.SimpleQueue = queue.SimpleQueue()
         self.output_var = tk.StringVar(value=str(_default_output_dir(self.paths)))
         self.format_var = tk.StringVar(value=FORMATS[0])
         self.status_var = tk.StringVar(value=tr("format.hint").format(count=len(self.paths)))
@@ -192,6 +194,29 @@ class FormatConversionDialog(tk.Toplevel):
 
         bind_minimum_size_notice(self, self._size_notice_var, 780, 560)
         center_window(self, 860, 680)
+        self.after(40, self._drain_ui_queue)
+
+    def _dispatch_ui(self, callback) -> None:
+        self._ui_queue.put(callback)
+
+    def _drain_ui_queue(self) -> None:
+        drained = 0
+        try:
+            while drained < 80:
+                callback = self._ui_queue.get_nowait()
+                if self.winfo_exists():
+                    callback()
+                drained += 1
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return
+        try:
+            alive = self.winfo_exists()
+        except tk.TclError:
+            return
+        if alive:
+            self.after(1 if drained >= 80 else 40, self._drain_ui_queue)
 
     def _choose_dir(self) -> None:
         chosen = filedialog.askdirectory(parent=self, initialdir=self.output_var.get() or str(Path.cwd()))
@@ -258,7 +283,7 @@ class FormatConversionDialog(tk.Toplevel):
                     skipped += total - offset + 1
                     results.extend(ConversionResult(item, None, False, "not started", skipped=True) for item in self.paths[offset - 1 :])
                     break
-                self.after(0, lambda i=offset, p=path, o=ok, f=failed, s=skipped: self._update_progress(i, total, p.name, o, f, s))
+                self._dispatch_ui(lambda i=offset, p=path, o=ok, f=failed, s=skipped: self._update_progress(i, total, p.name, o, f, s))
                 result = convert_image_loss_preserving(path, output_dir, target_format)
                 results.append(result)
                 if result.ok and result.output is not None:
@@ -268,8 +293,8 @@ class FormatConversionDialog(tk.Toplevel):
                 else:
                     failed += 1
                     self._log(f"format conversion failed: {path.name} | {result.message}")
-                self.after(0, lambda i=offset, p=path, o=ok, f=failed, s=skipped: self._update_progress(i, total, p.name, o, f, s))
-            self.after(0, lambda r=results, o=ok, f=failed, s=skipped: self._finish(r, o, f, s, output_dir))
+                self._dispatch_ui(lambda i=offset, p=path, o=ok, f=failed, s=skipped: self._update_progress(i, total, p.name, o, f, s))
+            self._dispatch_ui(lambda r=results, o=ok, f=failed, s=skipped: self._finish(r, o, f, s, output_dir))
 
         threading.Thread(target=worker, daemon=False, name="ShapeYourPhotoFormatConversion").start()
 

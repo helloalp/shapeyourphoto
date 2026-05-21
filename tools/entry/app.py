@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 
-APP_ROOT = Path(__file__).resolve().parent
+APP_ROOT = Path(__file__).resolve().parents[2]
 APP_PACKAGE_DIR = APP_ROOT / "src"
 if str(APP_PACKAGE_DIR) not in sys.path:
     sys.path.insert(0, str(APP_PACKAGE_DIR))

@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
-const VERSION: &str = "1.2.6-native.1";
+const VERSION: &str = "1.2.7-native.1";
 #[cfg(target_os = "windows")]
 const BACKENDS: wgpu::Backends = wgpu::Backends::PRIMARY;
 #[cfg(not(target_os = "windows"))]

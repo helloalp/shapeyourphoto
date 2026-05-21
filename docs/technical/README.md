@@ -7,6 +7,7 @@
 - [ANALYSIS_PIPELINE.md](/E:/aitools/shapeyourphoto/docs/technical/ANALYSIS_PIPELINE.md)：分析流水线、`AnalysisResult` 字段、run_id/cancel_event 写回边界。
 - [PORTRAIT_AWARE_ANALYSIS.md](/E:/aitools/shapeyourphoto/docs/technical/PORTRAIT_AWARE_ANALYSIS.md)：人像候选、真实人脸验证和 portrait policy。
 - [PERFORMANCE_AND_CONCURRENCY.md](/E:/aitools/shapeyourphoto/docs/technical/PERFORMANCE_AND_CONCURRENCY.md)：worker 规划、Tk 主线程、Console 合并刷新、GPU fallback。
+- [RUST_NATIVE_ROADMAP.md](/E:/aitools/shapeyourphoto/docs/technical/RUST_NATIVE_ROADMAP.md)：Python 热点 Rust 化判断、原生 launcher 演进和 native 组件验证。
 - [PERFORMANCE_BENCHMARKS.md](/E:/aitools/shapeyourphoto/docs/technical/PERFORMANCE_BENCHMARKS.md)：`test/` 本地真实图片 benchmark 和 1.1.5 基线。
 - [UI_MAIN_CLASS_SPLIT.md](/E:/aitools/shapeyourphoto/docs/technical/UI_MAIN_CLASS_SPLIT.md)：`PhotoAnalyzerApp` 拆分边界、UI mixin 职责和维护规则。
 - [SIMILAR_IMAGES.md](/E:/aitools/shapeyourphoto/docs/technical/SIMILAR_IMAGES.md)：相似图批次结果、复核窗口和安全删除。

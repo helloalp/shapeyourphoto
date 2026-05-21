@@ -33,10 +33,13 @@ class UiTaskConsoleMixin:
                 drained += 1
         except queue.Empty:
             pass
-        finally:
-            if self.root.winfo_exists():
-                delay = 1 if drained >= 80 else 25
-                self.root.after(delay, self._drain_ui_queue)
+        try:
+            alive = self.root.winfo_exists()
+        except tk.TclError:
+            return
+        if alive:
+            delay = 1 if drained >= 80 else 25
+            self.root.after(delay, self._drain_ui_queue)
 
     def _log_console(self, message: str) -> None:
         self.console.log(message)
@@ -61,14 +64,28 @@ class UiTaskConsoleMixin:
         started_at = time.perf_counter()
         try:
             self.console_text.config(state="normal")
-            self.console_text.delete("1.0", "end")
-            self.console_text.insert("1.0", self.console.dump())
+            self._render_console_text()
             self.console_text.config(state="disabled")
             self.console_text.see("end")
         except tk.TclError:
             return
         self._console_flush_total_ms += (time.perf_counter() - started_at) * 1000.0
         self._console_flush_count += 1
+
+    def _render_console_text(self) -> None:
+        self.console_text.delete("1.0", "end")
+        lines = list(getattr(self.console, "lines", []))
+        if not lines:
+            self.console_text.insert("1.0", "控制台暂无输出。")
+            return
+        for line in lines:
+            if line.startswith("[") and "]" in line[:40]:
+                end = line.find("]") + 1
+                self.console_text.insert("end", line[:end], ("time",))
+                self.console_text.insert("end", line[end:], ("event",))
+            else:
+                self.console_text.insert("end", line, ("event",))
+            self.console_text.insert("end", "\n")
 
     def _analysis_worker_plan(self, total: int) -> AnalysisWorkerPlan:
         return resolve_analysis_worker_plan(

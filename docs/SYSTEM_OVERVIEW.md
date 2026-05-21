@@ -20,7 +20,7 @@ ShapeYourPhoto 是一个本地图片质量分析、修复与清理工具，面�
 
 ## 主流程
 
-1. `start.bat` 查找 Python，并调用 `tools/launcher/start_helper.py` 检查运行依赖、按需安装依赖和启动 GUI。
+1. 发布包通过 `ShapeYourPhoto.exe` 启动；源码包兼容入口 `start.bat` 仍可查找 Python，并调用 `tools/launcher/start_helper.py` 检查运行依赖、按需安装依赖和启动 GUI。
 2. `app.py` 创建 Tk 根窗口，挂载 `PhotoAnalyzerApp`。
 3. 用户选择图片、目录或拖入路径，`src/ui_app.py` 将图片加入主列表。
 4. 目录扫描走 `src/file_actions.py`，遵守默认扫描模式和忽略前缀，结果写入扫描摘要。
