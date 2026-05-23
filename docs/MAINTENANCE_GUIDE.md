@@ -173,7 +173,6 @@
 # 1.2.5 缁存姢琛ュ厖璇存槑
 
 - UI 鎵€鏈夊唴閮ㄥ悕璇嶅 `cleanup candidate`銆乣no-op` 绛夐潰鍚戠敤鎴峰睍绀烘椂蹇呴』閫氳繃 `display_names.py` 杞负"涓嶉€傚悎淇濈暀"銆?鏈敓鎴愭柊鐗堟湰"绛変腑鏂囷紱涓婅堪鏂囨。宸插皢鎻忚堪鏇存柊涓轰腑鏂囧寲璇嶆眹銆?
-- `start.bat` 浠呬綔涓烘簮鐮佸吋瀹瑰叆鍙ｏ紝宸叉敮鎸佹寜闇€瀹夎 `requirements/runtime.txt` 涓殑渚濊禆锛堝寘鎷寮忎緷璧?`cryptography`锛夛紝浣嗕緷鐒剁姝㈠寘鍚换浣曞叾浠栭噸鍨嬫搷浣溿€?- 寮€鍙戣€呯鏈夋枃浠跺閮ㄧ讲娴佺▼銆丄I鍗忎綔鎻愮ず璇嶇瓑褰掓。浜?`private_docs/`锛屼弗绂佹彁浜ゅ埌鍏紑浠撳簱鎴栧彂鐗堝寘涓€?
 - UI/浜戠鎿嶄綔鐩稿叧鐨勭綉缁滆皟鐢ㄥ繀椤绘斁缃簬鍚庡彴绾跨▼锛岃秴鏃跺拰閲嶈瘯蹇呴』涓嶉樆濉炰富鐣岄潰鐨勯噸缁樺拰鐢ㄦ埛鎿嶄綔锛屽叧闂獥鍙ｆ椂蹇呴』鑳藉畨鍏ㄥ垏鏂叧鑱斻€?
 
 # 1.2.6 缁存姢琛ュ厖璇存槑
@@ -194,12 +193,12 @@
 - Developer mode is session-only and backed by `developer_mode.py`; never store an unlocked flag in `app_settings.json`.
 - EXIF edits must preserve ShapeYourPhoto provenance fields and block any value containing `shapeyourphoto`.
 - Startup scripts must stay fast; current source builds allow only on-demand runtime dependency installation from `requirements/runtime.txt`, and still forbid benchmarks, scans or update-package downloads during startup.
-- GitHub auto-packaging workflow is paused in 1.1.8; release/server steps live in ignored private docs.
+- GitHub auto-packaging workflow is paused in 1.1.8; release/server steps live in ignored technical notes.
 
 # 1.1.9 Maintenance Addendum
 
 - Production update and cloud-message URLs are fixed internal constants. Do not expose them in Settings, do not persist them in ordinary `app_settings.json`, and do not add user-editable URL fields back.
-- Settings pages shown to regular users should use short, understandable descriptions. Keep implementation notes in docs or private docs instead of user-facing labels.
+- Settings pages shown to regular users should use short, understandable descriptions. Keep implementation notes in docs or technical notes instead of user-facing labels.
 - Theme settings may show theme names only; do not expose concrete color token values in the user settings dialog.
 - The main window title format is `Shape Your Photo | v<version> | by Helloalp`.
 
@@ -207,5 +206,6 @@
 
 - `cryptography` 鏄?updater 楠岀鐨勬寮忎緷璧栵紝蹇呴』閫氳繃 `requirements/runtime.txt`銆乣tools/launcher/start_helper.py` 鍜屾墦鍖呴厤缃繘鍏ュ彂甯冩祦绋嬨€?- 1.2.5 璧?`start.bat` 鍙互瑙﹀彂鎸夐渶渚濊禆瀹夎锛涗絾浠嶄笉寰楀姞鍏ユ洿鏂颁笅杞姐€乥enchmark銆佹壂鎻忔垨鍏朵粬鍚姩鏃犲叧閲嶄换鍔°€?
 - 姝ｅ紡鍖呭簲鍖呭惈 `assets/update_public_key.pem`锛涘紑鍙戞祴璇曞彲鐢?`SHAPEYOURPHOTO_UPDATE_PUBLIC_KEY_FILE` 瑕嗙洊鍏挜鏂囦欢銆?
-- `update_private_key.pem` 姘歌繙涓嶅緱杩涘叆浠撳簱銆佹簮鐮佸寘銆佸畨瑁呭寘鎴栨櫘閫氶」鐩洰褰曘€?
+- 签名密钥文件不得进入仓库、源码包或安装包。
 - 鏂囨。涓殑鍘嗗彶鐗堟湰鍙峰彲淇濈暀涓婁笅鏂囷紱涓嬩竴娆＄湡瀹?updater 娴嬭瘯娴佺▼浣跨敤 `1.2.0 -> 1.2.1`銆?
+

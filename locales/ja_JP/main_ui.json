@@ -1,0 +1,6 @@
+{
+  "action.analyze": "分析",
+  "analysis.partial_confirm_title": "分析範囲の確認",
+  "analysis.partial_confirm_body": "現在の一覧は {total} 枚で、選択済みは {selected} 枚です。続行すると選択済み画像だけを分析します。",
+  "duplicate.path_tooltip": "実際のパス：{path}"
+}

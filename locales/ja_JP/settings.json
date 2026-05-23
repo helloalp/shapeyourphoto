@@ -1,0 +1,7 @@
+{
+    "settings.main_window_size":  "メイン画面の初期サイズ：",
+    "settings.dialog_window_size":  "ダイアログの既定サイズ：",
+    "settings.desc.window_sizes":  "メイン画面は使用可能な画面領域に対する割合で開きます。ダイアログはメイン画面に対する割合で開き、背後の画面が見える大きさにします。保存後、次に各ウィンドウを開くと反映されます。",
+    "settings.restore_layout_defaults":  "ウィンドウ配置を既定に戻す",
+    "settings.layout_defaults_restored":  "ウィンドウ配置を既定に戻しました。"
+}

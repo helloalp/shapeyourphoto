@@ -24,11 +24,9 @@
 - 涓嶅緱鍒犻櫎 `docs/`銆乣docs/technical/`銆乣docs/updates/`銆?- 涓嶅緱娓呯┖姝ｅ紡鏂囨。銆?- 鏃у唴瀹逛笉閫傜敤鏃讹紝搴斾慨璁€佽縼绉汇€佹爣娉ㄥ巻鍙蹭笂涓嬫枃锛屾垨鎸囧悜褰撳墠璇存槑銆?- 涓嶅緱鍦ㄥ叕寮€鎴栫鏈夋枃妗ｄ腑鍔犲叆闄愬埗浜у搧鏈潵鍙戝睍鏂瑰悜銆侀€傜敤浜虹兢銆佷娇鐢ㄥ満鏅€丄I 鑳藉姏鎺ュ叆鎴栦笓涓氬寲鍔熻兘鎵╁睍鐨勮〃杩帮紱浠讳綍鏂囨。淇敼銆佸鍒犮€佹洿鏂般€佸崌绾ч兘搴旀弿杩板綋鍓嶄簨瀹炪€佸綋鍓嶅畨鍏ㄨ鍒欏拰宸插疄鐜拌涓猴紝涓嶅簲鎶婇樁娈垫€х姸鎬佸啓鎴愰暱鏈熶骇鍝佽竟鐣屻€?- README銆丆HANGELOG銆乣docs/updates/` 鍜?`src/app_metadata.py` 涓殑鏇存柊鍘嗗彶涓嶅緱鍐欏叆寮€鍙戣€呰澶囧瀷鍙枫€佺鏈夋祴璇曠幆澧冦€佸唴閮ㄤ緷璧栨爤缁嗚妭銆佺淮鎶よ繃绋嬨€丄I 鍗忎綔杩囩▼鎴栭€傜敤瀵硅薄鏍囩锛涘彧璁板綍鐢ㄦ埛鍙悊瑙ｇ殑鍔熻兘鍙樺寲銆佷綋楠屽彉鍖栧拰瀹夊叏缁撴灉銆?- 鍔熻兘銆佹ā鍧椼€佽缃垨鐗堟湰鍙樺寲鏃讹紝鍚屾鏇存柊 `docs/CHANGELOG.md`銆乣src/app_metadata.py` 鍜屽搴?`docs/updates/<version>.md`銆?- 鐗堟湰璁板綍榛樿浣跨敤涓枃锛歚app_metadata.CHANGELOG`銆佹牴 `docs/CHANGELOG.md` 鍜?`docs/updates/<version>.md` 蹇呴』淇濇寔涓枃浜嬪疄鍙ｅ緞涓€鑷达紱鑻辨枃浠呬繚鐣欏湪鏂囦欢鍚嶃€佸嚱鏁板悕銆佸崗璁瓧娈点€佺幆澧冨彉閲忓拰鍐呴儴 code/enum 绛夋妧鏈爣璇嗕腑銆?- 鍚屼竴涓増鏈彿鍙兘鏈変竴涓増鏈褰曞潡锛涘悗缁ˉ鍏呭簲杩藉姞鍒版棦鏈夋潯鐩悗闈紝涓嶅緱鎷嗘垚澶氫釜鍚岀増鏈褰曘€?
 # 1.1.9 Documentation Note
 
-Public `docs/` keeps user, contributor and module-boundary information. Private server deployment steps, signing-key handling, release operations, internal maintenance strategy and local AI-agent instructions live under ignored `private_docs/`.
 
 See also `docs/updates/1.1.9.md`, `docs/technical/UPDATES_AND_CLOUD.md`, and `docs/technical/UI_SETTINGS_DATA.md`.
 
 # 1.2.6 鏂囨。璇存槑
 
-鍏紑鐨?`docs/` 淇濈暀闈㈠悜鐢ㄦ埛銆佽础鐚€呭拰妯″潡杈圭晫鐨勪俊鎭€傛湇鍔″櫒閮ㄧ讲姝ラ銆佺閽ユ搷浣溿€佸彂甯冩祦绋嬨€佸唴閮ㄧ淮鎶ょ瓥鐣ュ拰 AI 鍗忎綔鎻愮ず璇嶅瓨鏀句簬琚?`.gitignore` 蹇界暐鐨?`private_docs/` 涓紝涓嶈繘鍏ュ叕寮€浠撳簱銆?
 鍙傝 `docs/updates/1.2.6.md`銆乣docs/technical/UPDATES_AND_CLOUD.md` 鍜?`docs/technical/UI_SETTINGS_DATA.md`銆?

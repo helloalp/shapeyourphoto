@@ -8,7 +8,7 @@ from app_settings import REPAIR_SUMMARY_FILTER_ALL, REPAIR_SUMMARY_FILTER_OPTION
 from ui.display_names import display_name
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import bind_minimum_size_notice, center_window
+from dialog_factory import DialogSpec, finalize_dialog_window
 
 
 @dataclass
@@ -33,9 +33,9 @@ class RepairCompletionDialog(tk.Toplevel):
         default_filter: str = REPAIR_SUMMARY_FILTER_ALL,
     ) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title(app_window_title(title))
         self.transient(parent.winfo_toplevel())
-        self.grab_set()
         self.resizable(True, True)
         self.minsize(1040, 720)
         self._entries = entries
@@ -136,8 +136,19 @@ class RepairCompletionDialog(tk.Toplevel):
 
         self._item_to_entry: dict[str, RepairCompletionEntry] = {}
         self._populate_tree()
-        bind_minimum_size_notice(self, self._size_notice_var, 1040, 720)
-        center_window(self, 1320, 900)
+        finalize_dialog_window(
+            self,
+            parent,
+            DialogSpec(
+                title=app_window_title(title),
+                min_width=1040,
+                min_height=720,
+                fallback_width=1320,
+                fallback_height=900,
+                modal=False,
+            ),
+            size_notice_var=self._size_notice_var,
+        )
 
     def _current_filter(self) -> str:
         return normalize_repair_summary_filter(self._label_to_filter.get(self.filter_var.get()))

@@ -1,0 +1,6 @@
+{
+  "action.analyze": "分析",
+  "analysis.partial_confirm_title": "确认分析范围",
+  "analysis.partial_confirm_body": "当前列表共有 {total} 张图片，已选中 {selected} 张。点击继续后只会分析已选中的图片。是否继续？",
+  "duplicate.path_tooltip": "真实路径：{path}"
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+import traceback
 import tkinter as tk
 from pathlib import Path
 
@@ -29,7 +30,14 @@ class UiTaskConsoleMixin:
         try:
             while drained < 80 and (time.perf_counter() - started_at) < 0.012:
                 callback = self._ui_queue.get_nowait()
-                callback()
+                try:
+                    callback()
+                except Exception as exc:
+                    try:
+                        self.console.log(f"ui callback failed: {exc}")
+                        self.console.log(traceback.format_exc(limit=4).strip())
+                    except Exception:
+                        pass
                 drained += 1
         except queue.Empty:
             pass
@@ -73,6 +81,15 @@ class UiTaskConsoleMixin:
         self._console_flush_count += 1
 
     def _render_console_text(self) -> None:
+        theme = getattr(self, "_theme", None)
+        if theme is not None:
+            self.console_text.configure(
+                selectbackground=theme.selection,
+                selectforeground=theme.text,
+                inactiveselectbackground=theme.selection,
+            )
+            self.console_text.tag_configure("time", font=("Consolas", 9, "bold"), foreground=theme.primary)
+            self.console_text.tag_configure("event", foreground=theme.text)
         self.console_text.delete("1.0", "end")
         lines = list(getattr(self.console, "lines", []))
         if not lines:
@@ -126,6 +143,8 @@ class UiTaskConsoleMixin:
         title: str,
         detail: str,
         *,
+        task_kind: str = "task",
+        cancel_event: threading.Event | None = None,
         show_dialog: bool = False,
         dialog_title: str | None = None,
         dialog_header: str | None = None,
@@ -133,10 +152,19 @@ class UiTaskConsoleMixin:
         cancel_text: str = "取消",
         display_total: int | None = None,
         display_done: float | None = None,
-    ) -> None:
+    ):
         self._task_started_at = time.monotonic()
         self._last_progress_ui_update = 0.0
         self._last_repair_phase_update = 0.0
+        task_record = None
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_record = task_manager.start(
+                kind=task_kind,
+                name=title,
+                total=max(1, total),
+                cancel_event=cancel_event,
+            )
         self.is_busy = True
         self._set_controls_enabled(False)
         self._active_task_cancel_callback = cancel_callback
@@ -158,8 +186,12 @@ class UiTaskConsoleMixin:
             display_total=display_total,
             display_done=display_done,
         )
+        return task_record
 
     def _finish_task(self, title: str, detail: str) -> None:
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.complete()
         self.is_busy = False
         self._set_controls_enabled(True)
         self._active_task_cancel_callback = None
@@ -172,6 +204,9 @@ class UiTaskConsoleMixin:
         callback = getattr(self, "_active_task_cancel_callback", None)
         if callback is None:
             return
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.request_cancel()
         if hasattr(self, "task_cancel_button"):
             self.task_cancel_button.configure(state="disabled")
         callback()

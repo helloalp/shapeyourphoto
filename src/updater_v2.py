@@ -21,6 +21,9 @@ from tkinter import messagebox, ttk
 
 from app_metadata import APP_VERSION, APP_VERSION_ID
 from cloud_security import path_within, sha256_file
+from task_state import TaskManager, TaskRecord, TaskStateMachine, TaskStatus
+from update_policy import evaluate_update_lag
+from ui.language import DEFAULT_LANGUAGE, set_current_language, tr, trf
 
 
 DOWNLOAD_TIMEOUT = 30
@@ -34,7 +37,7 @@ PROTECTED_TOP_LEVEL = {
     ".github",
     "benchmark_reports",
     "data",
-    "private_docs",
+    "private",
     "test",
     "tmp",
     "_cleanup_candidates",
@@ -65,6 +68,7 @@ class UpdateContext:
     deferred_replacements: list[tuple[Path, Path]] = field(default_factory=list)
     deferred_deletions: list[Path] = field(default_factory=list)
     stager_path: Path | None = None
+    task_record: TaskRecord | None = None
 
     def emit(self, message: str) -> None:
         self.log.put(message)
@@ -90,7 +94,7 @@ def _read_url_to_file(url: str, target: Path, ctx: UpdateContext) -> None:
         if ctx.cancel_requested.is_set():
             raise RuntimeError("用户已取消更新")
         if attempt > 1:
-            ctx.emit(f"下载重试 {attempt}/{DOWNLOAD_RETRIES}")
+            ctx.emit(trf("updater.status.download_retry", attempt=attempt, total=DOWNLOAD_RETRIES))
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT) as response, target.open("wb") as handle:
@@ -103,7 +107,7 @@ def _read_url_to_file(url: str, target: Path, ctx: UpdateContext) -> None:
                     handle.write(chunk)
                     copied += len(chunk)
                     if total:
-                        ctx.emit(f"已下载 {copied}/{total} 字节")
+                        ctx.emit(trf("updater.status.download_progress", copied=copied, total=total))
                     if ctx.cancel_requested.is_set():
                         raise RuntimeError("用户已取消更新")
             return
@@ -116,7 +120,7 @@ def _read_url_to_file(url: str, target: Path, ctx: UpdateContext) -> None:
             if ctx.cancel_requested.is_set():
                 raise RuntimeError("用户已取消更新")
             if attempt < DOWNLOAD_RETRIES:
-                ctx.emit(f"下载中断，准备重试：{exc}")
+                ctx.emit(tr("updater.status.download_interrupted"))
                 time.sleep(0.5 * attempt)
     raise RuntimeError(f"下载更新包失败：{last_error}")
 
@@ -148,7 +152,7 @@ def _safe_zip_extract(zip_path: Path, target_dir: Path, ctx: UpdateContext) -> N
                     dst.write(chunk)
                     if ctx.cancel_requested.is_set():
                         raise RuntimeError("用户已取消更新")
-    ctx.emit("更新包已解压并通过路径检查")
+    ctx.emit(tr("updater.status.archive_ready"))
 
 
 def _manifest_paths(manifest: dict, *keys: str) -> list[Path]:
@@ -262,18 +266,18 @@ def _replace_files(ctx: UpdateContext, extracted_root: Path, backup_root: Path) 
         source = extracted_root / relative
         target = ctx.app_dir / relative
         if not source.exists() or not source.is_file():
-            ctx.emit(f"更新包缺少文件，已跳过：{relative}")
+            ctx.emit(trf("updater.status.file_skipped", path=relative))
             continue
         if not path_within(ctx.app_dir, target):
             raise RuntimeError(f"写入路径超出应用目录：{relative}")
         _backup_path(ctx, relative, backup_root)
         if _is_deferred_replacement(relative):
             ctx.deferred_replacements.append((relative, source))
-            ctx.emit(f"已准备稍后更新：{relative}")
+            ctx.emit(trf("updater.status.deferred", path=relative))
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-        ctx.emit(f"已更新：{relative}")
+        ctx.emit(trf("updater.status.file_updated", path=relative))
 
 
 def _apply_moves(ctx: UpdateContext, backup_root: Path) -> None:
@@ -285,14 +289,14 @@ def _apply_moves(ctx: UpdateContext, backup_root: Path) -> None:
         if not source.exists():
             continue
         if target.exists():
-            ctx.emit(f"move skipped because target exists: {source_relative} -> {target_relative}")
+            ctx.emit(trf("updater.status.preserved", path=target_relative))
             continue
         if not path_within(ctx.app_dir, source) or not path_within(ctx.app_dir, target):
             raise RuntimeError(f"move path escapes app dir: {source_relative} -> {target_relative}")
         _backup_path(ctx, source_relative, backup_root)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(source), str(target))
-        ctx.emit(f"moved legacy path: {source_relative} -> {target_relative}")
+        ctx.emit(trf("updater.status.file_updated", path=target_relative))
 
 
 def _quarantine_deleted(ctx: UpdateContext) -> None:
@@ -312,16 +316,16 @@ def _quarantine_deleted(ctx: UpdateContext) -> None:
         if not path_within(ctx.app_dir, target):
             raise RuntimeError(f"移出路径超出应用目录：{relative}")
         if target.parts and relative.parts[0] in PROTECTED_TOP_LEVEL:
-            ctx.emit(f"受保护路径已保留：{relative}")
+            ctx.emit(trf("updater.status.preserved", path=relative))
             continue
         if relative in deferred or _is_deferred_deletion(relative):
             ctx.deferred_deletions.append(relative)
-            ctx.emit(f"deferred cleanup prepared: {relative}")
+            ctx.emit(trf("updater.status.deferred", path=relative))
             continue
         destination = root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(target), str(destination))
-        ctx.emit(f"已移出旧文件：{relative}")
+        ctx.emit(trf("updater.status.file_updated", path=relative))
 
 
 def _post_update_required_files(ctx: UpdateContext) -> None:
@@ -424,19 +428,14 @@ def run_update(ctx: UpdateContext) -> None:
         backup_root = tmp_dir / "backup"
         extract_dir.mkdir()
         backup_root.mkdir()
-        ctx.emit("正在下载更新包")
+        ctx.emit(tr("updater.status.download_start"))
         _read_url_to_file(package_url, package_path, ctx)
         if ctx.cancel_requested.is_set():
             raise RuntimeError("用户已取消更新")
         actual_hash = sha256_file(package_path)
         actual_size = package_path.stat().st_size
         if expected_size and actual_size != expected_size:
-            if actual_hash.lower() == expected_hash:
-                ctx.emit(
-                    f"更新包大小与 manifest 不一致，但 sha256 校验通过，继续更新："
-                    f"expected={expected_size}, actual={actual_size}"
-                )
-            else:
+            if actual_hash.lower() != expected_hash:
                 raise RuntimeError(
                     "更新包大小校验失败："
                     f"expected={expected_size}, actual={actual_size}, url={package_url}"
@@ -446,7 +445,7 @@ def run_update(ctx: UpdateContext) -> None:
                 "更新包 sha256 校验失败："
                 f"expected={expected_hash}, actual={actual_hash}, size={actual_size}, url={package_url}"
             )
-        ctx.emit("更新包校验通过")
+        ctx.emit(tr("updater.status.verify_ok"))
         _safe_zip_extract(package_path, extract_dir, ctx)
         if ctx.cancel_requested.is_set():
             raise RuntimeError("用户已取消更新")
@@ -460,20 +459,20 @@ def run_update(ctx: UpdateContext) -> None:
         if success and not ctx.deferred_replacements and not ctx.deferred_deletions:
             try:
                 shutil.rmtree(tmp_dir)
-            except Exception as exc:
-                ctx.emit(f"临时更新文件保留用于检查：{tmp_dir}（{exc}）")
+            except Exception:
+                ctx.emit(tr("updater.status.deferred"))
         elif success:
-            ctx.emit("部分更新将在当前更新器退出后完成")
+            ctx.emit(tr("updater.status.deferred"))
         else:
-            ctx.emit(f"临时更新文件已保留：{tmp_dir}")
-    ctx.emit("更新完成")
+            ctx.emit(tr("updater.status.deferred"))
+    ctx.emit(tr("updater.status.complete"))
 
 
 class UpdaterWindow(tk.Tk):
     def __init__(self, ctx: UpdateContext) -> None:
         super().__init__()
         self.ctx = ctx
-        self.title("ShapeYourPhoto Updater")
+        self.title(tr("updater.title"))
         self.geometry("720x460")
         self.minsize(620, 380)
         self.protocol("WM_DELETE_WINDOW", self._cancel_and_close)
@@ -481,17 +480,31 @@ class UpdaterWindow(tk.Tk):
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
-        ttk.Label(outer, text="ShapeYourPhoto 正在更新", font=("Microsoft YaHei UI", 13, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(outer, text=tr("updater.heading"), font=("Microsoft YaHei UI", 13, "bold")).grid(row=0, column=0, sticky="w")
         self.text = tk.Text(outer, wrap="word", height=14, padx=10, pady=10)
         scroll = ttk.Scrollbar(outer, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=scroll.set)
         self.text.grid(row=1, column=0, sticky="nsew", pady=(12, 10))
         scroll.grid(row=1, column=1, sticky="ns", pady=(12, 10))
-        self.button = ttk.Button(outer, text="取消并关闭", command=self._cancel_and_close)
+        self.button = ttk.Button(outer, text=tr("updater.cancel_close"), command=self._cancel_and_close)
         self.button.grid(row=2, column=0, sticky="e")
         self._ui_queue: queue.SimpleQueue[object] = queue.SimpleQueue()
+        self._task_manager = TaskManager(
+            ui_dispatch=lambda callback: self._ui_queue.put(callback),
+            error_callback=self.ctx.emit,
+            max_workers=1,
+        )
+        self.ctx.task_record = TaskRecord(
+            task_id=int(time.time() * 1000),
+            run_id=f"update-{int(time.time() * 1000)}",
+            kind="update",
+            name="ShapeYourPhoto update",
+            total=1,
+            cancel_event=self.ctx.cancel_requested,
+        )
+        TaskStateMachine(self.ctx.task_record).transition(TaskStatus.RUNNING)
         self.after(100, self._drain_log)
-        threading.Thread(target=self._worker, daemon=True).start()
+        self._task_manager.submit_worker(task_id=None, target=self._worker)
 
     def _dispatch_ui(self, callback) -> None:
         self._ui_queue.put(callback)
@@ -519,14 +532,18 @@ class UpdaterWindow(tk.Tk):
 
     def _cancel_and_close(self) -> None:
         self.ctx.cancel_requested.set()
-        self.ctx.emit("用户取消更新，关闭 updater")
+        if self.ctx.task_record is not None and self.ctx.task_record.status == TaskStatus.RUNNING:
+            TaskStateMachine(self.ctx.task_record).transition(TaskStatus.CANCEL_REQUESTED)
+        self.ctx.emit(tr("updater.status.cancelling"))
         self.destroy()
 
     def _worker(self) -> None:
         try:
             run_update(self.ctx)
+            if self.ctx.task_record is not None and self.ctx.task_record.is_active:
+                TaskStateMachine(self.ctx.task_record).transition(TaskStatus.COMPLETED)
             if self.ctx.stager_path is not None:
-                self.ctx.emit("正在启动更新收尾程序")
+                self.ctx.emit(tr("updater.status.finishing"))
                 subprocess.Popen(
                     [sys.executable, str(self.ctx.stager_path)],
                     cwd=str(self.ctx.app_dir),
@@ -534,40 +551,48 @@ class UpdaterWindow(tk.Tk):
                 )
                 self._dispatch_ui(lambda: self.after(500, self.destroy))
             else:
-                self.ctx.emit("正在重新启动 ShapeYourPhoto")
+                self.ctx.emit(tr("updater.status.restarting"))
                 subprocess.Popen(self.ctx.restart_cmd, cwd=str(self.ctx.app_dir), close_fds=True)
                 self._dispatch_ui(lambda: self.after(700, self.destroy))
         except Exception as exc:
-            self.ctx.emit(f"更新未完成：{exc}")
+            self.ctx.emit(tr("updater.status.failed"))
             try:
                 _restore_backups(self.ctx)
-                self.ctx.emit("已恢复到更新前状态")
+                self.ctx.emit(tr("updater.status.restored"))
             except Exception as rollback_exc:
-                self.ctx.emit(f"恢复失败：{rollback_exc}")
+                self.ctx.emit(tr("updater.status.restore_failed"))
+                if self.ctx.task_record is not None and self.ctx.task_record.is_active:
+                    TaskStateMachine(self.ctx.task_record).transition(TaskStatus.FAILED, error=str(rollback_exc))
                 self._dispatch_ui(self._enable_close)
                 self._dispatch_ui(
                     lambda: messagebox.showerror(
-                        "回滚失败",
-                        f"更新失败且回滚未完全成功：\n{rollback_exc}\n\n请从完整安装包恢复程序目录。",
+                        tr("updater.rollback_failed_title"),
+                        tr("updater.rollback_failed_body"),
                         parent=self,
                     ),
                 )
                 return
             if self.ctx.cancel_requested.is_set():
+                if self.ctx.task_record is not None and self.ctx.task_record.is_active:
+                    if self.ctx.task_record.status == TaskStatus.CANCEL_REQUESTED:
+                        TaskStateMachine(self.ctx.task_record).transition(TaskStatus.CANCELING)
+                    TaskStateMachine(self.ctx.task_record).transition(TaskStatus.CANCELED)
                 self._dispatch_ui(self._finish_cancelled)
             else:
+                if self.ctx.task_record is not None and self.ctx.task_record.is_active:
+                    TaskStateMachine(self.ctx.task_record).transition(TaskStatus.FAILED, error=str(exc))
                 self._dispatch_ui(lambda err=exc: self._finish_failed(err))
 
     def _finish_cancelled(self) -> None:
-        messagebox.showinfo("更新已取消", "更新已取消，程序已尽量恢复到更新前状态。", parent=self)
+        messagebox.showinfo(tr("updater.cancelled_title"), tr("updater.cancelled_body"), parent=self)
         self.destroy()
 
     def _finish_failed(self, exc: Exception) -> None:
         self._enable_close()
-        messagebox.showerror("更新失败", f"已中止并尽量回滚：\n{exc}", parent=self)
+        messagebox.showerror(tr("updater.failed_title"), tr("updater.failed_body"), parent=self)
 
     def _enable_close(self) -> None:
-        self.button.configure(text="关闭", state="normal", command=self.destroy)
+        self.button.configure(text=tr("updater.close"), state="normal", command=self.destroy)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
 
@@ -582,13 +607,29 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    try:
+        from app_settings import load_app_settings
+
+        set_current_language(load_app_settings(create_if_missing=False).language)
+    except Exception:
+        set_current_language(DEFAULT_LANGUAGE)
     manifest = json.loads(Path(args.manifest_cache).read_text(encoding="utf-8"))
+    lag_decision = evaluate_update_lag(manifest)
+    if lag_decision is not None and lag_decision.blocks_in_app_update:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showwarning(
+            tr("update.blocked_title"),
+            tr("update.blocked_body"),
+        )
+        root.destroy()
+        return 0
     if _manifest_external_download_only(manifest):
         root = tk.Tk()
         root.withdraw()
         messagebox.showinfo(
-            "请手动下载新版",
-            "此版本不通过内置更新器安装。\n\n请前往官网或 GitHub 下载完整发布包。",
+            tr("updater.manual_title"),
+            tr("updater.manual_body"),
             parent=root,
         )
         root.destroy()

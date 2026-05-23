@@ -11,10 +11,12 @@ from PIL import Image, ImageOps, ImageTk
 
 from models import AnalysisResult, SimilarImageGroup
 from repair_planner import get_method_labels, suggest_methods_for_result
+from task_state import TaskManager
 from ui.display_names import display_name, issue_display
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import MIN_SIZE_NOTICE, bind_minimum_size_notice
+from dialog_factory import DialogSpec, finalize_dialog_window
+from window_layout import MIN_SIZE_NOTICE
 
 
 FILTER_ALL = "all"
@@ -35,9 +37,9 @@ class SimilarGroupListDialog(tk.Toplevel):
         decision_callback: Callable[[list[SimilarImageGroup]], None],
     ) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title(app_window_title("相似图片自动检测结果"))
         self.transient(parent.winfo_toplevel())
-        self.grab_set()
         self.resizable(True, True)
         self.minsize(900, 560)
         self.protocol("WM_DELETE_WINDOW", self._close)
@@ -51,6 +53,7 @@ class SimilarGroupListDialog(tk.Toplevel):
         self._selected_vars: dict[int, tk.BooleanVar] = {}
         self._thumbs: list[ImageTk.PhotoImage] = []
         self._thumbnail_queue: queue.SimpleQueue[tuple[int, ttk.Label, Image.Image | None]] = queue.SimpleQueue()
+        self._task_manager = TaskManager(ui_dispatch=lambda callback: self.after(0, callback), max_workers=2)
         self._thumbnail_stop = threading.Event()
         self._thumbnail_generation = 0
         self._thumbnail_tasks: list[tuple[ttk.Label, Path, tuple[int, int]]] = []
@@ -76,8 +79,8 @@ class SimilarGroupListDialog(tk.Toplevel):
         )
         filter_box.grid(row=0, column=1, sticky="w", padx=(4, 12))
         filter_box.bind("<<ComboboxSelected>>", self._on_filter_selected)
-        ttk.Button(toolbar, text=tr("similar.select_visible"), command=self._select_visible).grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(toolbar, text=tr("similar.clear_all"), command=self._unselect_all).grid(row=0, column=3, padx=(0, 12))
+        self.select_toggle_button = ttk.Button(toolbar, text=tr("action.select_all"), command=self._toggle_visible_selection)
+        self.select_toggle_button.grid(row=0, column=2, padx=(0, 12))
         ttk.Label(toolbar, textvariable=self._hint_var).grid(row=0, column=4, sticky="e")
 
         list_shell = ttk.Frame(outer)
@@ -101,14 +104,25 @@ class SimilarGroupListDialog(tk.Toplevel):
         footer = ttk.Frame(outer)
         footer.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         footer.columnconfigure(1, weight=1)
-        self.start_button = ttk.Button(footer, text="开始抉择", command=self._start_decision, state="disabled")
+        self.start_button = ttk.Button(footer, text=tr("similar.start_selection"), command=self._start_decision, state="disabled")
         self.start_button.grid(row=0, column=0, sticky="w")
         ttk.Label(footer, textvariable=self._size_notice_var).grid(row=0, column=1, sticky="w", padx=(12, 0))
         ttk.Button(footer, text=tr("similar.skip_all"), command=self._close).grid(row=0, column=2, sticky="e")
 
         self._render_groups()
-        bind_minimum_size_notice(self, self._size_notice_var, 780, 460)
-        self._fit_to_screen(1080, 720)
+        finalize_dialog_window(
+            self,
+            parent,
+            DialogSpec(
+                title=self.title(),
+                min_width=900,
+                min_height=560,
+                fallback_width=1080,
+                fallback_height=720,
+                modal=False,
+            ),
+            size_notice_var=self._size_notice_var,
+        )
         self.after(30, self._drain_thumbnail_queue)
 
     def _filter_label_map(self) -> dict[str, str]:
@@ -189,12 +203,12 @@ class SimilarGroupListDialog(tk.Toplevel):
         self._update_controls()
         self.after_idle(lambda: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         if self._thumbnail_tasks:
-            threading.Thread(
-                target=self._thumbnail_worker,
-                args=(generation, list(self._thumbnail_tasks)),
-                daemon=True,
-                name="ShapeYourPhotoSimilarThumbs",
-            ).start()
+            self._task_manager.submit(
+                kind="preview_generation",
+                name="similar_group_thumbs",
+                target=lambda _record, gen=generation, tasks=list(self._thumbnail_tasks): self._thumbnail_worker(gen, tasks),
+                exclusive=False,
+            )
 
     def _build_group_card(self, group: SimilarImageGroup, generation: int) -> None:
         existing_paths = [path for path in group.paths if path.exists()]
@@ -202,6 +216,7 @@ class SimilarGroupListDialog(tk.Toplevel):
         card.pack(fill="x", expand=False, pady=(0, 10), padx=(0, 8))
         card.columnconfigure(1, weight=1)
         self._bind_mousewheel(card)
+        self._bind_group_toggle(card, group.group_id)
 
         check = ttk.Checkbutton(card, variable=self._selected_vars[group.group_id])
         check.grid(row=0, column=0, rowspan=4, sticky="n", padx=(0, 8))
@@ -211,41 +226,60 @@ class SimilarGroupListDialog(tk.Toplevel):
         title = ttk.Label(card, text=tr("similar.group_title").format(id=group.group_id, count=len(existing_paths), level=level_label), font=("Microsoft YaHei UI", 10, "bold"))
         title.grid(row=0, column=1, sticky="w")
         self._bind_mousewheel(title)
+        self._bind_group_toggle(title, group.group_id)
 
         thumbs_frame = ttk.Frame(card)
         thumbs_frame.grid(row=1, column=1, sticky="w", pady=(8, 0))
         self._bind_mousewheel(thumbs_frame)
+        self._bind_group_toggle(thumbs_frame, group.group_id)
         preview_paths = existing_paths[:6]
         for path in preview_paths:
             label = ttk.Label(thumbs_frame)
             label.pack(side="left", padx=(0, 6))
             self._bind_mousewheel(label)
+            self._bind_group_toggle(label, group.group_id)
             self._thumbnail_tasks.append((label, path, (112, 78)))
         if len(existing_paths) > len(preview_paths):
             more = ttk.Label(thumbs_frame, text=tr("similar.more_count").format(count=len(existing_paths) - len(preview_paths)))
             more.pack(side="left", padx=(4, 0))
             self._bind_mousewheel(more)
+            self._bind_group_toggle(more, group.group_id)
 
         marker_count = len([path for path in existing_paths if path in self._cleanup_paths])
         marker = f" | {tr('similar.contains_cleanup').format(count=marker_count)}" if marker_count else ""
         reason = ttk.Label(card, text=tr("similar.reason_line").format(score=f"{group.similarity:.2f}", reason=group.reason, marker=marker), wraplength=900)
         reason.grid(row=2, column=1, sticky="ew", pady=(8, 0))
         self._bind_mousewheel(reason)
+        self._bind_group_toggle(reason, group.group_id)
 
         filenames = "、".join(path.name + (f" [{tr('similar.cleanup_marker')}]" if path in self._cleanup_paths else "") for path in existing_paths)
         names = ttk.Label(card, text=filenames, wraplength=900)
         names.grid(row=3, column=1, sticky="ew", pady=(6, 0))
         self._bind_mousewheel(names)
+        self._bind_group_toggle(names, group.group_id)
 
-    def _select_visible(self) -> None:
+    def _bind_group_toggle(self, widget: tk.Widget, group_id: int) -> None:
+        widget.bind("<Button-1>", lambda event, gid=group_id: self._toggle_group_selection_from_click(event, gid), add="+")
+
+    def _toggle_group_selection_from_click(self, _event, group_id: int) -> str:
+        variable = self._selected_vars.get(group_id)
+        if variable is not None:
+            variable.set(not variable.get())
+            self._update_controls()
+        return "break"
+
+    def _visible_all_selected(self) -> bool:
+        visible = self._visible_groups()
+        return bool(visible) and all(
+            self._selected_vars.get(group.group_id) and self._selected_vars[group.group_id].get()
+            for group in visible
+        )
+
+    def _toggle_visible_selection(self) -> None:
+        target = not self._visible_all_selected()
         for group in self._visible_groups():
             if group.group_id in self._selected_vars:
-                self._selected_vars[group.group_id].set(True)
-        self._update_controls()
-
-    def _unselect_all(self) -> None:
-        for variable in self._selected_vars.values():
-            variable.set(False)
+                self._selected_vars[group.group_id].set(target)
         self._update_controls()
 
     def _selected_groups(self) -> list[SimilarImageGroup]:
@@ -257,14 +291,19 @@ class SimilarGroupListDialog(tk.Toplevel):
         visible_count = len(self._visible_groups())
         self.start_button.configure(state="normal" if selected_count else "disabled")
         self._hint_var.set(tr("similar.hint").format(visible=visible_count, selected=selected_count))
+        if hasattr(self, "select_toggle_button"):
+            self.select_toggle_button.configure(
+                text=tr("action.unselect_all_short") if self._visible_all_selected() else tr("action.select_all")
+            )
 
     def _start_decision(self) -> None:
         selected = self._selected_groups()
         if not selected:
             self._update_controls()
             return
+        self._thumbnail_stop.set()
+        self.destroy()
         self._decision_callback(selected)
-        self._render_groups()
 
     def _thumbnail_worker(self, generation: int, tasks: list[tuple[ttk.Label, Path, tuple[int, int]]]) -> None:
         for label, path, size in tasks:
@@ -323,9 +362,9 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         delete_callback: Callable[[Path, SimilarImageGroup], bool],
     ) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title(app_window_title(tr("similar.decision_title")))
         self.transient(parent.winfo_toplevel())
-        self.grab_set()
         self.resizable(True, True)
         self.minsize(1120, 780)
         self.protocol("WM_DELETE_WINDOW", self._skip_all)
@@ -338,9 +377,11 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         self._page_start = 0
         self._thumbs: list[ImageTk.PhotoImage] = []
         self._preview_queue: queue.SimpleQueue[tuple[int, ttk.Label, Image.Image | None]] = queue.SimpleQueue()
+        self._task_manager = TaskManager(ui_dispatch=lambda callback: self.after(0, callback), max_workers=2)
         self._preview_stop = threading.Event()
         self._preview_generation = 0
         self._preview_tasks: list[tuple[ttk.Label, Path, tuple[int, int]]] = []
+        self._selected_paths: set[Path] = set()
         self._size_hint_var = tk.StringVar()
         self._title_var = tk.StringVar()
         self._reason_var = tk.StringVar()
@@ -381,8 +422,19 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
 
         self.bind("<Configure>", lambda _event: self._update_size_hint())
         self._render_group()
-        bind_minimum_size_notice(self, self._size_hint_var, 1120, 780)
-        self._fit_to_screen(1180, 900)
+        finalize_dialog_window(
+            self,
+            parent,
+            DialogSpec(
+                title=app_window_title(tr("similar.decision_title")),
+                min_width=1120,
+                min_height=780,
+                fallback_width=1180,
+                fallback_height=900,
+                modal=False,
+            ),
+            size_notice_var=self._size_hint_var,
+        )
         self.after(30, self._drain_preview_queue)
 
     def _fit_to_screen(self, preferred_width: int, preferred_height: int) -> None:
@@ -449,12 +501,12 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
             column = index % columns
             self._build_image_card(self.grid_shell, group, path, columns=columns).grid(row=row, column=column, sticky="nsew", padx=6, pady=6)
         if self._preview_tasks:
-            threading.Thread(
-                target=self._preview_worker,
-                args=(generation, list(self._preview_tasks)),
-                daemon=True,
-                name="ShapeYourPhotoSimilarDecisionPreview",
-            ).start()
+            self._task_manager.submit(
+                kind="preview_generation",
+                name="similar_decision_preview",
+                target=lambda _record, gen=generation, tasks=list(self._preview_tasks): self._preview_worker(gen, tasks),
+                exclusive=False,
+            )
 
         has_pages = len(group.paths) > max_visible
         self.prev_button.configure(state="normal" if has_pages and self._page_start > 0 else "disabled")
@@ -486,21 +538,40 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
         card = ttk.Frame(parent, padding=10, relief="solid")
         card.columnconfigure(0, weight=1)
         self._bind_grid_mousewheel(card)
+        self._bind_image_toggle(card, path)
         image_label = ttk.Label(card)
         image_label.grid(row=0, column=0, sticky="n")
         self._bind_grid_mousewheel(image_label)
+        self._bind_image_toggle(image_label, path)
         preview_size = self._preview_size(columns)
         self._preview_tasks.append((image_label, path, preview_size))
         wrap = max(240, preview_size[0] - 10)
         name_label = ttk.Label(card, text=path.name, font=("Microsoft YaHei UI", 10, "bold"), wraplength=wrap)
         name_label.grid(row=1, column=0, sticky="w", pady=(8, 2))
         self._bind_grid_mousewheel(name_label)
+        self._bind_image_toggle(name_label, path)
         summary_label = ttk.Label(card, text=self._analysis_summary(path), wraplength=wrap)
         summary_label.grid(row=2, column=0, sticky="w")
         self._bind_grid_mousewheel(summary_label)
+        self._bind_image_toggle(summary_label, path)
+        selection_label = ttk.Label(card, text=tr("tree.selected") if path in self._selected_paths else tr("tree.pending"))
+        selection_label.grid(row=3, column=0, sticky="w", pady=(6, 0))
+        self._bind_grid_mousewheel(selection_label)
+        self._bind_image_toggle(selection_label, path)
         delete_button = ttk.Button(card, text=tr("similar.delete_this"), command=lambda p=path, g=group: self._delete_path(p, g))
-        delete_button.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        delete_button.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         return card
+
+    def _bind_image_toggle(self, widget: tk.Widget, path: Path) -> None:
+        widget.bind("<Button-1>", lambda event, p=path: self._toggle_image_selection(event, p), add="+")
+
+    def _toggle_image_selection(self, _event, path: Path) -> str:
+        if path in self._selected_paths:
+            self._selected_paths.remove(path)
+        else:
+            self._selected_paths.add(path)
+        self._render_group()
+        return "break"
 
     def _analysis_summary(self, path: Path) -> str:
         result = self._results.get(path)
@@ -518,6 +589,7 @@ class SimilarGroupDecisionDialog(tk.Toplevel):
 
     def _delete_path(self, path: Path, group: SimilarImageGroup) -> None:
         if self._delete_callback(path, group):
+            self._selected_paths.discard(path)
             group.paths[:] = [item for item in group.paths if item != path and item.exists()]
             if self._page_start >= len(group.paths):
                 self._page_start = max(0, len(group.paths) - 4)

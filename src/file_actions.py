@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import ctypes
 import os
-import shutil
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 from analyzer import is_supported_image
+from file_safety import get_file_safety_service
 from app_settings import (
     DEFAULT_SCAN_IGNORE_CONTAINS,
     DEFAULT_SCAN_IGNORE_PREFIXES,
@@ -143,8 +143,12 @@ def _iter_scanned_paths(
     cancel_event: threading.Event | None = None,
 ) -> ScanResult:
     normalized_mode = _normalized_scan_mode(mode)
-    ignored_suffixes = normalize_scan_ignore_suffixes(ignored_suffixes or DEFAULT_SCAN_IGNORE_SUFFIXES)
-    ignored_contains = normalize_scan_ignore_contains(ignored_contains or DEFAULT_SCAN_IGNORE_CONTAINS)
+    ignored_suffixes = normalize_scan_ignore_suffixes(
+        DEFAULT_SCAN_IGNORE_SUFFIXES if ignored_suffixes is None else ignored_suffixes
+    )
+    ignored_contains = normalize_scan_ignore_contains(
+        DEFAULT_SCAN_IGNORE_CONTAINS if ignored_contains is None else ignored_contains
+    )
     supported: list[Path] = []
     skipped_details: list[SkippedDirectoryDetail] = []
     seen_skipped: set[Path] = set()
@@ -157,6 +161,11 @@ def _iter_scanned_paths(
 
     def canceled() -> bool:
         return bool(cancel_event is not None and cancel_event.is_set())
+
+    def can_import_file(path: Path) -> bool:
+        return is_supported_image(path) and _matched_ignore_rule(
+            path.name, ignored_prefixes, ignored_suffixes, ignored_contains
+        ) is None
 
     def register_skip(path: Path, rule_kind: str, matched_rule: str) -> None:
         resolved = path.resolve()
@@ -180,6 +189,24 @@ def _iter_scanned_paths(
 
     report_progress(None)
 
+    matched_root_rule = _matched_ignore_rule(root.name, ignored_prefixes, ignored_suffixes, ignored_contains)
+    if matched_root_rule is not None:
+        register_skip(root, matched_root_rule[0], matched_root_rule[1])
+        return ScanResult(
+            paths=[],
+            summary=ScanSummary(
+                root=root,
+                mode=normalized_mode,
+                imported_count=0,
+                skipped_details=skipped_details,
+                visited_files=0,
+                ignored_prefixes=list(ignored_prefixes),
+                ignored_suffixes=list(ignored_suffixes),
+                ignored_contains=list(ignored_contains),
+                canceled=False,
+            ),
+        )
+
     if normalized_mode == "current_only":
         for child in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
             if canceled():
@@ -193,7 +220,7 @@ def _iter_scanned_paths(
                 continue
             discovered_files += 1
             processed_files += 1
-            if is_supported_image(child):
+            if can_import_file(child):
                 supported.append(child)
             report_progress(child)
     else:
@@ -221,7 +248,7 @@ def _iter_scanned_paths(
                     continue
                 discovered_files += 1
                 processed_files += 1
-                if is_supported_image(child):
+                if can_import_file(child):
                     supported.append(child)
                 report_progress(child)
 
@@ -256,9 +283,9 @@ def scan_image_paths(
     result = _iter_scanned_paths(
         root,
         mode=mode,
-        ignored_prefixes=normalize_scan_ignore_prefixes(list(ignored_dir_prefixes or DEFAULT_SCAN_IGNORE_PREFIXES)),
-        ignored_suffixes=normalize_scan_ignore_suffixes(list(ignored_dir_suffixes or DEFAULT_SCAN_IGNORE_SUFFIXES)),
-        ignored_contains=normalize_scan_ignore_contains(list(ignored_dir_contains or DEFAULT_SCAN_IGNORE_CONTAINS)),
+        ignored_prefixes=normalize_scan_ignore_prefixes(list(DEFAULT_SCAN_IGNORE_PREFIXES if ignored_dir_prefixes is None else ignored_dir_prefixes)),
+        ignored_suffixes=normalize_scan_ignore_suffixes(list(DEFAULT_SCAN_IGNORE_SUFFIXES if ignored_dir_suffixes is None else ignored_dir_suffixes)),
+        ignored_contains=normalize_scan_ignore_contains(list(DEFAULT_SCAN_IGNORE_CONTAINS if ignored_dir_contains is None else ignored_dir_contains)),
         skip_callback=skip_callback,
         cancel_event=cancel_event,
     )
@@ -280,9 +307,9 @@ def scan_image_paths_with_progress(
     return _iter_scanned_paths(
         root,
         mode=mode,
-        ignored_prefixes=normalize_scan_ignore_prefixes(list(ignored_dir_prefixes or DEFAULT_SCAN_IGNORE_PREFIXES)),
-        ignored_suffixes=normalize_scan_ignore_suffixes(list(ignored_dir_suffixes or DEFAULT_SCAN_IGNORE_SUFFIXES)),
-        ignored_contains=normalize_scan_ignore_contains(list(ignored_dir_contains or DEFAULT_SCAN_IGNORE_CONTAINS)),
+        ignored_prefixes=normalize_scan_ignore_prefixes(list(DEFAULT_SCAN_IGNORE_PREFIXES if ignored_dir_prefixes is None else ignored_dir_prefixes)),
+        ignored_suffixes=normalize_scan_ignore_suffixes(list(DEFAULT_SCAN_IGNORE_SUFFIXES if ignored_dir_suffixes is None else ignored_dir_suffixes)),
+        ignored_contains=normalize_scan_ignore_contains(list(DEFAULT_SCAN_IGNORE_CONTAINS if ignored_dir_contains is None else ignored_dir_contains)),
         progress_callback=progress_callback,
         skip_callback=skip_callback,
         cancel_event=cancel_event,
@@ -309,7 +336,10 @@ def move_to_cleanup_folder(paths: list[Path], base_folder: str | Path) -> tuple[
             while destination.exists():
                 destination = target_folder / f"{stem}_{index}{suffix}"
                 index += 1
-        shutil.move(str(path), str(destination))
+        safety_result = get_file_safety_service(Path(base_folder)).move_to_quarantine(path, reason="cleanup candidate")
+        if not safety_result.ok:
+            raise OSError(safety_result.message)
+        destination = safety_result.path or destination
         moved += 1
 
     return moved, target_folder

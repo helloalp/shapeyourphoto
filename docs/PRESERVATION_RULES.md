@@ -17,8 +17,7 @@
 ## 鐗堟湰璁板綍璇█瑙勫垯
 
 - `src/app_metadata.py` 鐨?`CHANGELOG` 灞炰簬搴旂敤鍐呯敤鎴峰彲瑙佺増鏈巻鍙诧紝榛樿蹇呴』浣跨敤涓枃銆?- 鏍?`docs/CHANGELOG.md` 涓?`docs/updates/<version>.md` 榛樿蹇呴』浣跨敤涓枃锛屽苟涓?`app_metadata.CHANGELOG` 鍚屾鍚屼竴鎵逛簨瀹炪€?- 鍚屼竴涓増鏈彿鍙兘鏈変竴涓増鏈潡锛涘噯澶囧彂甯冩湡闂寸殑鏂版潯鐩繀椤昏拷鍔犲埌鏃㈡湁鐗堟湰鍧椾腑锛屼笉寰楁媶鍑虹浜屼釜鍚岀増鏈褰曘€?- 鑻辨枃鍙敤浜庢妧鏈爣璇嗗師鏂囷紝渚嬪鏂囦欢鍚嶃€佸嚱鏁板悕銆佹ā鍧楀悕銆佺幆澧冨彉閲忋€佸崗璁瓧娈点€佺涓夋柟搴撳悕銆佸唴閮?code/enum/storage value銆?- 涓嶅緱鎶婃暣鏉¤嫳鏂?release note 鐩存帴鏀捐繘 `app_metadata.CHANGELOG` 浣滀负姝ｅ紡鐗堟湰璁板綍銆?
-# 1.1.8 Public / Private Documentation Rule
+# 1.1.8 Public / Documentation Boundary Rule
 
-Starting with 1.1.8, public docs must remain useful but should not contain private server operation details, signing private-key handling, internal release scripts, commercial maintenance strategy or deep private AI-agent prompts. Those belong in ignored `private_docs/for_developer/` and `private_docs/for_developai/`.
 
-`private_docs/` must stay in `.gitignore`.
+

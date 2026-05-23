@@ -1,9 +1,8 @@
-# 人像感知与分析机制
+﻿# 人像感知与分析机制
 
 本文记录当前系统对人像增强处理与分析的维护口径与接口规范。
 
 > [!NOTE]
-> 人像分析底层的 `raw_face_candidates` 到 `validated_face_boxes` 的精确分层算法、分类校验阈值、以及“真实人脸”、“背景背身人物”等具体的场景组合决策树，属于核心图像处理机密，已统一归档于 `private_docs/for_developai/03_DATA_MODELS_AND_CORE_LOGIC.md` 中。公开文档仅记录模块职责。
 
 ## 目标与能力范围
 

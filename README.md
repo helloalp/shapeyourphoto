@@ -24,7 +24,7 @@ D:\ShapeYourPhoto\
 ShapeYourPhoto.exe
 ```
 
-未构建原生启动器时，可使用 `tools/launcher/start.bat` 作为源码包兼容入口。它会检查 Python 和运行依赖；缺少依赖时会按需安装 `requirements/runtime.txt` 中的运行依赖，然后继续启动。启动流程不会运行 benchmark、目录扫描或更新包下载。
+未构建原生启动器时，可使用 `tools/launcher/start.bat` 作为源码包兼容入口。若运行环境尚未就绪，启动过程会显示下一步提示。
 
 v1.2.6 入口整理：统计在“查看”菜单，官网和日志导出在“帮助”菜单，更新历史在“设置 -> 更新”。批量质量保持格式转换入口位于主按钮区，GPS 编辑入口位于“属性 / EXIF”页。
 
@@ -47,7 +47,7 @@ https://www.python.org/downloads/
 
 ## macOS 用户
 
-macOS 打包版本会在后续补充。源码方式运行时同样需要 Python 和 `requirements/runtime.txt` 中的依赖。
+macOS 打包版本会在后续补充。源码方式运行前请按启动提示准备运行环境。
 
 ## 基本使用
 
@@ -62,16 +62,11 @@ macOS 打包版本会在后续补充。源码方式运行时同样需要 Python 
 
 手动检查更新：打开“设置” -> “更新” -> 点击“检查更新”。
 
-如果源码包环境提示依赖安装失败，请检查网络连接后重新启动。也可以手动执行：
-
-```text
-python -m pip install -r requirements/runtime.txt
-```
+如果源码包提示环境准备失败，请检查网络连接后重新启动，或改用正式发布包。
 
 ## 项目结构
 
 - `ShapeYourPhoto.exe`：根目录主启动入口。
-- `requirements/runtime.txt`：源码包运行依赖。
 - `native/launcher/`：原生 Rust 启动 host。
 - `native/gpu-core/`：Rust/wgpu native GPU backend。
 - `tools/entry/app.py` / `tools/entry/app.pyw`：源码包 GUI 启动器。
@@ -82,7 +77,7 @@ python -m pip install -r requirements/runtime.txt
 - `build/`：打包配置。
 - `docs/`：公开维护文档和版本记录。
 
-更新历史不得写入开发者设备型号、私有测试环境、内部依赖栈细节、适用人群限制或产品发展边界；相关规则见 [docs/README.md](E:/aitools/shapeyourphoto/docs/README.md) 和 [docs/PRESERVATION_RULES.md](E:/aitools/shapeyourphoto/docs/PRESERVATION_RULES.md)。
+更新历史不得写入开发者设备型号、非公开测试环境、内部依赖栈细节、适用人群限制或产品发展边界；相关规则见 [docs/README.md](E:/aitools/shapeyourphoto/docs/README.md) 和 [docs/PRESERVATION_RULES.md](E:/aitools/shapeyourphoto/docs/PRESERVATION_RULES.md)。
 
 ## 隐私说明
 
@@ -96,7 +91,8 @@ Copyright (c) 2026 Francis Zhang & Helloalp. All rights reserved. No permission 
 
 v1.2.7 focuses on runtime responsiveness, clearer performance diagnostics, and the native Windows startup host while preserving the current Python/Tk app surface.
 
-- Batch analysis, scanning, conversion, cleanup review, similar review, and preview dialogs reduce avoidable UI stalls.
+- Batch analysis, scanning, conversion, image review, similar review, and preview dialogs reduce avoidable UI stalls.
 - Benchmark output separates wall time, worker cumulative time, and queue wait more clearly.
 - Native GPU diagnostics now report the 1.2.7 core version, and the Windows startup path now prefers root `ShapeYourPhoto.exe`; `tools/launcher/start.bat` remains as a source-tree compatibility fallback.
 - The recommended Windows release remains the portable package. GitHub Actions test EXE artifacts are experimental smoke-test builds.
+

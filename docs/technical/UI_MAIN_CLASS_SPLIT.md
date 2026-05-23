@@ -5,6 +5,8 @@
 ## 当前边界
 
 - `src/ui/`：1.1.7 新增 UI 基础设施包。当前承载窗口标题、display mapping、主题 token、HiDPI、Splash 和 EXIF 安全编辑。新增共享 UI 能力优先放入这里。
+- `app_context.py`：1.2.7 新增应用级服务上下文。主窗口通过显式 `AppContext` 接收 settings、Console、i18n、theme、preview cache、task manager、stats、update 和 platform services，避免继续把应用级服务散落成全局状态。
+- `task_state.py`：1.2.7 新增长任务状态机，统一 pending、running、cancel_requested、canceling、completed、failed、canceled 语义。
 - `src/ui_app.py`：主窗口装配、实例状态初始化、菜单 wiring、布局、拖拽安装/卸载和窗口关闭。
 - `ui_constants.py`：UI 共享常量、分析/修复耗时标签和 `AnalysisCanceled`。
 - `ui_task_console.py`：UI 队列、主线程 drain、Console 合并刷新、任务 begin/finish、worker 规划和性能摘要。
@@ -20,6 +22,7 @@
 - 新增主题、Console、EXIF 编辑、Splash、窗口标题等基础 UI 能力优先进入 `src/ui/` 包；不要把新功能继续堆回 `src/ui_app.py`。
 - mixin 模块不得 import `src/ui_app.py`，需要共享的常量放入 `src/ui_constants.py`。
 - Tk 控件更新仍必须通过主线程执行；后台 worker 只通过 `_dispatch_ui()` 或既有主线程回调写 UI。
+- 长任务入口应通过 `TaskManager` 或局部 `TaskRecord` 标记状态；按钮启停、进度、Console、取消和结果写回必须按状态机含义收口，不再新增孤立的 `_running` / `is_busy` 真相来源。
 - 分析写回必须继续校验 run_id 和 cancel_event；取消后要清空本轮结果、错误、cleanup 标记和相似组标记。
 - cleanup/similar 删除必须继续走 `safe_cleanup_paths()`，不得直接删除文件。
 - EXIF/ICC/DPI/XMP 展示与修复元数据保留链路不在本拆分中改变。

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import time
-import os
-import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -10,6 +8,7 @@ import numpy as np
 from PIL import Image, ImageOps, PngImagePlugin
 
 from app_settings import GPU_ACCELERATION_AUTO
+from file_safety import get_file_safety_service
 from file_actions import build_repaired_output_path
 from models import AnalysisResult, RepairPlan, RepairRecord, RepairSelection
 from repair_planner import build_repair_plan
@@ -800,19 +799,12 @@ def _build_png_info(_filename: str) -> PngImagePlugin.PngInfo:
 
 
 def _atomic_save_image(image: Image.Image, output_path: Path, save_kwargs: dict[str, object]) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{output_path.stem}.", suffix=f"{output_path.suffix}.tmp", dir=str(output_path.parent))
-    os.close(fd)
-    temp_path = Path(temp_name)
-    try:
-        image.save(temp_path, **save_kwargs)
-        os.replace(temp_path, output_path)
-    except Exception:
-        try:
-            temp_path.unlink()
-        except OSError:
-            pass
-        raise
+    fmt = str(save_kwargs.get("format") or output_path.suffix.lstrip(".") or "PNG").upper()
+    if fmt in {"JPG", "JFIF"}:
+        fmt = "JPEG"
+    result = get_file_safety_service().atomic_save_image(image, output_path, fmt, save_kwargs)
+    if not result.ok:
+        raise RuntimeError(result.message)
 
 
 def repair_image_file(

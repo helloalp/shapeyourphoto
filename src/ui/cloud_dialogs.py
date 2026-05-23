@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import tkinter as tk
+import webbrowser
 from tkinter import ttk
 from typing import Any, Callable
 
 from ui.window_titles import app_window_title
+from ui.language import tr, trf
 from window_layout import center_window
+from update_policy import (
+    OFFICIAL_SITE_URL,
+    RULE_BLOCK_IN_APP_UPDATE,
+    UpdateLagDecision,
+    evaluate_update_lag,
+    remember_update_policy_ack,
+)
 
 
 def _activate_modal(dialog: tk.Toplevel, parent: tk.Widget, *, grab: bool = True) -> None:
@@ -34,10 +43,6 @@ def _activate_modal(dialog: tk.Toplevel, parent: tk.Widget, *, grab: bool = True
     dialog.focus_force()
 
 
-UPDATE_RECOMMENDATION = "建议更新以获得更多算法、更强性能与更佳体验。"
-EXTERNAL_DOWNLOAD_RECOMMENDATION = "此版本需要前往官网或 GitHub 下载完整发布包。"
-
-
 def update_manifest_external_download_only(manifest: dict[str, Any]) -> bool:
     return bool(
         manifest.get("external_download_only")
@@ -50,14 +55,23 @@ def _notes_text(manifest: dict[str, Any]) -> str:
     notes = manifest.get("release_notes", "")
     if isinstance(notes, list):
         return "\n\n".join(str(item) for item in notes)
-    return str(notes or "云端未提供更新说明。")
+    return str(notes or tr("update.no_notes"))
+
+
+def _lag_message(decision: UpdateLagDecision) -> str:
+    return trf(
+        "update.lag_notice",
+        count=decision.count,
+        version=decision.latest_version,
+        date=decision.published_at or tr("update.unknown_date"),
+    )
 
 
 class UpdateAvailableDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, manifest: dict[str, Any], *, manual: bool = False) -> None:
         super().__init__(parent)
         self.result = "later"
-        self.title(app_window_title("发现新版本"))
+        self.title(app_window_title(tr("update.available_title")))
         self.transient(parent.winfo_toplevel())
         self.resizable(True, True)
         self.minsize(620, 430)
@@ -83,31 +97,43 @@ class UpdateAvailableDialog(tk.Toplevel):
         notes.configure(yscrollcommand=scroll.set)
         notes.grid(row=0, column=0, sticky="nsew")
         scroll.grid(row=0, column=1, sticky="ns")
-        notes.insert("1.0", _notes_text(manifest))
+        self.lag_decision = evaluate_update_lag(manifest)
+        notes.insert("1.0", _lag_message(self.lag_decision) if self.lag_decision is not None else _notes_text(manifest))
         notes.config(state="disabled")
 
-        external_download_only = update_manifest_external_download_only(manifest)
-        recommendation = EXTERNAL_DOWNLOAD_RECOMMENDATION if external_download_only else UPDATE_RECOMMENDATION
+        external_download_only = update_manifest_external_download_only(manifest) or bool(
+            self.lag_decision is not None and self.lag_decision.blocks_in_app_update
+        )
+        recommendation = tr("update.external_recommendation") if external_download_only else tr("update.recommendation")
         ttk.Label(outer, text=recommendation, font=("Microsoft YaHei UI", 10, "bold")).grid(row=2, column=0, sticky="w")
 
         actions = ttk.Frame(outer)
         actions.grid(row=3, column=0, sticky="ew", pady=(16, 0))
         actions.columnconfigure(1, weight=1)
-        left_text = "暂时不更新"
-        if manual:
-            left_text = "暂时不更新"
+        left_text = tr("update.decline")
         ttk.Button(actions, text=left_text, command=lambda: self._finish("decline")).grid(row=0, column=0, sticky="w")
-        ttk.Button(actions, text="稍后提醒", command=lambda: self._finish("later")).grid(row=0, column=1)
+        ttk.Button(actions, text=tr("update.later"), command=lambda: self._finish("later")).grid(row=0, column=1)
         if external_download_only:
-            ttk.Button(actions, text="我知道了", command=lambda: self._finish("decline")).grid(row=0, column=2, sticky="e")
+            ttk.Button(actions, text=tr("update.acknowledge"), command=lambda: self._finish("decline")).grid(row=0, column=2, sticky="e")
         else:
-            ttk.Button(actions, text="更新", command=lambda: self._finish("update")).grid(row=0, column=2, sticky="e")
+            ttk.Button(actions, text=tr("update.install"), command=lambda: self._finish("update")).grid(row=0, column=2, sticky="e")
+        if self.lag_decision is not None:
+            ttk.Button(actions, text=tr("update.official_site"), command=self._open_official_site).grid(row=0, column=3, sticky="e", padx=(8, 0))
         center_window(self, 700, 520)
         _activate_modal(self, parent)
 
     def _finish(self, result: str) -> None:
+        if result == "decline" and self.lag_decision is not None and self.lag_decision.rule == RULE_BLOCK_IN_APP_UPDATE:
+            remember_update_policy_ack(self.lag_decision)
         self.result = result
         self.destroy()
+
+    def _open_official_site(self) -> None:
+        try:
+            webbrowser.open(OFFICIAL_SITE_URL)
+        except Exception:
+            pass
+        self._finish("official_site")
 
 
 def show_update_available_dialog(parent: tk.Widget, manifest: dict[str, Any], *, manual: bool = False) -> str:
@@ -119,13 +145,13 @@ def show_update_available_dialog(parent: tk.Widget, manifest: dict[str, Any], *,
 class CheckingUpdateDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent)
-        self.title(app_window_title("检查更新"))
+        self.title(app_window_title(tr("update.checking_title")))
         self.transient(parent.winfo_toplevel())
         self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         outer = ttk.Frame(self, padding=18)
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="正在检查更新...", font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
+        ttk.Label(outer, text=tr("update.checking_body"), font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
         bar = ttk.Progressbar(outer, mode="indeterminate", length=260)
         bar.pack(fill="x", pady=(14, 0))
         bar.start(12)
@@ -142,18 +168,18 @@ class CloudMessageDialog(tk.Toplevel):
         update_callback: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.title(app_window_title(str(message.get("title") or "云端公告")))
+        self.title(app_window_title(str(message.get("title") or tr("announcement.title"))))
         self.transient(parent.winfo_toplevel())
         self.resizable(True, True)
         self.minsize(560, 360)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._remaining = int(message.get("countdown_seconds") or 0) if message.get("countdown_enabled") else 0
-        self._confirm_var = tk.StringVar(value="确认")
+        self._confirm_var = tk.StringVar(value=tr("announcement.confirm"))
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
-        ttk.Label(outer, text=str(message.get("title") or "ShapeYourPhoto 公告"), font=("Microsoft YaHei UI", 13, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(outer, text=str(message.get("title") or tr("announcement.default_title")), font=("Microsoft YaHei UI", 13, "bold")).grid(row=0, column=0, sticky="w")
         text_frame = ttk.Frame(outer)
         text_frame.grid(row=1, column=0, sticky="nsew", pady=(12, 10))
         text_frame.columnconfigure(0, weight=1)
@@ -169,7 +195,7 @@ class CloudMessageDialog(tk.Toplevel):
         actions.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         actions.columnconfigure(0, weight=1)
         if message.get("show_update_button") and update_callback is not None:
-            ttk.Button(actions, text="更新", command=lambda: self._start_update(update_callback)).grid(row=0, column=1, padx=(0, 8))
+            ttk.Button(actions, text=tr("update.install"), command=lambda: self._start_update(update_callback)).grid(row=0, column=1, padx=(0, 8))
         self.confirm_button = ttk.Button(actions, textvariable=self._confirm_var, command=self.destroy)
         self.confirm_button.grid(row=0, column=2)
         if self._remaining > 0:
@@ -184,10 +210,10 @@ class CloudMessageDialog(tk.Toplevel):
 
     def _tick(self) -> None:
         if self._remaining <= 0:
-            self._confirm_var.set("确认")
+            self._confirm_var.set(tr("announcement.confirm"))
             self.confirm_button.configure(state="normal")
             return
-        self._confirm_var.set(f"确认 ({self._remaining}s)")
+        self._confirm_var.set(trf("announcement.confirm_countdown", seconds=self._remaining))
         self._remaining -= 1
         self.after(1000, self._tick)
 

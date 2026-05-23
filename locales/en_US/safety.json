@@ -1,0 +1,5 @@
+{
+  "meta.no_visible_backup": "No visible backup kept",
+  "settings.metadata_keep_backup": "Keep a visible backup when saving properties",
+  "settings.desc.metadata_backup": "Off by default. A recovery copy is prepared while saving and organized after a successful save."
+}

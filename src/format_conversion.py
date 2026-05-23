@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import os
 import queue
-import tempfile
 import threading
 import time
 import tkinter as tk
@@ -13,9 +11,12 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageOps, PngImagePlugin
 
 from app_metadata import APP_VERSION
+from file_safety import get_file_safety_service
+from task_state import TaskManager, TaskRecord, TaskStateMachine, TaskStatus
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import bind_minimum_size_notice, center_window, prepare_dialog_window
+from dialog_factory import DialogSpec, finalize_dialog_window
+from window_layout import prepare_dialog_window
 
 
 FORMATS = ("PNG", "JPG", "WebP")
@@ -33,36 +34,18 @@ class ConversionResult:
 
 def _default_output_dir(paths: list[Path]) -> Path:
     parent = paths[0].parent if paths else Path.cwd()
-    return parent / "output"
+    return parent / "fmt_output"
 
 
 def _output_path(source: Path, output_dir: Path, target_format: str) -> Path:
     suffix = ".jpg" if target_format == "JPG" else f".{target_format.lower()}"
-    candidate = output_dir / f"{source.stem}{suffix}"
-    if not candidate.exists():
-        return candidate
-    index = 1
-    while True:
-        candidate = output_dir / f"{source.stem}-{index}{suffix}"
-        if not candidate.exists():
-            return candidate
-        index += 1
+    return get_file_safety_service().unique_path(output_dir / f"{source.stem}{suffix}")
 
 
 def _atomic_save(image: Image.Image, target: Path, fmt: str, save_kwargs: dict[str, object]) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{target.stem}.", suffix=f"{target.suffix}.tmp", dir=str(target.parent))
-    os.close(fd)
-    temp_path = Path(temp_name)
-    try:
-        image.save(temp_path, fmt, **save_kwargs)
-        os.replace(temp_path, target)
-    except Exception:
-        try:
-            temp_path.unlink()
-        except OSError:
-            pass
-        raise
+    result = get_file_safety_service().atomic_save_image(image, target, fmt, save_kwargs)
+    if not result.ok:
+        raise RuntimeError(result.message)
 
 
 def _png_info(raw: Image.Image) -> PngImagePlugin.PngInfo:
@@ -124,13 +107,15 @@ def convert_image_loss_preserving(source: Path, output_dir: Path, target_format:
 
 
 class FormatConversionDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Widget, paths: list[Path], log_callback=None) -> None:
+    def __init__(self, parent: tk.Widget, paths: list[Path], log_callback=None, task_manager: TaskManager | None = None) -> None:
         super().__init__(parent)
         self.paths = [path for path in paths if path.exists()]
         self._log_callback = log_callback
+        self._task_manager = task_manager or TaskManager(ui_dispatch=lambda callback: self.after(0, callback), max_workers=1)
         self._cancel_event = threading.Event()
         self._finish_after_current = threading.Event()
         self._running = False
+        self._task_record: TaskRecord | None = None
         self._created_outputs: list[Path] = []
         self._started_at = 0.0
         self._ui_queue: queue.SimpleQueue = queue.SimpleQueue()
@@ -192,8 +177,18 @@ class FormatConversionDialog(tk.Toplevel):
         self.start_button.grid(row=0, column=4, padx=(8, 0))
         self.close_button.grid(row=0, column=5, padx=(8, 0))
 
-        bind_minimum_size_notice(self, self._size_notice_var, 780, 560)
-        center_window(self, 860, 680)
+        finalize_dialog_window(
+            self,
+            parent,
+            DialogSpec(
+                title=app_window_title(tr("format.title")),
+                min_width=780,
+                min_height=560,
+                fallback_width=860,
+                fallback_height=680,
+            ),
+            size_notice_var=self._size_notice_var,
+        )
         self.after(40, self._drain_ui_queue)
 
     def _dispatch_ui(self, callback) -> None:
@@ -269,6 +264,13 @@ class FormatConversionDialog(tk.Toplevel):
         self._finish_after_current.clear()
         self._created_outputs.clear()
         self._started_at = time.monotonic()
+        self._task_record = self._task_manager.create(
+            kind="format_conversion",
+            name=f"format:{self.format_var.get()}",
+            total=max(1, len(self.paths)),
+            cancel_event=self._cancel_event,
+            exclusive=False,
+        )
         self._set_running_controls(True)
         target_format = self.format_var.get()
         output_dir = Path(self.output_var.get() or str(_default_output_dir(self.paths)))
@@ -296,19 +298,27 @@ class FormatConversionDialog(tk.Toplevel):
                 self._dispatch_ui(lambda i=offset, p=path, o=ok, f=failed, s=skipped: self._update_progress(i, total, p.name, o, f, s))
             self._dispatch_ui(lambda r=results, o=ok, f=failed, s=skipped: self._finish(r, o, f, s, output_dir))
 
-        threading.Thread(target=worker, daemon=False, name="ShapeYourPhotoFormatConversion").start()
+        self._task_manager.submit_worker(task_id=self._task_record.task_id, target=worker)
 
     def _finish(self, results: list[ConversionResult], ok: int, failed: int, skipped: int, output_dir: Path) -> None:
         self._running = False
         self._set_running_controls(False)
         if self._cancel_event.is_set():
+            if self._task_record is not None and self._task_record.is_active:
+                TaskStateMachine(self._task_record).transition(TaskStatus.CANCELING)
             rolled = self._rollback_outputs()
+            if self._task_record is not None and self._task_record.is_active:
+                TaskStateMachine(self._task_record).transition(TaskStatus.CANCELED)
             self.status_var.set(tr("format.canceled").format(rolled=rolled))
             self._log(f"format conversion canceled: rolled_back={rolled} failed={failed} skipped={skipped}")
         elif self._finish_after_current.is_set():
+            if self._task_record is not None and self._task_record.is_active:
+                TaskStateMachine(self._task_record).transition(TaskStatus.COMPLETED)
             self.status_var.set(tr("format.early_done").format(ok=ok, failed=failed, skipped=skipped, output=output_dir))
             self._log(f"format conversion stopped early: success={ok} failed={failed} skipped={skipped}")
         else:
+            if self._task_record is not None and self._task_record.is_active:
+                TaskStateMachine(self._task_record).transition(TaskStatus.COMPLETED)
             self.status_var.set(tr("format.done").format(ok=ok, failed=failed, output=output_dir))
             self._log(f"format conversion finished: success={ok} failed={failed} skipped={skipped}")
         if failed:
@@ -320,7 +330,7 @@ class FormatConversionDialog(tk.Toplevel):
             self.detail_var.set(tr("format.rollback_progress").format(index=index, total=len(self._created_outputs), filename=path.name))
             try:
                 if path.exists():
-                    path.unlink()
+                    get_file_safety_service().move_to_quarantine(path, reason="format rollback")
                     rolled += 1
             except OSError as exc:
                 self._log(f"format rollback failed: {path} | {exc}")
@@ -333,6 +343,8 @@ class FormatConversionDialog(tk.Toplevel):
             return
         self._log("format conversion cancel requested")
         self.status_var.set(tr("format.canceling"))
+        if self._task_record is not None and self._task_record.status == TaskStatus.RUNNING:
+            TaskStateMachine(self._task_record).transition(TaskStatus.CANCEL_REQUESTED)
         self._cancel_event.set()
         self.cancel_button.configure(state="disabled")
         self.stop_button.configure(state="disabled")
@@ -352,5 +364,5 @@ class FormatConversionDialog(tk.Toplevel):
         self.destroy()
 
 
-def show_format_conversion_dialog(parent: tk.Widget, paths: list[Path], log_callback=None) -> None:
-    FormatConversionDialog(parent, paths, log_callback=log_callback)
+def show_format_conversion_dialog(parent: tk.Widget, paths: list[Path], log_callback=None, task_manager: TaskManager | None = None) -> None:
+    FormatConversionDialog(parent, paths, log_callback=log_callback, task_manager=task_manager)

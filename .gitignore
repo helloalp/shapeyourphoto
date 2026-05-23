@@ -1,6 +1,10 @@
 ﻿node_modules/
 dist/
 dist_installer/
+release_staging/
+staging/
+package_staging/
+_release_staging/
 # build/ 目录里手写的打包配置（spec / iss / sh）需入库，
 # 仅忽略 PyInstaller 在该 spec 下生成的 cache 子目录
 /build/shapeyourphoto/
@@ -23,11 +27,12 @@ venv/
 data/
 uploads/
 outputs/
+fmt_output/
 exports/
 user_data/
 originals/
 benchmark_reports/
-private_docs/
+private/
 _update_removed_files/
 data/update_quarantine/
 
@@ -69,9 +74,8 @@ native/*/target/
 
 # Local app/user state
 
-# Private docs and secrets
+# Private docs and signing material. Public verification keys under assets/ are committed.
 *_private_key.pem
-*.pem
 *.pfx
 *.key
 *.crt

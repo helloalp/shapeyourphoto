@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import threading
 from pathlib import Path
 from tkinter import messagebox
 
@@ -12,12 +11,14 @@ from cloud_client import compare_builds, fetch_cloud_messages, fetch_update_mani
 from cloud_state import has_seen_message, remember_message, set_temporary_decline, should_suppress_update_prompt
 from integrity_guard import check_cloud_update_modules
 from paths import user_data_dir
+from ui.language import tr, trf
 from ui.cloud_dialogs import (
     CheckingUpdateDialog,
     show_cloud_message_dialog,
     show_update_available_dialog,
     update_manifest_external_download_only,
 )
+from update_policy import evaluate_update_lag, has_acknowledged_update_policy
 
 
 class UiCloudActionsMixin:
@@ -27,10 +28,8 @@ class UiCloudActionsMixin:
             self._log_console(f"cloud integrity: {message}")
         if not report.ok:
             messagebox.showerror(
-                "更新/公告模块异常",
-                "ShapeYourPhoto 的更新或公告模块缺失/被篡改。\n\n"
-                + "\n".join(report.messages)
-                + "\n\n请恢复完整发布包后重新启动。",
+                tr("update.integrity_title"),
+                tr("update.integrity_body"),
                 parent=self.root,
             )
             return
@@ -58,8 +57,8 @@ class UiCloudActionsMixin:
             result = fetch_update_manifest("")
             if not result.ok or result.payload is None:
                 _finish(
-                    lambda message=result.user_message or "暂时无法连接更新服务，请稍后再试。": messagebox.showwarning(
-                        "检查更新失败",
+                    lambda message=result.user_message or tr("update.service_unavailable"): messagebox.showwarning(
+                        tr("update.check_failed_title"),
                         message,
                         parent=owner,
                     )
@@ -68,7 +67,7 @@ class UiCloudActionsMixin:
                 return
             _finish(lambda: self._handle_update_manifest(result.payload, manual=True, parent=owner))
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self.task_manager.submit(kind="update_check", name="manual_update_check", target=lambda _record: _worker(), exclusive=False)
 
     def _check_updates_async(self, *, manual: bool, after_done=None) -> None:
         def _worker() -> None:
@@ -86,17 +85,21 @@ class UiCloudActionsMixin:
 
             self._dispatch_ui(_finish)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self.task_manager.submit(kind="update_check", name="auto_update_check", target=lambda _record: _worker(), exclusive=False)
 
     def _handle_update_manifest(self, manifest: dict, *, manual: bool, parent=None) -> str:
         owner = parent or self.root
         if compare_builds(manifest) <= 0:
             if manual:
-                messagebox.showinfo("检查更新", "当前已经是最新版本。", parent=owner)
+                messagebox.showinfo(tr("update.checking_title"), tr("update.current"), parent=owner)
             return "current"
         remote_id = int(manifest.get("version_id") or manifest.get("build_id") or 0)
+        lag_decision = evaluate_update_lag(manifest)
+        if lag_decision is not None and lag_decision.blocks_in_app_update and not manual and has_acknowledged_update_policy(lag_decision):
+            self._log_console(f"update blocked prompt suppressed: current={APP_VERSION_ID} latest={lag_decision.latest_version_id}")
+            return "blocked_ack"
         if not manual and should_suppress_update_prompt(remote_id):
-            self._log_console(f"检测到更新，但本次暂不重复提示：{remote_id}")
+            self._log_console(trf("update.suppressed_log", version=remote_id))
             return "suppressed"
         result = show_update_available_dialog(owner, manifest, manual=manual)
         if result == "decline":
@@ -106,6 +109,10 @@ class UiCloudActionsMixin:
                 set_temporary_decline(remote_id)
             return result
         if result == "update":
+            if lag_decision is not None and lag_decision.blocks_in_app_update:
+                self._log_console(f"in-app updater blocked: current={APP_VERSION_ID} latest={lag_decision.latest_version_id}")
+                messagebox.showwarning(tr("update.blocked_title"), tr("update.blocked_body"), parent=owner)
+                return "blocked"
             if update_manifest_external_download_only(manifest):
                 self._log_console("update manifest requires external download; updater launch skipped")
                 return "external"
@@ -136,7 +143,7 @@ class UiCloudActionsMixin:
         try:
             subprocess.Popen(cmd, cwd=str(app_dir), close_fds=True)
         except Exception as exc:
-            messagebox.showerror("启动更新器失败", "暂时无法启动更新器，请稍后再试。", parent=self.root)
+            messagebox.showerror(tr("update.launch_failed_title"), tr("update.launch_failed_body"), parent=self.root)
             self._log_console(f"updater launch failed: {exc}")
             return
         self._log_console("updater launched; closing main application")
@@ -150,7 +157,7 @@ class UiCloudActionsMixin:
                 return
             self._dispatch_ui(lambda: self._handle_cloud_messages(result.payload))
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self.task_manager.submit(kind="update_check", name="cloud_message_check", target=lambda _record: _worker(), exclusive=False)
 
     def _handle_cloud_messages(self, payload: dict) -> None:
         messages = payload.get("messages", [])

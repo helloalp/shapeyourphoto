@@ -81,6 +81,7 @@ if IS_WIN:
             self.window = window
             self.callback = callback
             self._installed: dict[int, tuple[int, object]] = {}
+            self._map_refresh_bound = False
 
         def install(self) -> None:
             if not hasattr(ctypes, "WINFUNCTYPE"):
@@ -96,11 +97,22 @@ if IS_WIN:
             shell32.DragAcceptFiles.restype = None
             WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
 
-            def _install_widget(widget: tk.Misc) -> None:
+            def _widget_hwnds(widget: tk.Misc) -> list[int]:
+                hwnds: list[int] = []
                 try:
-                    hwnd = int(widget.winfo_id())
+                    hwnds.append(int(widget.winfo_id()))
                 except Exception:
-                    return
+                    pass
+                try:
+                    frame = widget.tk.call("wm", "frame", widget._w)
+                    frame_hwnd = int(frame, 0) if isinstance(frame, str) else int(frame)
+                    if frame_hwnd not in hwnds:
+                        hwnds.append(frame_hwnd)
+                except Exception:
+                    pass
+                return hwnds
+
+            def _install_hwnd(hwnd: int) -> None:
                 if hwnd in self._installed:
                     return
 
@@ -119,10 +131,20 @@ if IS_WIN:
                 self._installed[hwnd] = (old_proc, _wnd_proc)
                 shell32.DragAcceptFiles(hwnd, True)
                 _allow_drop_messages(user32, hwnd)
+
+            def _install_widget(widget: tk.Misc) -> None:
+                for hwnd in _widget_hwnds(widget):
+                    _install_hwnd(hwnd)
                 for child in widget.winfo_children():
                     _install_widget(child)
 
             _install_widget(self.window)
+            if not self._map_refresh_bound:
+                try:
+                    self.window.bind("<Map>", lambda _event: self.install(), add="+")
+                    self._map_refresh_bound = True
+                except Exception:
+                    pass
 
         def uninstall(self) -> None:
             if not self._installed:

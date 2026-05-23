@@ -9,10 +9,11 @@ from PIL import Image, ImageOps, ImageTk
 class ThumbnailCache:
     def __init__(self, *, max_items: int = 900) -> None:
         self.max_items = max(64, int(max_items))
-        self._tree_cache: OrderedDict[tuple[str, int, int], ImageTk.PhotoImage] = OrderedDict()
+        self._tree_cache: OrderedDict[tuple[str, int, int, bool], ImageTk.PhotoImage] = OrderedDict()
+        self._duplicate_badge: Image.Image | None = None
 
-    def get_tree_thumbnail(self, path: Path, size: tuple[int, int] = (90, 68)) -> ImageTk.PhotoImage | None:
-        cache_key = (str(path), size[0] * 1000 + size[1], self._mtime_stamp(path))
+    def get_tree_thumbnail(self, path: Path, size: tuple[int, int] = (90, 68), *, duplicate_badge: bool = False) -> ImageTk.PhotoImage | None:
+        cache_key = (str(path), size[0] * 1000 + size[1], self._mtime_stamp(path), duplicate_badge)
         if cache_key in self._tree_cache:
             self._tree_cache.move_to_end(cache_key)
             return self._tree_cache[cache_key]
@@ -32,6 +33,11 @@ class ThumbnailCache:
         offset_x = (size[0] - image.width) // 2
         offset_y = (size[1] - image.height) // 2
         thumb.paste(image, (offset_x, offset_y))
+        if duplicate_badge:
+            badge = self._get_duplicate_badge()
+            if badge is not None:
+                thumb = thumb.convert("RGBA")
+                thumb.alpha_composite(badge, (size[0] - badge.width - 3, 3))
         photo = ImageTk.PhotoImage(thumb)
         self._evict_stale_path_keys(path, keep_key=cache_key)
         self._tree_cache[cache_key] = photo
@@ -49,7 +55,7 @@ class ThumbnailCache:
         for key in doomed:
             self._tree_cache.pop(key, None)
 
-    def _evict_stale_path_keys(self, path: Path, *, keep_key: tuple[str, int, int]) -> None:
+    def _evict_stale_path_keys(self, path: Path, *, keep_key: tuple[str, int, int, bool]) -> None:
         prefix = str(path)
         for key in [key for key in self._tree_cache if key[0] == prefix and key != keep_key]:
             self._tree_cache.pop(key, None)
@@ -60,3 +66,14 @@ class ThumbnailCache:
             return int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000)))
         except Exception:
             return 0
+
+    def _get_duplicate_badge(self) -> Image.Image | None:
+        if self._duplicate_badge is not None:
+            return self._duplicate_badge
+        badge_path = Path(__file__).resolve().parents[1] / "assets" / "ui" / "info_duplicate.png"
+        try:
+            with Image.open(badge_path) as image:
+                self._duplicate_badge = image.convert("RGBA").resize((18, 18), Image.Resampling.LANCZOS)
+        except Exception:
+            return None
+        return self._duplicate_badge

@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import tkinter as tk
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from pathlib import Path
 from tkinter import messagebox
 
@@ -32,12 +32,16 @@ class UiAnalysisActionsMixin:
     def analyze_selected(self) -> None:
         targets = self.resolve_analysis_targets("selected")
         if not targets:
-            path = self._current_path()
-            if path is not None and path in self.image_paths and path.exists():
-                targets = [path]
-        if not targets:
             messagebox.showinfo(tr("analysis.no_targets_title"), tr("analysis.no_targets_selected"))
             return
+        total_current = len(self.get_current_list_paths())
+        if len(targets) < total_current:
+            if not messagebox.askyesno(
+                tr("analysis.partial_confirm_title"),
+                tr("analysis.partial_confirm_body").format(total=total_current, selected=len(targets)),
+            ):
+                self._log_console(f"analysis canceled before start: selected={len(targets)} total={total_current}")
+                return
         self._run_analysis(targets)
 
     def _run_analysis(self, targets: list[Path]) -> None:
@@ -70,10 +74,12 @@ class UiAnalysisActionsMixin:
             f"gpu={gpu_console_label(gpu_status)}"
         )
         self._log_console(gpu_status.reason)
-        self._begin_task(
+        task_record = self._begin_task(
             total * ANALYSIS_PROGRESS_STEPS,
             tr("analysis.running_title").format(done=0, total=total),
             tr("analysis.start_detail").format(total=total),
+            task_kind="analysis",
+            cancel_event=cancel_event,
             show_dialog=True,
             dialog_title=tr("analysis.dialog_title"),
             dialog_header=tr("analysis.dialog_header"),
@@ -101,7 +107,7 @@ class UiAnalysisActionsMixin:
             batch_results: dict[Path, AnalysisResult] = {}
             batch_timings: dict[str, float] = {}
             batch_started_at = time.perf_counter()
-            pool = ThreadPoolExecutor(max_workers=worker_count)
+            pool = self.task_manager.worker_pool(max_workers=worker_count, name_prefix="ShapeYourPhotoAnalysis")
             futures = {}
             try:
                 for path in targets:
@@ -185,6 +191,10 @@ class UiAnalysisActionsMixin:
                     batch_results,
                     max_workers=worker_count,
                     perf_timings=batch_timings,
+                    worker_pool_factory=lambda workers: self.task_manager.worker_pool(
+                        max_workers=workers,
+                        name_prefix="ShapeYourPhotoSimilar",
+                    ),
                 )
                 similar_ms = (time.perf_counter() - similar_started_at) * 1000.0
                 batch_timings["similar_detection"] = max(batch_timings.get("similar_detection", 0.0), similar_ms)
@@ -211,7 +221,7 @@ class UiAnalysisActionsMixin:
                     )
                 )
 
-        threading.Thread(target=worker, daemon=True).start()
+        self.task_manager.submit_worker(task_id=getattr(task_record, "task_id", None), target=worker)
 
     def cancel_analysis(self, run_id: int | None = None) -> None:
         if run_id is not None and run_id != self._analysis_run_id:
@@ -220,6 +230,9 @@ class UiAnalysisActionsMixin:
         cancel_event = self._analysis_cancel_event
         if cancel_event is not None:
             cancel_event.set()
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.request_cancel()
         self._analysis_run_id += 1
         targets = list(self._analysis_cancel_targets or self._last_analysis_targets)
         cleared_results = sum(1 for path in targets if path in self.results)
@@ -245,6 +258,9 @@ class UiAnalysisActionsMixin:
             f"canceled={len(targets)}"
         )
         self.is_busy = False
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.cancel()
         self._set_controls_enabled(True)
         self._active_task_cancel_callback = None
         if hasattr(self, "task_cancel_button"):

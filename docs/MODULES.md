@@ -15,6 +15,8 @@
 ## 应用代码
 
 - [src/ui_app.py](/E:/aitools/shapeyourphoto/src/ui_app.py)：主应用控制中心。管理列表、导入、扫描、分析/修复调度、run_id/cancel_event、Console 合并刷新、cleanup/similar 弹窗入口、统计和右侧信息区。
+- [src/app_context.py](/E:/aitools/shapeyourphoto/src/app_context.py)：应用级服务上下文和 service registry，集中提供 settings、Console、i18n、theme、preview cache、task manager、stats、update 和 platform services。
+- [src/task_state.py](/E:/aitools/shapeyourphoto/src/task_state.py)：长任务统一状态机和 `TaskManager`，集中提供 task_id、run_id、cancel_event、进度事件、错误封装、worker 提交、局部 worker pool 和 UI 回调队列。
 - [src/ui_*](/E:/aitools/shapeyourphoto/src/ui_analysis_actions.py)：主窗口 mixin，承载扫描、分析、修复、列表、Console 和复核流程。
 - [src/ui/](/E:/aitools/shapeyourphoto/src/ui)：窗口标题、display mapping、主题、HiDPI、Splash、EXIF 编辑、云端更新/公告 UI。
 - [src/analysis/](/E:/aitools/shapeyourphoto/src/analysis)：分析流水线、人像识别、cleanup candidate 和共享分析工具。
@@ -32,7 +34,6 @@
 - [build/](/E:/aitools/shapeyourphoto/build)：PyInstaller、Inno Setup 和 dmg 构建脚本。
 - [assets/](/E:/aitools/shapeyourphoto/assets)：图标和更新验签公钥等资源。
 - [docs/](/E:/aitools/shapeyourphoto/docs/README.md)：正式维护文档体系。
-- [private_docs/](/E:/aitools/shapeyourphoto/private_docs)：私有文档目录，继续由 `.gitignore` 排除。
 
 ## 已废弃但需记住的旧入口
 

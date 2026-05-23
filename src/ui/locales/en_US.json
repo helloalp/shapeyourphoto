@@ -1,0 +1,9 @@
+{
+    "similar.select_visible":  "Select All",
+    "similar.start_selection":  "Start Selection",
+    "settings.main_window_size":  "Main window size:",
+    "settings.dialog_window_size":  "Dialog size:",
+    "settings.desc.window_sizes":  "The main window opens as a percentage of the available screen. Dialogs open as a percentage of the main window so the background stays visible. Changes apply the next time each window opens.",
+    "settings.restore_layout_defaults":  "Restore Window Layout Defaults",
+    "settings.layout_defaults_restored":  "Window layout defaults restored."
+}

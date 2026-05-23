@@ -1,0 +1,5 @@
+{
+  "meta.no_visible_backup": "表示されるバックアップは残していません",
+  "settings.metadata_keep_backup": "属性情報の保存時に表示できるバックアップを残す",
+  "settings.desc.metadata_backup": "既定ではオフです。保存中は復元用のコピーを用意し、成功後に自動整理します。"
+}

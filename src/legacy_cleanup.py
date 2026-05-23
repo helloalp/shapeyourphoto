@@ -14,7 +14,7 @@ PROTECTED_TOP_LEVEL = {
     "build",
     "data",
     "docs",
-    "private_docs",
+    "private",
     "src",
     "test",
     "tmp",

@@ -8,7 +8,7 @@ from stats_store import export_stats_report
 from ui.display_names import display_name
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import center_window, prepare_dialog_window
+from dialog_factory import DialogSpec, create_dialog_window, finalize_dialog_window
 
 
 def _format_bytes(size: int) -> str:
@@ -36,14 +36,16 @@ def _section(canvas: tk.Canvas, y: int, title: str) -> int:
 
 
 def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
-    dialog = tk.Toplevel(parent)
-    prepare_dialog_window(
-        dialog,
+    dialog = create_dialog_window(
         parent,
-        title=app_window_title(tr("stats.title")),
-        min_width=960,
-        min_height=760,
-        modal=False,
+        DialogSpec(
+            title=app_window_title(tr("stats.title")),
+            min_width=960,
+            min_height=760,
+            fallback_width=1000,
+            fallback_height=820,
+            modal=False,
+        ),
     )
 
     outer = ttk.Frame(dialog, padding=14)
@@ -176,4 +178,15 @@ def show_stats_dialog(parent: tk.Widget, stats: SessionStats) -> None:
 
     ttk.Button(actions, text=tr("stats.export"), command=export_report).pack(side="left")
     ttk.Button(actions, text=tr("stats.close"), command=dialog.destroy).pack(side="right")
-    center_window(dialog, 1000, 820)
+    finalize_dialog_window(
+        dialog,
+        parent,
+        DialogSpec(
+            title=app_window_title(tr("stats.title")),
+            min_width=960,
+            min_height=760,
+            fallback_width=1000,
+            fallback_height=820,
+            modal=False,
+        ),
+    )

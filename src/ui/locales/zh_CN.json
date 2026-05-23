@@ -1,0 +1,9 @@
+{
+    "similar.select_visible":  "全选",
+    "similar.start_selection":  "开始选择",
+    "settings.main_window_size":  "主窗口初始大小：",
+    "settings.dialog_window_size":  "弹窗默认大小：",
+    "settings.desc.window_sizes":  "主窗口按屏幕可用区域比例启动；弹窗按主窗口比例打开，并始终保留背景可见。保存后下次打开窗口生效。",
+    "settings.restore_layout_defaults":  "恢复窗口布局默认值",
+    "settings.layout_defaults_restored":  "窗口布局已恢复默认值。"
+}

@@ -4,7 +4,7 @@ import os
 import shutil
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from pathlib import Path
 from tkinter import messagebox
 
@@ -20,11 +20,12 @@ from app_settings import (
     REPAIR_SUMMARY_FILTER_SKIPPED,
 )
 from debug_open_dialog import DebugOpenEntry, show_debug_open_dialog
+from file_safety import get_file_safety_service
 from models import RepairRecord, RepairSelection
 from repair_completion_dialog import RepairCompletionEntry, show_repair_completion_dialog
 from repair_dialog import show_repair_dialog
 from repair_engine import repair_image_file
-from repair_planner import get_method_labels, get_repair_methods, suggest_methods_for_results
+from repair_planner import get_method_labels, get_repair_methods, suggest_methods_for_result, suggest_methods_for_results
 from stats_store import record_canceled_task, record_repair, record_repair_batch, save_stats
 from ui.display_names import display_name
 
@@ -44,8 +45,10 @@ class UiRepairActionsMixin:
         )
 
     def repair_current(self) -> None:
-        targets = self._selected_repair_targets()
+        targets = self._checked_repair_targets()
         if not targets:
+            messagebox.showinfo("提示", "当前没有可修复项。请先把文件列表状态切换为“已选”，并确保这些图片已有分析结果和可用修复方案。")
+            return
             messagebox.showinfo("提示", "请先在列表中选中已有分析结果的图片。")
             return
         self._open_repair_dialog(targets, f"修复选中 {len(targets)} 张图片")
@@ -59,17 +62,25 @@ class UiRepairActionsMixin:
         self._open_repair_dialog(targets, f"批量修复 {len(targets)} 张图片")
 
     def _batch_repair_targets(self) -> tuple[list[Path], str]:
-        multi_selected = self._validate_repair_targets(self.get_selected_paths_from_current_list(), source="multi_select", require_analysis=True)
-        if len(multi_selected) > 1:
-            return self._dedupe_repair_targets(multi_selected), "multi_select"
         checked = self._validate_repair_targets(
             self.get_checked_paths_from_current_list(),
             source="checked",
             require_analysis=True,
+            require_repair_plan=True,
         )
         if checked:
             return self._dedupe_repair_targets(checked), "checked"
         return [], "empty"
+
+    def _checked_repair_targets(self) -> list[Path]:
+        return self._dedupe_repair_targets(
+            self._validate_repair_targets(
+                self.get_checked_paths_from_current_list(),
+                source="checked",
+                require_analysis=True,
+                require_repair_plan=True,
+            )
+        )
 
     def _selected_repair_targets(self) -> list[Path]:
         selected = self._validate_repair_targets(self.get_selected_paths_from_current_list(), source="selected", require_analysis=True)
@@ -80,10 +91,17 @@ class UiRepairActionsMixin:
             return []
         return self._validate_repair_targets([current], source="current", require_analysis=True)
 
-    def _validate_repair_targets(self, paths: list[Path], *, source: str, require_analysis: bool = True) -> list[Path]:
+    def _validate_repair_targets(
+        self,
+        paths: list[Path],
+        *,
+        source: str,
+        require_analysis: bool = True,
+        require_repair_plan: bool = False,
+    ) -> list[Path]:
         current_paths = set(self.image_paths)
         valid: list[Path] = []
-        stale = missing_analysis = missing_file = 0
+        stale = missing_analysis = missing_file = missing_plan = 0
         for path in paths:
             if path not in current_paths:
                 stale += 1
@@ -91,14 +109,18 @@ class UiRepairActionsMixin:
             if not path.exists():
                 missing_file += 1
                 continue
-            if require_analysis and path not in self.results:
+            result = self.results.get(path)
+            if require_analysis and result is None:
                 missing_analysis += 1
                 continue
+            if require_repair_plan and (result is None or not suggest_methods_for_result(result)):
+                missing_plan += 1
+                continue
             valid.append(path)
-        if stale or missing_analysis or missing_file:
+        if stale or missing_analysis or missing_file or missing_plan:
             self._log_console(
                 f"repair target validation: source={source} valid={len(valid)} "
-                f"stale={stale} missing_analysis={missing_analysis} missing_file={missing_file}"
+                f"stale={stale} missing_analysis={missing_analysis} missing_file={missing_file} missing_plan={missing_plan}"
             )
         return valid
 
@@ -215,10 +237,12 @@ class UiRepairActionsMixin:
             f"repair started: count={len(targets)} pre_analyze={len(missing)} mode={selection.mode} overwrite={selection.overwrite_original} "
             f"analysis_workers={self._analysis_concurrency_label(analysis_worker_plan) if analysis_worker_plan else 0} repair_workers={repair_workers}"
         )
-        self._begin_task(
+        task_record = self._begin_task(
             total_steps,
             f"修复准备 0/{total_steps}",
             "正在准备修复任务...",
+            task_kind="repair",
+            cancel_event=cancel_event,
             show_dialog=True,
             dialog_title="修复图片中",
             dialog_header="正在分析并修复图片",
@@ -236,7 +260,7 @@ class UiRepairActionsMixin:
             batch_started_at = time.perf_counter()
 
             if missing:
-                pool = ThreadPoolExecutor(max_workers=analysis_workers)
+                pool = self.task_manager.worker_pool(max_workers=analysis_workers, name_prefix="ShapeYourPhotoRepairPreAnalysis")
                 futures = {}
                 try:
                     futures = {pool.submit(analyze_image, path): path for path in missing if not cancel_event.is_set()}
@@ -272,7 +296,7 @@ class UiRepairActionsMixin:
                 return
 
             repair_targets = [path for path in targets if path not in failed_paths]
-            pool = ThreadPoolExecutor(max_workers=repair_workers)
+            pool = self.task_manager.worker_pool(max_workers=repair_workers, name_prefix="ShapeYourPhotoRepair")
             try:
                 for path in repair_targets:
                     if cancel_event.is_set():
@@ -377,7 +401,7 @@ class UiRepairActionsMixin:
                 self._repair_finished(rid, r, s, f, selection, timings)
             )
 
-        threading.Thread(target=worker, daemon=True).start()
+        self.task_manager.submit_worker(task_id=getattr(task_record, "task_id", None), target=worker)
 
     def _repair_should_ignore(self, run_id: int) -> bool:
         return run_id != self._repair_run_id or (
@@ -476,6 +500,9 @@ class UiRepairActionsMixin:
         cancel_event = self._repair_cancel_event
         if cancel_event is not None:
             cancel_event.set()
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.request_cancel()
         elapsed_ms = max(0.0, (time.monotonic() - self._task_started_at) * 1000.0) if self._task_started_at else 0.0
         self._log_console(
             f"repair cancel requested: run={self._repair_run_id} | elapsed={self._format_ms(elapsed_ms)} | "
@@ -514,8 +541,13 @@ class UiRepairActionsMixin:
         while destination.exists():
             destination = quarantine_root / f"{path.stem}_{index}{path.suffix}"
             index += 1
-        shutil.move(str(path), str(destination))
-        return destination
+        result = get_file_safety_service(Path(getattr(self, "_repair_cancel_base_folder", self._resolve_base_folder()))).move_to_quarantine(
+            path,
+            reason="repair canceled output",
+        )
+        if not result.ok:
+            raise OSError(result.message)
+        return result.path or destination
 
     def _cleanup_canceled_repair_outputs(self, records: list[RepairRecord], run_id: int) -> tuple[int, list[str]]:
         cleaned = 0
@@ -536,8 +568,12 @@ class UiRepairActionsMixin:
             if not output_path.exists():
                 continue
             try:
-                output_path.unlink()
-                cleaned += 1
+                    result = get_file_safety_service(
+                        Path(getattr(self, "_repair_cancel_base_folder", self._resolve_base_folder()))
+                    ).move_to_quarantine(output_path, reason="repair canceled output cleanup")
+                    if not result.ok:
+                        raise OSError(result.message)
+                    cleaned += 1
             except Exception as unlink_exc:
                 try:
                     destination = self._quarantine_canceled_output(output_path)
@@ -600,6 +636,9 @@ class UiRepairActionsMixin:
         self._log_console(
             f"repair cancel cleanup started: run={run_id} | completed_before_cancel={len(records)} | failed_before_cancel={len(failed)}"
         )
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.mark_canceling()
 
         def cleanup_worker() -> None:
             cleaned, cleanup_messages = self._cleanup_canceled_repair_outputs(records, run_id)
@@ -608,7 +647,9 @@ class UiRepairActionsMixin:
                 self._repair_cancel_cleanup_finished(rid, recs, failed_items, timings, total_count, c, msgs)
             )
 
-        threading.Thread(target=cleanup_worker, daemon=True).start()
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.submit_worker(task_id=None, target=cleanup_worker)
 
     def _repair_cancel_cleanup_finished(
         self,
@@ -631,6 +672,9 @@ class UiRepairActionsMixin:
         if cleanup_messages:
             detail += f" 另有 {len(cleanup_messages)} 个清理警告，详见 Console。"
         self.is_busy = False
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.cancel()
         self._set_controls_enabled(True)
         self._active_task_cancel_callback = None
         if hasattr(self, "task_cancel_button"):
@@ -977,4 +1021,11 @@ class UiRepairActionsMixin:
                     lambda msgs=errors: messagebox.showwarning("打开失败", "部分文件未能打开：\n\n" + "\n".join(msgs[:8]))
                 )
 
-        threading.Thread(target=worker, daemon=True).start()
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.submit(
+                kind="file_action",
+                name="debug_open_pairs",
+                target=lambda _record: worker(),
+                exclusive=False,
+            )

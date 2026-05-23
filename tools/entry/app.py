@@ -10,12 +10,12 @@ if str(APP_PACKAGE_DIR) not in sys.path:
     sys.path.insert(0, str(APP_PACKAGE_DIR))
 
 from app_metadata import APP_VERSION
+from app_context import create_app_context
 from desktop_integration import configure_window_icon
 from dnd_support import create_root
 from ui.hidpi import configure_fonts, configure_tk_scaling, enable_dpi_awareness
 from ui.splash import SplashScreen
 from ui_app import PhotoAnalyzerApp
-from window_layout import center_window
 
 
 def main() -> None:
@@ -27,9 +27,9 @@ def main() -> None:
     splash = SplashScreen(root)
     root.title(f"Shape Your Photo | v{APP_VERSION} | by Helloalp")
     configure_window_icon(root)
+    app_context = create_app_context()
     try:
-        PhotoAnalyzerApp(root)
-        center_window(root, 1700, 1020)
+        PhotoAnalyzerApp(root, app_context=app_context)
     except Exception:
         splash.close_now()
         raise

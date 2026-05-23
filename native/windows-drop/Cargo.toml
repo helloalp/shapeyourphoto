@@ -1,0 +1,9 @@
+[package]
+name = "shapeyourphoto_windows_drop"
+version = "1.2.7"
+edition = "2021"
+
+[lib]
+name = "shapeyourphoto_windows_drop"
+crate-type = ["cdylib"]
+

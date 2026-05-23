@@ -1,6 +1,6 @@
 """跨平台文件拖拽分派。
 
-Windows: 复用 drag_drop.WindowsFileDropTarget 的原生 ctypes 实现，行为/性能不变。
+Windows: 使用 Rust OLE IDropTarget 桥接资源管理器文件与文件夹拖入。
 macOS / Linux: 使用 tkinterdnd2，要求根窗口由 TkinterDnD.Tk() 创建（见 app.py）。
 
 对外只暴露：
@@ -46,6 +46,8 @@ def _parse_tkdnd_data(widget: tk.Misc, data: str) -> list[Path]:
 class _NoopDropTarget:
     """tkinterdnd2 不可用时的占位实现，保证调用方不报错。"""
 
+    backend_name = "unavailable"
+
     def install(self) -> None:
         return None
 
@@ -60,6 +62,7 @@ class _Tkdnd2DropTarget:
         self.window = window
         self.callback = callback
         self._installed = False
+        self.backend_name = "tkinterdnd2"
 
     def install(self) -> None:
         try:
@@ -88,17 +91,28 @@ class _Tkdnd2DropTarget:
             self.window.after(0, lambda p=paths: self.callback(p))
 
 
-def install_drop_target(root: tk.Misc, callback: Callable[[Iterable[Path]], None]):
+def install_drop_target(
+    root: tk.Misc,
+    callback: Callable[[Iterable[Path]], None],
+    *,
+    zones: Iterable[tk.Misc] = (),
+    diagnostic_callback: Callable[[str], None] | None = None,
+):
     """根据平台返回已就绪的拖拽接收器（已调用 install）。"""
     if IS_WIN:
-        from drag_drop import WindowsFileDropTarget
+        from native_drop_bridge import RustOleDropTarget
 
-        target = WindowsFileDropTarget(root, callback)
+        target = RustOleDropTarget(root, callback, zones=zones, diagnostic_callback=diagnostic_callback)
     else:
         target = _Tkdnd2DropTarget(root, callback)
 
     try:
         target.install()
-    except Exception:
+    except Exception as exc:
+        message = f"drag-drop disabled: {exc}"
+        if diagnostic_callback is not None:
+            diagnostic_callback(message)
+        else:
+            print(f"[dnd_support] {message}", file=sys.stderr)
         return _NoopDropTarget()
     return target

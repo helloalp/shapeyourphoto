@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import shutil
 import json
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,8 +11,12 @@ from tkinter import messagebox, ttk
 
 from PIL import ExifTags, Image
 
+from app_settings import load_app_settings
+from file_safety import get_file_safety_service
 from ui.language import tr
 from ui.window_titles import app_window_title
+from dialog_factory import DialogSpec, create_dialog_window, finalize_dialog_window
+from task_state import TaskManager
 from window_layout import center_window, prepare_dialog_window
 
 
@@ -101,6 +105,11 @@ def _field_label(field_id: str, fallback: str) -> str:
     return value if value != key else fallback
 
 
+def _tr_or(key: str, fallback: str) -> str:
+    value = tr(key)
+    return fallback if value == key else value
+
+
 def _gps_summary(exif: Image.Exif) -> str:
     try:
         gps = exif.get_ifd(34853)
@@ -155,11 +164,18 @@ def supports_metadata_edit(path: Path, *, developer_unlocked: bool | None = None
 
 
 def _confirm_save_metadata(parent: tk.Widget) -> bool:
-    dialog = tk.Toplevel(parent)
-    dialog.title(app_window_title(tr("meta.confirm_title")))
-    dialog.transient(parent.winfo_toplevel())
-    dialog.grab_set()
-    dialog.resizable(False, False)
+    dialog = create_dialog_window(
+        parent,
+        DialogSpec(
+            title=app_window_title(tr("meta.confirm_title")),
+            min_width=380,
+            min_height=150,
+            fallback_width=380,
+            fallback_height=150,
+            resizable=(False, False),
+            modal=True,
+        ),
+    )
     result = tk.BooleanVar(value=False)
 
     outer = ttk.Frame(dialog, padding=18)
@@ -177,17 +193,36 @@ def _confirm_save_metadata(parent: tk.Widget) -> bool:
     ttk.Button(actions, text=tr("meta.cancel"), command=lambda: _finish(False)).grid(row=0, column=1, padx=(8, 0))
     ttk.Button(actions, text=tr("meta.save"), command=lambda: _finish(True)).grid(row=0, column=2)
     dialog.protocol("WM_DELETE_WINDOW", lambda: _finish(False))
-    center_window(dialog, 380, 150)
+    finalize_dialog_window(
+        dialog,
+        parent,
+        DialogSpec(
+            title=app_window_title(tr("meta.confirm_title")),
+            min_width=380,
+            min_height=150,
+            fallback_width=380,
+            fallback_height=150,
+            resizable=(False, False),
+        ),
+    )
     dialog.wait_window()
     return bool(result.get())
 
 
 class MetadataEditDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Widget, path: Path, *, developer_unlocked: bool = False) -> None:
+    def __init__(
+        self,
+        parent: tk.Widget,
+        path: Path,
+        *,
+        developer_unlocked: bool = False,
+        task_manager: TaskManager | None = None,
+    ) -> None:
         super().__init__(parent)
         self.path = path
         self.developer_unlocked = False
         self.result = MetadataEditResult()
+        self.task_manager = task_manager or TaskManager(ui_dispatch=lambda callback: self.after(0, callback), max_workers=2)
         prepare_dialog_window(
             self,
             parent,
@@ -197,6 +232,7 @@ class MetadataEditDialog(tk.Toplevel):
         )
         self.vars: dict[str, tk.StringVar] = {}
         self.fields: dict[str, FieldState] = {}
+        self._saving = False
 
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
@@ -222,26 +258,30 @@ class MetadataEditDialog(tk.Toplevel):
         form.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda event: canvas.itemconfigure(form_id, width=event.width))
 
-        for row, field in enumerate(self._read_fields(), start=0):
-            self.fields[field.field_id] = field
-            ttk.Label(form, text=f"{field.label}:").grid(row=row, column=0, sticky="w", pady=5, padx=(0, 8))
-            var = tk.StringVar(value=field.value)
-            self.vars[field.field_id] = var
-            entry = ttk.Entry(form, textvariable=var)
-            entry.grid(row=row, column=1, sticky="ew", pady=5)
-            entry.bind("<Button-1>", lambda event, widget=entry, value_var=var: self._place_empty_entry_cursor(event, widget, value_var))
-            entry.bind("<ButtonRelease-1>", lambda event, widget=entry, value_var=var: self._place_empty_entry_cursor(event, widget, value_var))
-            if not field.editable:
-                entry.configure(state="readonly")
-                ttk.Label(form, text=field.reason, foreground="#666666", wraplength=220).grid(row=row, column=2, sticky="w", padx=(8, 0))
+        self._form = form
+        self._loading_label = ttk.Label(form, text=_tr_or("meta.loading", "正在读取 EXIF 信息..."), padding=12)
+        self._loading_label.grid(row=0, column=0, columnspan=3, sticky="w")
 
         actions = ttk.Frame(outer)
         actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(16, 0))
         actions.columnconfigure(0, weight=1)
-        ttk.Button(actions, text=tr("meta.cancel"), command=self._cancel).grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(actions, text=tr("meta.save"), command=self._save).grid(row=0, column=2)
+        self._cancel_button = ttk.Button(actions, text=tr("meta.cancel"), command=self._cancel)
+        self._cancel_button.grid(row=0, column=1, padx=(8, 0))
+        self._save_button = ttk.Button(actions, text=tr("meta.save"), command=self._save, state="disabled")
+        self._save_button.grid(row=0, column=2)
         self.protocol("WM_DELETE_WINDOW", self._cancel)
-        center_window(self, 780, 620)
+        finalize_dialog_window(
+            self,
+            parent,
+            DialogSpec(
+                title=app_window_title(tr("meta.dialog_title")),
+                min_width=700,
+                min_height=520,
+                fallback_width=780,
+                fallback_height=620,
+            ),
+        )
+        self.after(20, self._start_field_load)
 
     def _place_empty_entry_cursor(self, event, entry: ttk.Entry, value_var: tk.StringVar) -> str | None:
         if value_var.get().strip():
@@ -300,6 +340,54 @@ class MetadataEditDialog(tk.Toplevel):
                 fields.append(FieldState(field_id, 0, label, value, f"exiftool:{tool_tag}", editable, reason))
         return fields
 
+    def _start_field_load(self) -> None:
+        def worker() -> tuple[list[FieldState], Exception | None]:
+            try:
+                fields = self._read_fields()
+                error = None
+            except Exception as exc:
+                fields = []
+                error = exc
+            return fields, error
+
+        self.task_manager.submit_worker(
+            task_id=None,
+            target=worker,
+            on_done=lambda outcome: self._finish_field_load(*outcome),
+        )
+
+    def _finish_field_load(self, fields: list[FieldState], error: Exception | None) -> None:
+        if not self.winfo_exists():
+            return
+        if self._loading_label.winfo_exists():
+            self._loading_label.destroy()
+        if error is not None:
+            ttk.Label(
+                self._form,
+                text=_tr_or("meta.load_failed", "无法读取这张图片的属性信息，请查看 Console。"),
+                foreground="#8a1f11",
+                padding=12,
+            ).grid(
+                row=0,
+                column=0,
+                columnspan=3,
+                sticky="w",
+            )
+            return
+        for row, field in enumerate(fields, start=0):
+            self.fields[field.field_id] = field
+            ttk.Label(self._form, text=f"{field.label}:").grid(row=row, column=0, sticky="w", pady=5, padx=(0, 8))
+            var = tk.StringVar(value=field.value)
+            self.vars[field.field_id] = var
+            entry = ttk.Entry(self._form, textvariable=var)
+            entry.grid(row=row, column=1, sticky="ew", pady=5)
+            entry.bind("<Button-1>", lambda event, widget=entry, value_var=var: self._place_empty_entry_cursor(event, widget, value_var))
+            entry.bind("<ButtonRelease-1>", lambda event, widget=entry, value_var=var: self._place_empty_entry_cursor(event, widget, value_var))
+            if not field.editable:
+                entry.configure(state="readonly")
+                ttk.Label(self._form, text=field.reason, foreground="#666666", wraplength=220).grid(row=row, column=2, sticky="w", padx=(8, 0))
+        self._save_button.configure(state="normal")
+
     def _encode_value(self, field: FieldState, value: str) -> object:
         clean = value.strip()
         if not clean:
@@ -309,18 +397,18 @@ class MetadataEditDialog(tk.Toplevel):
         return clean
 
     def _save(self) -> None:
+        if self._saving:
+            return
         if not _confirm_save_metadata(self):
             return
-        backup = self.path.with_name(f"{self.path.stem}.metadata-bak{self.path.suffix}")
-        try:
-            backup_dir = self.path.parent / ".metadata-bak"
-            backup_dir.mkdir(exist_ok=True)
-            backup = backup_dir / f"{self.path.stem}{self.path.suffix}"
-            index = 1
-            while backup.exists():
-                backup = backup_dir / f"{self.path.stem}-{index}{self.path.suffix}"
-                index += 1
-            shutil.copy2(self.path, backup)
+        settings = load_app_settings()
+        keep_backup = bool(getattr(settings, "metadata_keep_visible_backup", False))
+        values = {field_id: value_var.get().strip() for field_id, value_var in self.vars.items()}
+        self._saving = True
+        self._save_button.configure(state="disabled")
+        self._cancel_button.configure(state="disabled")
+
+        def _writer(target: Path) -> None:
             with Image.open(self.path) as img:
                 exif = img.getexif()
                 exiftool_updates: list[tuple[str, str]] = []
@@ -329,13 +417,13 @@ class MetadataEditDialog(tk.Toplevel):
                         continue
                     if field.encoding.startswith("exiftool:"):
                         tool_tag = field.encoding.split(":", 1)[1]
-                        new_value = self.vars[field_id].get().strip()
+                        new_value = values.get(field_id, "")
                         if _is_protected_field(field.label, new_value):
                             raise RuntimeError(tr("meta.protected"))
                         exiftool_updates.append((tool_tag, new_value))
                         continue
                     old_value = exif.get(field.tag, "")
-                    new_value = self.vars[field_id].get().strip()
+                    new_value = values.get(field_id, "")
                     if _is_protected_field(field.label, old_value) or _is_protected_field(field.label, new_value):
                         raise RuntimeError(tr("meta.protected"))
                     encoded = self._encode_value(field, new_value)
@@ -348,32 +436,53 @@ class MetadataEditDialog(tk.Toplevel):
                     save_kwargs["icc_profile"] = img.info.get("icc_profile")
                 if img.info.get("dpi"):
                     save_kwargs["dpi"] = img.info.get("dpi")
-                img.save(self.path, **save_kwargs)
+                img.save(target, **save_kwargs)
             if exiftool_updates:
                 exe = _exiftool_path()
                 if not exe:
                     raise RuntimeError("exiftool 后端不可用，无法写入高级 GPS/XMP/IPTC 字段。")
                 args = [exe, "-overwrite_original"]
                 args.extend(f"-{tag}={value}" for tag, value in exiftool_updates)
-                args.append(str(self.path))
+                args.append(str(target))
                 subprocess.run(args, check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
-        except Exception as exc:
-            try:
-                if backup.exists():
-                    shutil.copy2(backup, self.path)
-            except Exception:
-                pass
-            messagebox.showerror(tr("meta.save_failed_title"), tr("meta.save_failed_body").format(error=exc), parent=self)
+
+        def worker():
+            return get_file_safety_service().transactional_overwrite(
+                self.path,
+                _writer,
+                keep_user_backup=keep_backup,
+                visible_backup_dir=self.path.parent / ".metadata-bak",
+            )
+
+        self.task_manager.submit_worker(task_id=None, target=worker, on_done=self._finish_save)
+
+    def _finish_save(self, result) -> None:
+        if not self.winfo_exists():
             return
-        self.result = MetadataEditResult(True, tr("meta.saved").format(backup=backup))
+        self._saving = False
+        self._save_button.configure(state="normal")
+        self._cancel_button.configure(state="normal")
+        if not result.ok:
+            messagebox.showerror(tr("meta.save_failed_title"), tr("meta.save_failed_body").format(error=result.message), parent=self)
+            return
+        backup_text = str(result.backup) if result.backup else tr("meta.no_visible_backup")
+        self.result = MetadataEditResult(True, tr("meta.saved").format(backup=backup_text))
         self.destroy()
 
     def _cancel(self) -> None:
+        if self._saving:
+            return
         self.result = MetadataEditResult(False, "")
         self.destroy()
 
 
-def show_metadata_edit_dialog(parent: tk.Widget, path: Path, *, developer_unlocked: bool = False) -> MetadataEditResult:
-    dialog = MetadataEditDialog(parent, path, developer_unlocked=developer_unlocked)
+def show_metadata_edit_dialog(
+    parent: tk.Widget,
+    path: Path,
+    *,
+    developer_unlocked: bool = False,
+    task_manager: TaskManager | None = None,
+) -> MetadataEditResult:
+    dialog = MetadataEditDialog(parent, path, developer_unlocked=developer_unlocked, task_manager=task_manager)
     dialog.wait_window()
     return dialog.result

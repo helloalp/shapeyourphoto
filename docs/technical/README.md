@@ -1,4 +1,4 @@
-# Technical Docs
+﻿# Technical Docs
 
 `docs/technical/` 存放跨模块技术专题。这里不替代代码，但要记录维护者最容易误解的链路和约束。
 
@@ -43,7 +43,7 @@ New technical topics:
 
 - Update and cloud-message URLs are fixed internal endpoints and must not be exposed as user-editable settings.
 - Console has a timezone timestamp mode.
-- Settings UI should show ordinary user descriptions; implementation details belong in technical or private docs.
+- Settings UI should show ordinary user descriptions; implementation details belong in technical or technical notes.
 
 # 1.2.5 技术文档补充说明
 
@@ -59,3 +59,4 @@ New technical topics:
 - 设置页保存后保持打开，主程序通过回调立即保存并应用配置。
 - GPU 探测区分硬件可见性与加速组件准备情况；可选加速组件不进入默认运行依赖。
 - 右侧大预览从原图生成，并在 Notebook/布局尺寸稳定后自动重绘，避免首次显示使用过小尺寸；超高清图片按目标显示区域降采样解码，避免重复完整解码。
+

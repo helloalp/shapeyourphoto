@@ -12,13 +12,20 @@ from PIL import Image
 
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import center_window, prepare_dialog_window
+from dialog_factory import DialogSpec, finalize_dialog_window
+from task_state import TaskManager
+from window_layout import prepare_dialog_window
 
 
 @dataclass
 class GpsEditResult:
     saved: bool = False
     message: str = ""
+
+
+def _tr_or(key: str, fallback: str) -> str:
+    value = tr(key)
+    return fallback if value == key else value
 
 
 def _to_decimal(values, ref: str) -> float | None:
@@ -86,16 +93,17 @@ def write_gps_decimal(path: Path, latitude: float, longitude: float) -> Path:
 
 
 class GpsEditDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Widget, path: Path, log_callback=None) -> None:
+    def __init__(self, parent: tk.Widget, path: Path, log_callback=None, task_manager: TaskManager | None = None) -> None:
         super().__init__(parent)
         self.path = path
         self.result = GpsEditResult()
         self._log_callback = log_callback
+        self.task_manager = task_manager or TaskManager(ui_dispatch=lambda callback: self.after(0, callback), max_workers=2)
+        self._saving = False
         prepare_dialog_window(self, parent, title=app_window_title(tr("gps.title")), min_width=620, min_height=360)
-        lat, lon = read_gps_decimal(path)
-        self.lat_var = tk.StringVar(value="" if lat is None else f"{lat:.8f}")
-        self.lon_var = tk.StringVar(value="" if lon is None else f"{lon:.8f}")
-        self.status_var = tk.StringVar(value=tr("gps.empty") if lat is None or lon is None else tr("gps.existing"))
+        self.lat_var = tk.StringVar(value="")
+        self.lon_var = tk.StringVar(value="")
+        self.status_var = tk.StringVar(value=_tr_or("gps.loading", "正在读取 GPS 信息..."))
 
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
@@ -111,31 +119,102 @@ class GpsEditDialog(tk.Toplevel):
         actions.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(18, 0))
         actions.columnconfigure(0, weight=1)
         ttk.Button(actions, text=tr("gps.map_hint"), command=self._map_hint).grid(row=0, column=0, sticky="w")
-        ttk.Button(actions, text=tr("meta.cancel"), command=self._cancel).grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(actions, text=tr("meta.save"), command=self._save).grid(row=0, column=2, padx=(8, 0))
-        center_window(self, 660, 390)
+        self._cancel_button = ttk.Button(actions, text=tr("meta.cancel"), command=self._cancel)
+        self._cancel_button.grid(row=0, column=1, padx=(8, 0))
+        self._save_button = ttk.Button(actions, text=tr("meta.save"), command=self._save, state="disabled")
+        self._save_button.grid(row=0, column=2, padx=(8, 0))
+        finalize_dialog_window(
+            self,
+            parent,
+            DialogSpec(
+                title=app_window_title(tr("gps.title")),
+                min_width=620,
+                min_height=360,
+                fallback_width=660,
+                fallback_height=390,
+            ),
+        )
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.after(20, self._start_gps_load)
+
+    def _start_gps_load(self) -> None:
+        def worker() -> tuple[float | None, float | None, Exception | None]:
+            try:
+                lat, lon = read_gps_decimal(self.path)
+                error = None
+            except Exception as exc:
+                lat = lon = None
+                error = exc
+            return lat, lon, error
+
+        self.task_manager.submit_worker(task_id=None, target=worker, on_done=lambda outcome: self._finish_gps_load(*outcome))
+
+    def _finish_gps_load(self, lat: float | None, lon: float | None, error: Exception | None) -> None:
+        if not self.winfo_exists():
+            return
+        if error is not None:
+            self.status_var.set(_tr_or("gps.load_failed", "读取 GPS 信息失败：{error}").format(error=error))
+            return
+        self.lat_var.set("" if lat is None else f"{lat:.8f}")
+        self.lon_var.set("" if lon is None else f"{lon:.8f}")
+        self.status_var.set(tr("gps.empty") if lat is None or lon is None else tr("gps.existing"))
+        self._save_button.configure(state="normal")
 
     def _map_hint(self) -> None:
         messagebox.showinfo(tr("gps.title"), tr("gps.map_placeholder"), parent=self)
 
     def _save(self) -> None:
+        if self._saving:
+            return
         try:
             lat = float(self.lat_var.get().strip())
             lon = float(self.lon_var.get().strip())
-            backup = write_gps_decimal(self.path, lat, lon)
         except Exception as exc:
             messagebox.showerror(tr("gps.title"), tr("gps.save_failed").format(error=exc), parent=self)
             return
+        self._saving = True
+        self._save_button.configure(state="disabled")
+        self._cancel_button.configure(state="disabled")
+        self.status_var.set(_tr_or("gps.saving", "正在保存 GPS 信息..."))
+
+        def worker() -> tuple[Path | None, Exception | None]:
+            try:
+                backup = write_gps_decimal(self.path, lat, lon)
+                error = None
+            except Exception as exc:
+                backup = None
+                error = exc
+            return backup, error
+
+        self.task_manager.submit_worker(
+            task_id=None,
+            target=worker,
+            on_done=lambda outcome: self._finish_save(lat, lon, *outcome),
+        )
+
+    def _finish_save(self, lat: float, lon: float, backup: Path | None, error: Exception | None) -> None:
+        if not self.winfo_exists():
+            return
+        self._saving = False
+        self._save_button.configure(state="normal")
+        self._cancel_button.configure(state="normal")
+        if error is not None:
+            self.status_var.set(tr("gps.existing"))
+            messagebox.showerror(tr("gps.title"), tr("gps.save_failed").format(error=error), parent=self)
+            return
         if self._log_callback:
             self._log_callback(f"gps metadata saved: {self.path.name} lat={lat:.6f} lon={lon:.6f}")
-        self.result = GpsEditResult(True, tr("gps.saved").format(backup=backup.name))
+        backup_name = backup.name if backup is not None else tr("meta.no_visible_backup")
+        self.result = GpsEditResult(True, tr("gps.saved").format(backup=backup_name))
         self.destroy()
 
     def _cancel(self) -> None:
+        if self._saving:
+            return
         self.destroy()
 
 
-def show_gps_edit_dialog(parent: tk.Widget, path: Path, log_callback=None) -> GpsEditResult:
-    dialog = GpsEditDialog(parent, path, log_callback=log_callback)
+def show_gps_edit_dialog(parent: tk.Widget, path: Path, log_callback=None, task_manager: TaskManager | None = None) -> GpsEditResult:
+    dialog = GpsEditDialog(parent, path, log_callback=log_callback, task_manager=task_manager)
     dialog.wait_window()
     return dialog.result

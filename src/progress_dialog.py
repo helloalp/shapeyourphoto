@@ -7,7 +7,8 @@ from tkinter import ttk
 
 from ui.language import tr
 from ui.window_titles import app_window_title
-from window_layout import bind_minimum_size_notice, center_window, prepare_dialog_window
+from dialog_factory import DialogSpec, finalize_dialog_window
+from window_layout import prepare_dialog_window
 
 
 @dataclass
@@ -65,7 +66,7 @@ class TaskProgressDialog:
         outer = ttk.Frame(self.window, padding=18, style="Panel.TFrame")
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(4, minsize=96)
+        outer.rowconfigure(5, minsize=96)
         outer.rowconfigure(6, minsize=48)
 
         self.header_label = ttk.Label(outer, textvariable=self.title_var, style="Header.TLabel")
@@ -77,21 +78,24 @@ class TaskProgressDialog:
         )
         self.description_label.grid(row=1, column=0, sticky="ew", pady=(4, 14))
 
+        self.accent_line = tk.Frame(outer, bg=state.accent, height=3)
+        self.accent_line.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+
         progress_shell = tk.Frame(outer, bg="#d9e6dd", height=22)
         progress_shell.grid_propagate(False)
-        progress_shell.grid(row=2, column=0, sticky="ew")
+        progress_shell.grid(row=3, column=0, sticky="ew")
         progress_shell.grid_columnconfigure(0, weight=1)
         progress_shell.grid_rowconfigure(0, weight=1)
         self.progressbar = ttk.Progressbar(progress_shell, mode="determinate", maximum=1, variable=self.progress_var)
         self.progressbar.grid(row=0, column=0, sticky="nsew")
 
         stat_row = ttk.Frame(outer, style="Panel.TFrame")
-        stat_row.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        stat_row.grid(row=4, column=0, sticky="ew", pady=(10, 0))
         stat_row.columnconfigure(0, weight=1)
         ttk.Label(stat_row, textvariable=self.count_var, style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(stat_row, textvariable=self.elapsed_var, style="PanelTitle.TLabel").grid(row=0, column=1, sticky="e")
         detail_shell = tk.Frame(outer, bg="#fbfcfa", height=96)
-        detail_shell.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        detail_shell.grid(row=5, column=0, sticky="ew", pady=(8, 0))
         detail_shell.grid_propagate(False)
         detail_shell.columnconfigure(0, weight=1)
         detail_shell.rowconfigure(0, weight=1)
@@ -109,8 +113,6 @@ class TaskProgressDialog:
         self.detail_label.grid(row=0, column=0, sticky="nsew")
         detail_shell.bind("<Configure>", self._sync_detail_wrap)
 
-        self.accent_line = tk.Frame(outer, bg=state.accent, height=4)
-        self.accent_line.grid(row=5, column=0, sticky="ew", pady=(12, 0))
         self.button_row = ttk.Frame(outer, style="Panel.TFrame")
         self.button_row.grid(row=6, column=0, sticky="ew", pady=(10, 0))
         self.button_row.columnconfigure(0, weight=1)
@@ -122,8 +124,20 @@ class TaskProgressDialog:
             self.cancel_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
 
         self.window.update_idletasks()
-        bind_minimum_size_notice(self.window, self.size_notice_var, 640, minimum_height)
-        center_window(self.window, 680, initial_height)
+        finalize_dialog_window(
+            self.window,
+            master,
+            DialogSpec(
+                title=app_window_title(state.dialog_title),
+                min_width=640,
+                min_height=minimum_height,
+                fallback_width=680,
+                fallback_height=initial_height,
+                modal=False,
+                resizable=(True, False),
+            ),
+            size_notice_var=self.size_notice_var,
+        )
         self.update_state(state)
         self._schedule_elapsed_tick()
         self.window.lift()
@@ -190,6 +204,7 @@ class TaskProgressController:
         title_var: tk.StringVar,
         detail_var: tk.StringVar,
         status_var: tk.StringVar,
+        task_manager=None,
     ) -> None:
         self.master = master
         self.progress_bar = progress_bar
@@ -197,6 +212,7 @@ class TaskProgressController:
         self.title_var = title_var
         self.detail_var = detail_var
         self.status_var = status_var
+        self.task_manager = task_manager
         self.state = TaskProgressState()
         self.dialog: TaskProgressDialog | None = None
         self._cancel_callback = None
@@ -241,6 +257,8 @@ class TaskProgressController:
         else:
             self.close_dialog()
         self._sync_dialog()
+        if self.task_manager is not None:
+            self.task_manager.update_progress(done=self.state.done, total=self.state.total)
 
     def update(
         self,
@@ -276,6 +294,8 @@ class TaskProgressController:
             self.state.elapsed_text = _format_elapsed(time.monotonic() - self.state.started_at)
         self._sync_main()
         self._sync_dialog()
+        if self.task_manager is not None:
+            self.task_manager.update_progress(done=self.state.done, total=self.state.total)
 
     def finish(self, *, title: str, detail: str, status: str | None = None, close_dialog: bool = True) -> None:
         self.state.done = self.state.total
@@ -286,6 +306,8 @@ class TaskProgressController:
             self.state.elapsed_text = _format_elapsed(time.monotonic() - self.state.started_at)
         self._sync_main()
         self._sync_dialog()
+        if self.task_manager is not None:
+            self.task_manager.update_progress(done=self.state.done, total=self.state.total)
         if close_dialog:
             self.close_dialog()
 

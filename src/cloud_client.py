@@ -10,6 +10,7 @@ from typing import Any
 from app_metadata import APP_BUILD_ID, APP_UPDATE_CHANNEL, APP_VERSION, APP_VERSION_ID
 from app_settings import FIXED_CLOUD_MESSAGES_URL, FIXED_UPDATE_MANIFEST_URL
 from cloud_security import verify_signed_envelope
+from ui.language import tr
 
 
 DEFAULT_TIMEOUT = 8
@@ -119,12 +120,12 @@ def _read_url(url: str) -> bytes:
 def friendly_cloud_error(error: str) -> str:
     lowered = str(error).lower()
     if "timed out" in lowered or "timeout" in lowered or "_ssl.c" in lowered:
-        return "暂时无法连接更新服务，请稍后再试。"
+        return tr("update.timeout")
     if "signature" in lowered or "签名" in lowered:
-        return "更新信息校验未通过，请稍后再试。"
+        return tr("update.invalid_signature")
     if "json" in lowered:
-        return "更新信息格式异常，请稍后再试。"
-    return "暂时无法获取更新信息，请稍后再试。"
+        return tr("update.invalid_format")
+    return tr("update.service_unavailable")
 
 
 def fetch_json(url: str, *, params: dict[str, str | int] | None = None) -> CloudResult:

@@ -1,0 +1,6 @@
+{
+  "action.analyze": "Analyze",
+  "analysis.partial_confirm_title": "Confirm Analysis Range",
+  "analysis.partial_confirm_body": "{selected} of {total} images are selected. Continuing will analyze only the selected images.",
+  "duplicate.path_tooltip": "Full path: {path}"
+}

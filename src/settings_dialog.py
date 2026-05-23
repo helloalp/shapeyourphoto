@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 import webbrowser
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -29,21 +28,27 @@ from app_settings import (
     normalize_log_level,
     normalize_log_language_mode,
     normalize_log_retention_days,
+    normalize_main_window_scale,
+    normalize_dialog_window_scale,
     normalize_repair_summary_filter,
     normalize_scan_ignore_contains,
     normalize_scan_ignore_prefixes,
     normalize_scan_ignore_suffixes,
     normalize_ui_density,
     resolve_analysis_worker_plan,
+    reset_layout_settings,
     validate_settings_payload,
 )
 from cloud_client import fetch_cloud_messages
 from gpu_accel import detect_gpu_backend, export_gpu_diagnostics_json
 from history_dialog import show_history_dialog
-from ui.language import LANGUAGE_OPTIONS, language_label, normalize_language, set_current_language, tr
-from ui.themes import THEME_OPTIONS, normalize_theme_id
+from task_state import TaskManager
+from ui.language import LANGUAGE_OPTIONS, language_label, normalize_language, set_current_language, tr, trf
+from ui.themes import THEME_OPTIONS, get_theme, normalize_theme_id
 from ui.window_titles import app_window_title
-from window_layout import bind_minimum_size_notice, center_window, prepare_dialog_window
+from dialog_factory import DialogSpec, finalize_dialog_window
+from update_policy import OFFICIAL_SITE_URL, latest_block_state
+from window_layout import prepare_dialog_window
 
 
 THEME_LABEL_KEYS = {
@@ -59,11 +64,11 @@ THEME_LABEL_KEYS = {
 
 
 class ScrollablePage(ttk.Frame):
-    def __init__(self, parent: tk.Widget) -> None:
+    def __init__(self, parent: tk.Widget, *, canvas_bg: str) -> None:
         super().__init__(parent)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
-        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        self.canvas = tk.Canvas(self, bg=canvas_bg, borderwidth=0, highlightthickness=0)
         self.scroll = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scroll.set)
         self.canvas.grid(row=0, column=0, sticky="nsew")
@@ -114,10 +119,15 @@ class AppSettingsDialog(tk.Toplevel):
         self._last_gpu_status = None
         self._status_after_id: str | None = None
         self._status_kind = ""
+        self._task_manager = TaskManager(ui_dispatch=lambda callback: self.after(0, callback), error_callback=self._log)
+        self._update_block_state = latest_block_state()
 
         normalized = validate_settings_payload(settings.__dict__)
+        self._settings_base = normalized
+        self._theme = get_theme(normalized.theme_id)
         self._scan_rule_widgets: dict[str, tuple[tk.Listbox, tk.StringVar, ttk.Button]] = {}
         self._option_vars: dict[str, tk.StringVar] = {}
+        self.metadata_keep_backup_var = tk.BooleanVar(value=bool(settings.metadata_keep_visible_backup))
 
         outer = ttk.Frame(self, padding=16)
         outer.pack(fill="both", expand=True)
@@ -153,8 +163,19 @@ class AppSettingsDialog(tk.Toplevel):
         self.cancel_button.grid(row=0, column=3, sticky="e")
 
         self.protocol("WM_DELETE_WINDOW", self._cancel)
-        bind_minimum_size_notice(self, self._size_notice_var, 980, 640)
-        center_window(self, 1040, 740)
+        finalize_dialog_window(
+            self,
+            parent,
+            DialogSpec(
+                title=app_window_title(tr("settings.app")),
+                min_width=980,
+                min_height=640,
+                fallback_width=1040,
+                fallback_height=740,
+                parent_ratio=normalized.dialog_window_scale,
+            ),
+            size_notice_var=self._size_notice_var,
+        )
         self._refresh_option_labels()
         self._update_concurrency_hint()
         self._select_initial_tab()
@@ -190,7 +211,7 @@ class AppSettingsDialog(tk.Toplevel):
         return label
 
     def _make_page(self, tab_key: str, tab_id: str) -> ScrollablePage:
-        page = ScrollablePage(self.notebook)
+        page = ScrollablePage(self.notebook, canvas_bg=self._theme.background)
         self.notebook.add(page, text=tr(tab_key))
         self._settings_tabs.append((page, tab_key, tab_id))
         self._notebook_tab_labels.append((self.notebook, page, tab_key))
@@ -259,7 +280,15 @@ class AppSettingsDialog(tk.Toplevel):
         self._label(c, "settings.repair_summary_filter", row=3, pady=(14, 0))
         self.summary_filter_var = tk.StringVar(value=settings.repair_summary_default_filter)
         self._option_combobox(c, self.summary_filter_var, "summary", [v for v, _ in REPAIR_SUMMARY_FILTER_OPTIONS], row=3, pady=(14, 0))
-        self._label(c, "settings.desc.future_tasks", row=4, columnspan=2, wrap=True, pady=(18, 0))
+        self.metadata_keep_backup_check = ttk.Checkbutton(
+            c,
+            text=tr("settings.metadata_keep_backup"),
+            variable=self.metadata_keep_backup_var,
+        )
+        self.metadata_keep_backup_check.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 0))
+        self._tr_widget(self.metadata_keep_backup_check, "settings.metadata_keep_backup")
+        self._label(c, "settings.desc.metadata_backup", row=5, columnspan=2, wrap=True, pady=(8, 0))
+        self._label(c, "settings.desc.future_tasks", row=6, columnspan=2, wrap=True, pady=(18, 0))
 
     def _build_performance_tab(self, settings: AppSettings) -> None:
         page = self._make_page("settings.tab.performance", "performance")
@@ -356,6 +385,24 @@ class AppSettingsDialog(tk.Toplevel):
         self.density_var = tk.StringVar(value=settings.ui_density)
         self._option_combobox(c, self.density_var, "density", [v for v, _ in UI_DENSITY_OPTIONS], row=3, pady=(14, 0))
         self._label(c, "settings.desc.density", row=4, columnspan=2, wrap=True, pady=(10, 0))
+        self._label(c, "settings.main_window_size", row=5, pady=(18, 0))
+        self.main_window_scale_var = tk.DoubleVar(value=normalize_main_window_scale(settings.main_window_scale) * 100)
+        main_scale = ttk.Scale(c, from_=45, to=95, variable=self.main_window_scale_var, command=lambda _value: self._update_window_scale_labels())
+        main_scale.grid(row=5, column=1, sticky="ew", pady=(18, 0))
+        self.main_window_scale_label_var = tk.StringVar(value="")
+        ttk.Label(c, textvariable=self.main_window_scale_label_var, width=8).grid(row=5, column=2, sticky="w", padx=(10, 0), pady=(18, 0))
+        self._label(c, "settings.dialog_window_size", row=6, pady=(12, 0))
+        self.dialog_window_scale_var = tk.DoubleVar(value=normalize_dialog_window_scale(settings.dialog_window_scale) * 100)
+        dialog_scale = ttk.Scale(c, from_=55, to=90, variable=self.dialog_window_scale_var, command=lambda _value: self._update_window_scale_labels())
+        dialog_scale.grid(row=6, column=1, sticky="ew", pady=(12, 0))
+        self.dialog_window_scale_label_var = tk.StringVar(value="")
+        ttk.Label(c, textvariable=self.dialog_window_scale_label_var, width=8).grid(row=6, column=2, sticky="w", padx=(10, 0), pady=(12, 0))
+        self._label(c, "settings.desc.window_sizes", row=7, columnspan=3, wrap=True, pady=(10, 0))
+        reset_button = ttk.Button(c, text=tr("settings.restore_layout_defaults"), command=self._restore_layout_defaults)
+        reset_button.grid(row=8, column=1, sticky="w", pady=(14, 0))
+        self._tr_widget(reset_button, "settings.restore_layout_defaults")
+        c.columnconfigure(1, weight=1)
+        self._update_window_scale_labels()
 
     def _build_language_tab(self, settings: AppSettings) -> None:
         page = self._make_page("settings.tab.language", "language")
@@ -369,7 +416,7 @@ class AppSettingsDialog(tk.Toplevel):
         page = self._make_page("settings.tab.update", "update")
         c = page.content
         self._label(c, "settings.section.version", row=0, bold=True)
-        self.version_var = tk.StringVar(value=f"{APP_NAME} v{APP_VERSION}\n{tr('settings.version_id').format(id=APP_VERSION_ID)}")
+        self.version_var = tk.StringVar(value=f"{APP_NAME} v{APP_VERSION}\n{trf('settings.version_id', id=APP_VERSION_ID)}")
         ttk.Label(c, textvariable=self.version_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 12))
         self.update_button = ttk.Button(c, text=tr("settings.check_updates"), command=self._check_updates_now)
         self.update_button.grid(row=2, column=0, sticky="w")
@@ -378,6 +425,10 @@ class AppSettingsDialog(tk.Toplevel):
         self.history_button.grid(row=2, column=1, sticky="w", padx=(8, 0))
         self._tr_widget(self.history_button, "action.history")
         self._label(c, "settings.desc.update", row=3, columnspan=2, wrap=True, pady=(14, 0))
+        if self._update_block_state is not None:
+            self.update_button.configure(state="disabled")
+            ttk.Label(c, text=tr("settings.update_blocked"), foreground="#8a4a00").grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 0))
+            ttk.Button(c, text=tr("action.open_website"), command=lambda: webbrowser.open(OFFICIAL_SITE_URL)).grid(row=5, column=0, sticky="w", pady=(8, 0))
 
     def _build_announcements_tab(self) -> None:
         page = self._make_page("settings.tab.announcements", "announcements")
@@ -386,6 +437,8 @@ class AppSettingsDialog(tk.Toplevel):
         self._label(c, "settings.section.announcements", row=0, bold=True)
         self.announcement_button = ttk.Button(c, text=tr("settings.refresh_announcements"), command=self._refresh_announcements_now)
         self.announcement_button.grid(row=0, column=1, sticky="e")
+        if self._update_block_state is not None:
+            self.announcement_button.configure(state="disabled")
         self._tr_widget(self.announcement_button, "settings.refresh_announcements")
         self.announcement_status_var = tk.StringVar(value=tr("settings.no_announcements"))
         ttk.Label(c, textvariable=self.announcement_status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 8))
@@ -393,12 +446,29 @@ class AppSettingsDialog(tk.Toplevel):
         message_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
         message_frame.columnconfigure(0, weight=1)
         message_frame.rowconfigure(0, weight=1)
-        self.announcement_text = tk.Text(message_frame, height=10, wrap="word", font=("Microsoft YaHei UI", 10), bg="#f8fbf8", relief="flat", padx=10, pady=10)
+        self.announcement_text = tk.Text(
+            message_frame,
+            height=10,
+            wrap="word",
+            font=("Microsoft YaHei UI", 10),
+            bg=self._theme.panel,
+            fg=self._theme.text,
+            insertbackground=self._theme.text,
+            selectbackground=self._theme.selection,
+            selectforeground=self._theme.text,
+            relief="flat",
+            padx=10,
+            pady=10,
+        )
         announcement_scroll = ttk.Scrollbar(message_frame, orient="vertical", command=self.announcement_text.yview)
         self.announcement_text.configure(yscrollcommand=announcement_scroll.set)
         self.announcement_text.grid(row=0, column=0, sticky="nsew")
         announcement_scroll.grid(row=0, column=1, sticky="ns")
         self._set_announcement_text(tr("settings.no_announcements"))
+        if self._update_block_state is not None:
+            self.announcement_status_var.set(tr("settings.update_blocked"))
+            self._set_announcement_text(tr("settings.update_blocked"))
+            ttk.Button(c, text=tr("action.open_website"), command=lambda: webbrowser.open(OFFICIAL_SITE_URL)).grid(row=3, column=0, sticky="w", pady=(8, 0))
 
     def _option_combobox(self, parent: tk.Widget, var: tk.StringVar, kind: str, values: list[str], *, row: int, width: int = 28, pady=0) -> ttk.Combobox:
         label_var = tk.StringVar()
@@ -538,6 +608,34 @@ class AppSettingsDialog(tk.Toplevel):
         elif current > limit:
             self.custom_workers_var.set(str(limit))
 
+    def _update_window_scale_labels(self) -> None:
+        if hasattr(self, "main_window_scale_label_var"):
+            self.main_window_scale_label_var.set(f"{int(round(self.main_window_scale_var.get()))}%")
+        if hasattr(self, "dialog_window_scale_label_var"):
+            self.dialog_window_scale_label_var.set(f"{int(round(self.dialog_window_scale_var.get()))}%")
+
+    def _restore_layout_defaults(self) -> None:
+        restored = reset_layout_settings(self._settings_base)
+        if self._apply_callback is not None:
+            try:
+                applied = bool(self._apply_callback(restored))
+            except Exception as exc:
+                messagebox.showerror(
+                    tr("settings.save_failed_title"),
+                    tr("settings.save_failed_body").format(error=exc),
+                    parent=self,
+                )
+                self._set_status(tr("settings.save_failed"), kind="persistent")
+                return
+            if not applied:
+                self._set_status(tr("settings.save_failed"), kind="persistent")
+                return
+        self._settings_base = restored
+        self.main_window_scale_var.set(normalize_main_window_scale(restored.main_window_scale) * 100)
+        self.dialog_window_scale_var.set(normalize_dialog_window_scale(restored.dialog_window_scale) * 100)
+        self._update_window_scale_labels()
+        self._set_status(tr("settings.layout_defaults_restored"), kind="temporary", timeout_ms=5000)
+
     def _step_custom_workers(self, delta: int) -> None:
         if normalize_analysis_concurrency_mode(self.concurrency_var.get()) != ANALYSIS_CONCURRENCY_CUSTOM:
             return
@@ -576,9 +674,9 @@ class AppSettingsDialog(tk.Toplevel):
                     self.gpu_reason_var.set(status.reason)
                     self.gpu_next_step_var.set(tr("settings.gpu_cpu"))
 
-            self.after(0, _finish)
+            self._task_manager.dispatch_ui(_finish)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self._task_manager.submit(kind="dependency_detection", name="settings_gpu_self_test", target=lambda _record: _worker(), exclusive=False)
 
     def _copy_gpu_diagnostics(self) -> None:
         text = export_gpu_diagnostics_json()
@@ -605,9 +703,9 @@ class AppSettingsDialog(tk.Toplevel):
                 self._start_gpu_status_refresh(force_refresh=False)
                 self._log(f"native gpu self-test finished: available={status.available} backend={status.backend_name}")
 
-            self.after(0, _finish)
+            self._task_manager.dispatch_ui(_finish)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self._task_manager.submit(kind="dependency_detection", name="settings_gpu_status", target=lambda _record: _worker(), exclusive=False)
 
     def _open_gpu_help(self) -> None:
         url = "https://helloalp.top/tools/shapeyourphoto/articles/faq.html#gpu"
@@ -657,7 +755,7 @@ class AppSettingsDialog(tk.Toplevel):
             add_button.configure(text=f"{tr('settings.rule.add')} {tr(f'settings.rule.{key}')}")
         self.cancel_button.configure(text=tr("settings.cancel"))
         self.save_button.configure(text=tr("settings.save"))
-        self.version_var.set(f"{APP_NAME} v{APP_VERSION}\n{tr('settings.version_id').format(id=APP_VERSION_ID)}")
+        self.version_var.set(f"{APP_NAME} v{APP_VERSION}\n{trf('settings.version_id', id=APP_VERSION_ID)}")
         if self.announcement_status_var.get() in {"暂无公告。", "No announcements.", "お知らせはありません。"}:
             self.announcement_status_var.set(tr("settings.no_announcements"))
             self._set_announcement_text(tr("settings.no_announcements"))
@@ -666,11 +764,21 @@ class AppSettingsDialog(tk.Toplevel):
         self._refresh_option_labels()
         self._update_concurrency_hint()
 
+    def _apply_theme_tokens(self, theme_id: str) -> None:
+        self._theme = get_theme(theme_id)
+        for page, _key, _tab_id in self._settings_tabs:
+            page.canvas.configure(bg=self._theme.background)
+        self.announcement_text.configure(
+            bg=self._theme.panel,
+            fg=self._theme.text,
+            insertbackground=self._theme.text,
+            selectbackground=self._theme.selection,
+            selectforeground=self._theme.text,
+            inactiveselectbackground=self._theme.selection,
+        )
+
     def _confirm(self) -> None:
         prefixes = self._current_prefixes()
-        if not prefixes:
-            messagebox.showwarning(tr("settings.app"), tr("settings.need_prefix"), parent=self)
-            return
         language = normalize_language(self.language_var.get())
         mode = normalize_analysis_concurrency_mode(self.concurrency_var.get())
         custom_workers = normalize_analysis_custom_workers(self.custom_workers_var.get()) if mode == ANALYSIS_CONCURRENCY_CUSTOM else 0
@@ -693,8 +801,11 @@ class AppSettingsDialog(tk.Toplevel):
             log_retention_days=normalize_log_retention_days(self.log_retention_var.get()),
             theme_id=normalize_theme_id(self.theme_var.get()),
             ui_density=normalize_ui_density(self.density_var.get()),
+            main_window_scale=normalize_main_window_scale(self.main_window_scale_var.get() / 100),
+            dialog_window_scale=normalize_dialog_window_scale(self.dialog_window_scale_var.get() / 100),
             language=language,
             auto_check_updates=True,
+            metadata_keep_visible_backup=bool(self.metadata_keep_backup_var.get()),
         )
         if self._apply_callback is not None:
             try:
@@ -710,6 +821,8 @@ class AppSettingsDialog(tk.Toplevel):
             if not applied:
                 self._set_status(tr("settings.save_failed"), kind="persistent")
                 return
+            self._settings_base = self.result
+            self._apply_theme_tokens(self.result.theme_id)
             language_changed = language != self._initial_language
             self._initial_language = language
             self._set_status(tr("settings.saved_keep_open"), kind="persistent")
@@ -783,13 +896,13 @@ class AppSettingsDialog(tk.Toplevel):
                     if body:
                         lines.append(body)
                     lines.append("")
-                self.announcement_status_var.set(tr("settings.announcement_count").format(count=len(enabled_messages)))
+                self.announcement_status_var.set(trf("settings.announcement_count", count=len(enabled_messages)))
                 self._set_announcement_text("\n".join(lines).strip())
                 self._log(f"cloud message manual refresh completed: count={len(enabled_messages)}")
 
-            self.after(0, _finish)
+            self._task_manager.dispatch_ui(_finish)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self._task_manager.submit(kind="update_check", name="settings_cloud_messages", target=lambda _record: _worker(), exclusive=False)
 
 
 def show_app_settings_dialog(

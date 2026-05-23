@@ -32,9 +32,17 @@ Good candidates:
 - Update staging, file replacement, rollback, and process restart orchestration.
 - Startup hosting: environment checks, dependency detection, diagnostics,
   Python process supervision, and packaged-component validation.
+- Task execution backends where the work is CPU/IO heavy and can expose a
+  simple command or JSON-lines protocol back to Python `TaskManager`.
 
 Poor candidates until benchmarked:
 
+- AppContext / service registry and Tk task-state orchestration, because they
+  sit on the Python/Tk event-loop boundary and must directly coordinate Tk
+  callbacks, localization, and UI state.
+- `TaskManager` itself. It is the Python-side bridge for Tk callbacks,
+  cancellation events, error reporting, and UI queue draining; Rust workers
+  should plug into it instead of replacing it during the Python/Tk era.
 - Tiny thumbnails and already downsampled previews.
 - UI layout, Tk widget updates, dialogs, and localization.
 - One-off glue code where subprocess or FFI overhead would dominate.
@@ -56,6 +64,9 @@ Poor candidates until benchmarked:
   app release version.
 - If a native worker fails, times out, or is missing, the app must log a clear
   reason and continue on a safe fallback where possible.
+- Native workers must report progress and cancellation through the existing
+  `TaskRecord` / `cancel_event` / UI callback contract. A Rust module should
+  not invent an independent task lifecycle.
 
 ## Native Launcher Direction
 

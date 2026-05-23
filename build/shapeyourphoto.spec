@@ -25,6 +25,7 @@ ASSETS_DIR = PROJECT_ROOT / "assets"
 GPU_CORE_EXE = PROJECT_ROOT / "native" / "gpu-core" / "target" / "release" / (
     "shapeyourphoto_gpu_core.exe" if sys.platform == "win32" else "shapeyourphoto_gpu_core"
 )
+DROP_BRIDGE_DLL = PROJECT_ROOT / "native" / "windows-drop" / "target" / "release" / "shapeyourphoto_windows_drop.dll"
 
 APP_NAME = "ShapeYourPhoto"
 BUNDLE_ID = "com.helloalp.shapeyourphoto"
@@ -58,6 +59,8 @@ datas = [
 binaries = []
 if GPU_CORE_EXE.exists():
     binaries.append((str(GPU_CORE_EXE), "gpu"))
+if sys.platform == "win32" and DROP_BRIDGE_DLL.exists():
+    binaries.append((str(DROP_BRIDGE_DLL), "."))
 
 hiddenimports = [
     "PIL._tkinter_finder",

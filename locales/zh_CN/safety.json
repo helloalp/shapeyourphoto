@@ -1,0 +1,5 @@
+{
+  "meta.no_visible_backup": "未保留可见备份",
+  "settings.metadata_keep_backup": "保存属性信息时保留可见备份文件",
+  "settings.desc.metadata_backup": "默认关闭。保存过程中仍会准备恢复副本，成功保存后自动整理。"
+}

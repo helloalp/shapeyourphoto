@@ -9,12 +9,13 @@ from typing import Callable
 
 from paths import migrate_legacy_file
 from ui.language import DEFAULT_LANGUAGE, normalize_language
+from window_layout import DEFAULT_DIALOG_WINDOW_SCALE, DEFAULT_MAIN_WINDOW_SCALE, clamp_window_scale, default_layout_settings
 
 SETTINGS_PATH = migrate_legacy_file("app_settings.json")
-SETTINGS_SCHEMA_VERSION = 10
-DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair"]
+SETTINGS_SCHEMA_VERSION = 13
+DEFAULT_SCAN_IGNORE_PREFIXES = ["_repair", "fmt_output"]
 DEFAULT_SCAN_IGNORE_SUFFIXES: list[str] = []
-DEFAULT_SCAN_IGNORE_CONTAINS: list[str] = []
+DEFAULT_SCAN_IGNORE_CONTAINS: list[str] = [".metadata-bak"]
 FIXED_UPDATE_MANIFEST_URL = "https://helloalp.top/shapeyourphoto/updates/manifest.json"
 FIXED_CLOUD_MESSAGES_URL = "https://helloalp.top/shapeyourphoto/updates/messages.json"
 DEFAULT_UPDATE_MANIFEST_URL = FIXED_UPDATE_MANIFEST_URL
@@ -154,11 +155,7 @@ def _normalize_rule_list(values: list[str] | tuple[str, ...] | None) -> list[str
 
 
 def normalize_scan_ignore_prefixes(prefixes: list[str] | tuple[str, ...] | None) -> list[str]:
-    ordered = _normalize_rule_list(prefixes)
-    seen = {value.casefold() for value in ordered}
-    if "_repair".casefold() not in seen:
-        ordered.insert(0, "_repair")
-    return ordered or list(DEFAULT_SCAN_IGNORE_PREFIXES)
+    return _normalize_rule_list(prefixes)
 
 
 def normalize_scan_ignore_suffixes(suffixes: list[str] | tuple[str, ...] | None) -> list[str]:
@@ -331,12 +328,20 @@ def normalize_ui_density(value: object) -> str:
     return normalized if normalized in allowed else UI_DENSITY_STANDARD
 
 
+def normalize_main_window_scale(value: object) -> float:
+    return clamp_window_scale(value, default=DEFAULT_MAIN_WINDOW_SCALE)
+
+
+def normalize_dialog_window_scale(value: object) -> float:
+    return clamp_window_scale(value, default=DEFAULT_DIALOG_WINDOW_SCALE)
+
+
 def normalize_settings_schema_version(value: object) -> int:
     try:
         version = int(value)
     except (TypeError, ValueError):
-        return SETTINGS_SCHEMA_VERSION
-    return version if version > 0 else SETTINGS_SCHEMA_VERSION
+        return 0
+    return version if version > 0 else 0
 
 
 @dataclass
@@ -356,12 +361,26 @@ class AppSettings:
     log_retention_days: int = LOG_RETENTION_DAYS_DEFAULT
     theme_id: str = "classic_green"
     ui_density: str = UI_DENSITY_STANDARD
+    main_window_scale: float = DEFAULT_MAIN_WINDOW_SCALE
+    dialog_window_scale: float = DEFAULT_DIALOG_WINDOW_SCALE
     language: str = DEFAULT_LANGUAGE
     auto_check_updates: bool = True
+    metadata_keep_visible_backup: bool = False
 
 
 def default_app_settings() -> AppSettings:
     return AppSettings()
+
+
+def reset_layout_settings(settings: AppSettings) -> AppSettings:
+    defaults = default_layout_settings()
+    return validate_settings_payload(
+        {
+            **asdict(settings),
+            "main_window_scale": defaults["main_window_scale"],
+            "dialog_window_scale": defaults["dialog_window_scale"],
+        }
+    )
 
 
 def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, object]:
@@ -394,6 +413,22 @@ def migrate_settings(old_version: int, data: dict[str, object]) -> dict[str, obj
         migrated.setdefault("log_retention_days", LOG_RETENTION_DAYS_DEFAULT)
     if old_version < 10:
         migrated.setdefault("log_language_mode", LOG_LANGUAGE_FOLLOW_UI)
+    if old_version < 11:
+        migrated.setdefault("main_window_scale", DEFAULT_MAIN_WINDOW_SCALE)
+        migrated.setdefault("dialog_window_scale", DEFAULT_DIALOG_WINDOW_SCALE)
+    if old_version < 12:
+        migrated.setdefault("metadata_keep_visible_backup", False)
+    if old_version < 13:
+        prefixes = _normalize_rule_list(migrated.get("scan_ignore_prefixes", DEFAULT_SCAN_IGNORE_PREFIXES))
+        contains = _normalize_rule_list(migrated.get("scan_ignore_contains", DEFAULT_SCAN_IGNORE_CONTAINS))
+        for value in DEFAULT_SCAN_IGNORE_PREFIXES:
+            if value.casefold() not in {item.casefold() for item in prefixes}:
+                prefixes.append(value)
+        for value in DEFAULT_SCAN_IGNORE_CONTAINS:
+            if value.casefold() not in {item.casefold() for item in contains}:
+                contains.append(value)
+        migrated["scan_ignore_prefixes"] = prefixes
+        migrated["scan_ignore_contains"] = contains
     return migrated
 
 
@@ -431,8 +466,13 @@ def validate_settings_payload(payload: object) -> AppSettings:
         log_retention_days=normalize_log_retention_days(payload.get("log_retention_days", LOG_RETENTION_DAYS_DEFAULT)),
         theme_id=normalize_theme_id(payload.get("theme_id", "classic_green")),
         ui_density=normalize_ui_density(payload.get("ui_density", UI_DENSITY_STANDARD)),
+        main_window_scale=normalize_main_window_scale(payload.get("main_window_scale", DEFAULT_MAIN_WINDOW_SCALE)),
+        dialog_window_scale=normalize_dialog_window_scale(
+            payload.get("dialog_window_scale", DEFAULT_DIALOG_WINDOW_SCALE)
+        ),
         language=normalize_language(payload.get("language", DEFAULT_LANGUAGE)),
         auto_check_updates=True,
+        metadata_keep_visible_backup=bool(payload.get("metadata_keep_visible_backup", False)),
     )
 
 

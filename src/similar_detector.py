@@ -8,6 +8,7 @@ from pathlib import Path
 import os
 import re
 import time
+from typing import Callable
 
 import numpy as np
 from PIL import Image, ImageOps
@@ -86,6 +87,7 @@ def detect_similar_groups(
     *,
     max_workers: int | None = None,
     perf_timings: dict[str, float] | None = None,
+    worker_pool_factory: Callable[[int], ThreadPoolExecutor] | None = None,
 ) -> list[SimilarImageGroup]:
     similar_started_at = time.perf_counter()
     ordered_paths = [path for path in paths if path.exists() and path in results]
@@ -93,7 +95,11 @@ def detect_similar_groups(
         return []
 
     started_at = time.perf_counter()
-    features = _extract_features_parallel(ordered_paths, max_workers=max_workers)
+    features = _extract_features_parallel(
+        ordered_paths,
+        max_workers=max_workers,
+        worker_pool_factory=worker_pool_factory,
+    )
     _add_timing(perf_timings, "similar_feature_extract", started_at)
     if len(features) < 2:
         _add_timing(perf_timings, "similar_detection", similar_started_at)
@@ -230,10 +236,15 @@ def _add_timing(perf_timings: dict[str, float] | None, key: str, started_at: flo
     perf_timings[key] = perf_timings.get(key, 0.0) + (time.perf_counter() - started_at) * 1000.0
 
 
-def _extract_features_parallel(paths: list[Path], max_workers: int | None = None) -> list[_ImageFeature]:
+def _extract_features_parallel(
+    paths: list[Path],
+    max_workers: int | None = None,
+    worker_pool_factory: Callable[[int], ThreadPoolExecutor] | None = None,
+) -> list[_ImageFeature]:
     workers = max_workers or max(1, min(8, os.cpu_count() or 4, len(paths)))
     features: list[_ImageFeature] = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    factory = worker_pool_factory or (lambda count: ThreadPoolExecutor(max_workers=count, thread_name_prefix="ShapeYourPhotoSimilar"))
+    with factory(workers) as pool:
         futures = {pool.submit(_extract_feature, path): path for path in paths}
         for future in as_completed(futures):
             try:

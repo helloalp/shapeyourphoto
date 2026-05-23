@@ -13,6 +13,7 @@ from metadata_utils import summarize_image_metadata
 from models import AnalysisResult, CleanupCandidate, SimilarImageGroup
 from repair_planner import get_method_labels, suggest_methods_for_result
 from result_sorting import sort_paths
+from task_state import TaskRecord, TaskStateMachine, TaskStatus
 from ui.display_names import display_name, issue_display
 from ui.language import tr
 from ui.metadata_editor import show_metadata_edit_dialog, supports_metadata_edit
@@ -20,6 +21,15 @@ from gps_editor import show_gps_edit_dialog
 
 
 class UiFileListMixin:
+    def _duplicate_name_set(self) -> set[str]:
+        counts: dict[str, set[Path]] = {}
+        for path in self.image_paths:
+            counts.setdefault(path.name.casefold(), set()).add(path)
+        return {name for name, paths in counts.items() if len(paths) > 1}
+
+    def _display_name_for_path(self, path: Path) -> str:
+        return path.name
+
     def _toggle_sort(self, column: str) -> None:
         if self.sort_column == column:
             self.sort_reverse = not self.sort_reverse
@@ -55,10 +65,7 @@ class UiFileListMixin:
         if mode == "all":
             return self.get_current_list_paths()
         if mode == "selected":
-            targets = self.get_selected_paths_from_current_list()
-            if not targets:
-                targets = self.get_checked_paths_from_current_list()
-            return targets
+            return self.get_checked_paths_from_current_list()
         return []
 
     def resolve_conversion_targets(self) -> list[Path]:
@@ -142,6 +149,8 @@ class UiFileListMixin:
         return self.cleanup_item_lookup.get(selection[0])
 
     def _refresh_cleanup_tree(self) -> None:
+        if not hasattr(self, "cleanup_tree"):
+            return
         current_path = self._current_cleanup_path()
         primary_candidates = self._primary_cleanup_candidates()
         for item in self.cleanup_tree.get_children():
@@ -164,7 +173,10 @@ class UiFileListMixin:
         for path in ordered_paths:
             candidate = primary_candidates[path]
             checked = tr("tree.selected") if self.cleanup_flags.get(path, tk.BooleanVar(value=False)).get() else tr("tree.pending")
-            thumb = self.thumb_cache.get_tree_thumbnail(path)
+            thumb = self.thumb_cache.get_tree_thumbnail(
+                path,
+                duplicate_badge=path.name.casefold() in self._duplicate_name_set(),
+            )
             item_id = self.cleanup_tree.insert(
                 "",
                 "end",
@@ -179,6 +191,8 @@ class UiFileListMixin:
         self._update_cleanup_controls()
 
     def _update_cleanup_controls(self) -> None:
+        if not hasattr(self, "cleanup_delete_button"):
+            return
         selected_count = len([path for path, flag in self.cleanup_flags.items() if flag.get()])
         if selected_count > 0:
             self.cleanup_delete_button.configure(state="normal")
@@ -241,7 +255,7 @@ class UiFileListMixin:
             self.item_lookup.pop(item_id, None)
             self.path_item_lookup.pop(path, None)
             return True
-        self.tree.item(item_id, text=path.name, values=self._tree_row_values(path))
+        self.tree.item(item_id, text=self._display_name_for_path(path), values=self._tree_row_values(path))
         return True
 
     def refresh_tree(self) -> None:
@@ -256,7 +270,7 @@ class UiFileListMixin:
         restored_items: list[str] = []
         for path in self._sorted_paths():
             thumb = self.thumb_cache.get_tree_thumbnail(path)
-            item_id = self.tree.insert("", "end", text=path.name, image=thumb, values=self._tree_row_values(path))
+            item_id = self.tree.insert("", "end", text=self._display_name_for_path(path), image=thumb, values=self._tree_row_values(path))
             self.item_lookup[item_id] = path
             self.path_item_lookup[path] = item_id
             if path in selected_paths:
@@ -395,6 +409,55 @@ class UiFileListMixin:
                 self.tree.see(restored[0])
             if len(restored) <= 1:
                 self._select_path(path)
+
+    def on_tree_motion(self, event) -> None:
+        item_id = self.tree.identify_row(event.y)
+        column = self.tree.identify_column(event.x)
+        if not item_id or column != "#0":
+            self.hide_duplicate_path_tooltip()
+            return
+        path = self.item_lookup.get(item_id)
+        if path is None or path.name.casefold() not in self._duplicate_name_set():
+            self.hide_duplicate_path_tooltip()
+            return
+        self.show_duplicate_path_tooltip(path, event.x_root + 14, event.y_root + 12)
+
+    def show_duplicate_path_tooltip(self, path: Path, x: int, y: int) -> None:
+        current = getattr(self, "_duplicate_path_tooltip_path", None)
+        tip = getattr(self, "_duplicate_path_tooltip", None)
+        if tip is not None and tip.winfo_exists() and current == path:
+            tip.geometry(f"+{x}+{y}")
+            return
+        self.hide_duplicate_path_tooltip()
+        tip = tk.Toplevel(self.root)
+        tip.withdraw()
+        tip.overrideredirect(True)
+        tip.attributes("-topmost", True)
+        frame = tk.Frame(tip, bg="#4a4f4b", padx=8, pady=5)
+        frame.pack(fill="both", expand=True)
+        label = tk.Label(
+            frame,
+            text=tr("duplicate.path_tooltip").format(path=str(path)),
+            bg="#4a4f4b",
+            fg="#ffffff",
+            font=("Microsoft YaHei UI", 9),
+            justify="left",
+        )
+        label.pack()
+        tip.geometry(f"+{x}+{y}")
+        tip.deiconify()
+        self._duplicate_path_tooltip = tip
+        self._duplicate_path_tooltip_path = path
+
+    def hide_duplicate_path_tooltip(self, _event=None) -> None:
+        tip = getattr(self, "_duplicate_path_tooltip", None)
+        if tip is not None:
+            try:
+                tip.destroy()
+            except tk.TclError:
+                pass
+        self._duplicate_path_tooltip = None
+        self._duplicate_path_tooltip_path = None
 
     def on_cleanup_tree_select(self, _event=None) -> None:
         path = self._current_cleanup_path()
@@ -812,6 +875,19 @@ class UiFileListMixin:
         self._schedule_large_preview_load(delay_ms=80)
 
     def _cancel_large_preview_load(self) -> None:
+        preview_task = getattr(self, "_large_preview_task", None)
+        if preview_task is not None and preview_task.is_active:
+            try:
+                if preview_task.cancel_event is not None:
+                    preview_task.cancel_event.set()
+                if preview_task.status == TaskStatus.PENDING:
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCELED)
+                elif preview_task.status == TaskStatus.RUNNING:
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCEL_REQUESTED)
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCELING)
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCELED)
+            except ValueError:
+                pass
         self._large_preview_run_id = getattr(self, "_large_preview_run_id", 0) + 1
         self._large_preview_pending_key = None
         after_id = getattr(self, "_large_preview_after_id", None)
@@ -841,6 +917,15 @@ class UiFileListMixin:
         self._large_preview_pending_key = render_key
         self._large_preview_run_id = getattr(self, "_large_preview_run_id", 0) + 1
         run_id = self._large_preview_run_id
+        self._large_preview_task = TaskRecord(
+            task_id=run_id,
+            run_id=f"preview-{run_id}",
+            kind="preview",
+            name=f"preview:{Path(path).name}",
+            total=1,
+            cancel_event=threading.Event(),
+            metadata={"path": str(path), "render_key": render_key},
+        )
         self._large_preview_after_id = self.root.after(
             max(1, int(delay_ms)),
             lambda p=Path(path), size=target_size, key=render_key, rid=run_id: self._start_large_preview_load(p, size, key, rid),
@@ -856,10 +941,16 @@ class UiFileListMixin:
         self._large_preview_after_id = None
         if run_id != getattr(self, "_large_preview_run_id", 0) or path != getattr(self, "_current_preview_path", None):
             return
+        preview_task = getattr(self, "_large_preview_task", None)
+        if preview_task is not None and preview_task.task_id == run_id and preview_task.status == TaskStatus.PENDING:
+            TaskStateMachine(preview_task).transition(TaskStatus.RUNNING)
 
         def worker() -> None:
             started_at = time.perf_counter()
             try:
+                active_task = getattr(self, "_large_preview_task", None)
+                if active_task is not None and active_task.cancel_requested:
+                    raise RuntimeError("preview canceled")
                 image, _original_size = self._load_preview_image(path, target_size)
                 error: Exception | None = None
             except Exception as exc:
@@ -878,7 +969,9 @@ class UiFileListMixin:
                 )
             )
 
-        threading.Thread(target=worker, daemon=True).start()
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            task_manager.submit_worker(task_id=None, target=worker)
 
     def _finish_large_preview_load(
         self,
@@ -891,15 +984,36 @@ class UiFileListMixin:
         elapsed_ms: float,
     ) -> None:
         if not hasattr(self, "large_preview_label") or not self.large_preview_label.winfo_exists():
+            preview_task = getattr(self, "_large_preview_task", None)
+            if preview_task is not None and preview_task.task_id == run_id and preview_task.is_active:
+                try:
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCEL_REQUESTED)
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCELING)
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCELED)
+                except ValueError:
+                    pass
             return
         if run_id != getattr(self, "_large_preview_run_id", 0) or path != getattr(self, "_current_preview_path", None):
+            preview_task = getattr(self, "_large_preview_task", None)
+            if preview_task is not None and preview_task.task_id == run_id and preview_task.is_active:
+                try:
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCEL_REQUESTED)
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCELING)
+                    TaskStateMachine(preview_task).transition(TaskStatus.CANCELED)
+                except ValueError:
+                    pass
             return
         self._large_preview_pending_key = None
+        preview_task = getattr(self, "_large_preview_task", None)
         if image is None or error is not None:
+            if preview_task is not None and preview_task.task_id == run_id and preview_task.is_active:
+                TaskStateMachine(preview_task).transition(TaskStatus.FAILED, error=str(error or "preview failed"))
             self._large_preview_image = None
             self.large_preview_label.configure(image="", text=tr("preview.load_failed"))
             return
         self._update_large_preview_image(image, target_size=target_size, render_key=render_key)
+        if preview_task is not None and preview_task.task_id == run_id and preview_task.is_active:
+            TaskStateMachine(preview_task).transition(TaskStatus.COMPLETED)
         if elapsed_ms >= 250.0:
             self._log_console(f"preview decode: {path.name} | {elapsed_ms:.1f} ms | target={target_size[0]}x{target_size[1]}")
 
@@ -991,7 +1105,7 @@ class UiFileListMixin:
         if not editable:
             messagebox.showinfo("只读", reason)
             return
-        result = show_metadata_edit_dialog(self.root, path)
+        result = show_metadata_edit_dialog(self.root, path, task_manager=getattr(self, "task_manager", None))
         if result.saved:
             self._log_console(f"metadata edited: {path.name}")
             self._set_meta_summary(summarize_image_metadata(path))
@@ -1006,7 +1120,12 @@ class UiFileListMixin:
         if not editable:
             messagebox.showinfo("只读", reason)
             return
-        result = show_gps_edit_dialog(self.root, path, log_callback=self._log_console)
+        result = show_gps_edit_dialog(
+            self.root,
+            path,
+            log_callback=self._log_console,
+            task_manager=getattr(self, "task_manager", None),
+        )
         if result.saved:
             self._set_meta_summary(summarize_image_metadata(path))
             messagebox.showinfo(tr("gps.title"), result.message)

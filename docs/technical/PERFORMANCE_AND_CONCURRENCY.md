@@ -25,6 +25,31 @@ Console 和 benchmark 应同时显示 requested workers、actual workers 和限�
 
 ## 取消与旧结果防护
 
+1.2.7 起长任务统一使用 `task_state.py` 的状态词汇：
+
+- `pending`：任务已登记但尚未真正运行。
+- `running`：后台工作正在运行，可更新进度。
+- `cancel_requested`：用户或关闭流程已经请求取消，后续结果不得再无条件写回。
+- `canceling`：任务正在清理、回滚或等待 worker 收尾。
+- `completed`：任务正常完成。
+- `failed`：任务失败，UI 必须恢复可操作状态并记录原因。
+- `canceled`：取消与必要清理已经完成。
+
+主窗口扫描、分析、修复、批量格式转换、更新检查、公告检查、设置页依赖检测、复核窗口预览生成、独立 updater 和右侧大图预览都必须通过 `TaskManager` 提交耗时 worker。UI 不应直接创建 `threading.Thread` 或裸 `ThreadPoolExecutor` 作为任务入口；需要并行 worker 时由 `TaskManager.worker_pool()` 创建局部池，并继续接入同一取消、错误和收尾路径。
+
+每个 `TaskRecord` 必须有：
+
+- `task_id`：进程内递增任务编号。
+- `run_id`：防止旧结果写回的轮次标识，可绑定既有 scan/analysis/repair run id。
+- 状态机：`pending`、`running`、`cancel_requested`、`canceling`、`completed`、`failed`、`canceled`。
+- `cancel_event`：用户取消、关闭窗口和 worker 内部检查共享同一个信号。
+- `ProgressEvent`：记录进度写入的时间、done/total 和 run_id。
+- `TaskError`：封装异常类型、消息和 traceback，避免后台异常静默丢失。
+- `started_at` / `finished_at`：用于真实 wall time 和取消收尾审计。
+- UI 回调队列：后台 worker 只能把 UI 更新投递回主线程队列。
+
+预览这类不应阻塞主窗口的后台任务可以不是主窗口 busy 任务，但仍要通过 `TaskManager` 提交 worker，并在过期、取消、失败和完成时转入明确终态。
+
 批量分析使用 run_id + cancel_event：
 
 - run_id 防止旧轮次结果写回。
@@ -101,5 +126,19 @@ Python 热点可以迁入 Rust，但必须满足以下条件：
 - Rust 路径能保留现有用户能力，并在失败时安全回退或给出清晰诊断。
 - 迁移后继续接入现有 `perf_timings`、Console 摘要和 benchmark 报告。
 - 原生组件版本必须跟随应用版本更新，并纳入 release 构建检查。
+
+优先考虑 Rust 的区域：
+
+- 超大目录扫描、路径过滤和重复 stat 规避。
+- 相似图片 hash/feature 提取和分组。
+- 大批量 metadata probe。
+- 修复候选评分或图像数值核。
+- 更新 staging、回滚和重启编排。
+- 启动器依赖检测、组件健康检查和 Python 进程监督。
+
+暂不优先 Rust 化的区域：
+
+- `TaskManager` / `AppContext` / Tk UI 回调编排。这些逻辑紧贴 Python/Tk 主事件循环，迁移收益低且容易制造跨语言回调复杂度。
+- 文案、布局、对话框和轻量胶水逻辑。
 
 详细路线见 [RUST_NATIVE_ROADMAP.md](/E:/aitools/shapeyourphoto/docs/technical/RUST_NATIVE_ROADMAP.md)。

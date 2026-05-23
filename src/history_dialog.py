@@ -7,7 +7,7 @@ import re
 from app_metadata import CHANGELOG, CHANGELOG_I18N
 from ui.language import get_current_language, normalize_language, tr
 from ui.window_titles import app_window_title
-from window_layout import center_window
+from dialog_factory import DialogSpec, create_dialog_window, finalize_dialog_window
 
 
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
@@ -32,12 +32,17 @@ def _plain_history_item(value: object) -> str:
 
 
 def show_history_dialog(parent: tk.Widget) -> None:
-    dialog = tk.Toplevel(parent)
-    dialog.title(app_window_title(tr("history.title")))
-    dialog.minsize(680, 520)
-    dialog.resizable(True, True)
-    dialog.transient(parent.winfo_toplevel())
-    center_window(dialog, 820, 680)
+    dialog = create_dialog_window(
+        parent,
+        DialogSpec(
+            title=app_window_title(tr("history.title")),
+            min_width=680,
+            min_height=520,
+            fallback_width=820,
+            fallback_height=680,
+            modal=False,
+        ),
+    )
 
     outer = ttk.Frame(dialog, padding=14)
     outer.pack(fill="both", expand=True)
@@ -69,3 +74,15 @@ def show_history_dialog(parent: tk.Widget) -> None:
     text.config(state="disabled")
 
     ttk.Button(outer, text=tr("action.close"), command=dialog.destroy).pack(anchor="e", pady=(10, 0))
+    finalize_dialog_window(
+        dialog,
+        parent,
+        DialogSpec(
+            title=app_window_title(tr("history.title")),
+            min_width=680,
+            min_height=520,
+            fallback_width=820,
+            fallback_height=680,
+            modal=False,
+        ),
+    )
